@@ -65,6 +65,17 @@ Không development trực tiếp trên `main` trong workflow thông thường.
 - Milestone approval gates vẫn áp dụng độc lập với PR approval.
 - Không force-push hoặc rewrite shared history nếu chưa có explicit authorization.
 
+### Task handoff
+
+Sau mỗi completed task, Codex cung cấp:
+
+- Exact `git add -- <scoped files>` command.
+- Full `git commit -m "type(scope): description"` command.
+- Push command đúng current task branch, dùng `--set-upstream` khi branch chưa có upstream.
+- Suggested Pull Request title và PR body gồm summary, important decisions, verification, risks/open items và out-of-scope notes.
+
+Các command này chỉ là handoff để project owner review/thực hiện; việc cung cấp command không phải authorization để Codex tự commit, push, tạo PR hoặc merge.
+
 ## Initial repository exception
 
 M0 documentation baseline có thể được commit trực tiếp vào `main` vì đây là commit thiết lập repository trước khi normal feature development bắt đầu.

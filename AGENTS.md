@@ -43,6 +43,17 @@ Trước khi lập kế hoạch hoặc thay đổi source, đọc:
 
 Không tạo tài liệu trùng lặp. Mỗi quyết định lớn phải có một authoritative location và các tài liệu khác liên kết tới đó.
 
+## Fast-track execution
+
+- Khi một task đã được giao và scope đủ rõ, thực hiện cohesive cycle: đọc context liên quan, phân tích tập trung, implement, verify, tự review, sửa lỗi rồi báo cáo.
+- Không tách routine implementation thành nhiều vòng proposal/approval nếu approved architecture và requirements đã đủ hướng dẫn.
+- Tự quyết định project configuration, internal structure, standard framework usage, testing layout, error handling và minor refactoring trong approved task scope.
+- Ưu tiên giải pháp đơn giản, maintainable; tránh speculative abstraction và overengineering.
+- Với authentication, authorization, concurrency, financial integrity hoặc transaction, phải tăng độ sâu của negative/failure/concurrency tests và nêu trade-off đáng kể trong completion report.
+- Chỉ dừng xin clarification khi cần đổi approved business rule, cần major architecture change, approved decisions xung đột, còn unresolved security/financial decision quan trọng hoặc có critical blocker.
+- Internal steps có thể được gộp thành một outcome-oriented delivery khi task authorization bao phủ chúng; không tự mở rộng sang milestone hoặc unrelated scope khác.
+- Fast-track không hạ quality bar, không biến assumption thành approved decision và không thay đổi Git authorization hoặc milestone approval gates.
+
 ## Decision statuses
 
 - `APPROVED`: đã được người dùng phê duyệt; không thay đổi ngầm.
@@ -74,6 +85,7 @@ Dùng các status: `TODO`, `IN_PROGRESS`, `BLOCKED`, `DONE`.
 - Không tự động tạo branch, commit, push, Pull Request hoặc merge; mỗi operation cần explicit authorization riêng từ người dùng.
 - Không force-push hoặc rewrite shared history nếu chưa có explicit authorization.
 - PR approval không thay thế milestone approval gate.
+- Cuối mỗi task, cung cấp exact scoped `git add`, `git commit -m "..."`, lệnh push đúng branch, suggested PR title và PR body; chỉ cung cấp để owner thực hiện, không tự chạy nếu chưa được cấp quyền riêng.
 
 ## Business consistency rules
 
