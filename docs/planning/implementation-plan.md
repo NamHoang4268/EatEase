@@ -22,7 +22,7 @@ Planning completion và implementation completion là hai việc khác nhau. M1�
 
 Dependency: M0 complete và approved. Technical baseline: [ADR-0006](../architecture/adr/0006-m1-technical-foundation.md).
 
-Mỗi task bắt đầu từ updated `main`, giữ scope riêng và dừng tại review/authorization checkpoint. Không tự động commit, push, tạo/merge PR hoặc bắt đầu task kế tiếp.
+Mỗi assigned delivery bắt đầu từ updated `main`, giữ scope rõ và dừng tại review/authorization checkpoint. M1.2–M1.7 là planning workstreams: owner có thể giao từng workstream riêng hoặc gộp các workstream liền kề thành một cohesive foundation delivery. Branch được ghi dưới mỗi workstream là default khi thực hiện standalone; cohesive delivery dùng branch được owner chỉ định. Không yêu cầu approval giữa internal steps đã nằm trong assigned scope, nhưng vẫn phải verify và cập nhật status/evidence cho từng workstream. Không tự động commit, push, tạo/merge PR hoặc bắt đầu task chưa được giao.
 
 ### M1.1 — Record technical foundation decisions
 
@@ -40,7 +40,7 @@ Mỗi task bắt đầu từ updated `main`, giữ scope riêng và dừng tại
 - **Scope/artifacts:** root package manifest/scripts, `pnpm-workspace.yaml`, lockfile, Node/pnpm pins, strict TypeScript base và `packages/eslint-config`, `packages/tsconfig`.
 - **Acceptance:** native pnpm workspace nhận đúng `apps/*`, `packages/*`; không Turbo/Nx hoặc premature shared package; Windows-compatible scripts.
 - **Verification:** version checks, frozen install, workspace listing, config typecheck và clean reinstall.
-- **Checkpoint:** review exact pins/peer compatibility và workspace diff trước commit/PR; chỉ chuyển M1.3 sau approval/merge.
+- **Checkpoint:** review exact pins/peer compatibility và workspace diff trước commit/PR nếu standalone; nếu thuộc authorized cohesive delivery, có thể tiếp tục internal workstream kế tiếp sau khi verification đạt.
 
 ### M1.3 — API foundation
 
@@ -49,7 +49,7 @@ Mỗi task bắt đầu từ updated `main`, giữ scope riêng và dừng tại
 - **Scope/artifacts:** `apps/api` NestJS 12/Express ESM-first, validated API environment, health/readiness endpoints và foundation smoke test.
 - **Acceptance:** API khởi động/build được trên approved Node line; ESM runtime đúng; chưa có business module hoặc auth policy mới.
 - **Verification:** lint, typecheck, unit/smoke test, production build và HTTP health/readiness checks.
-- **Checkpoint:** review NestJS/TypeScript/ESM compatibility evidence trước commit/PR; chỉ chuyển M1.4 sau approval/merge.
+- **Checkpoint:** review NestJS/TypeScript/ESM compatibility evidence trước commit/PR nếu standalone; nếu thuộc authorized cohesive delivery, có thể tiếp tục internal workstream kế tiếp sau khi verification đạt.
 
 ### M1.4 — Web foundation
 
