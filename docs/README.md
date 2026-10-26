@@ -28,6 +28,7 @@ Thư mục này là source of truth cho product, architecture và implementation
 
 - [Git workflow](development/git-workflow.md): Conventional Commits, task branches, Pull Requests và Codex authorization rules.
 - [Local development setup](development/local-setup.md): prerequisites, environment, commands, database workflow và compatibility notes.
+- [Portfolio deployment](development/deployment.md): Vercel/Render/Neon setup, secrets, verification và free-tier limitations.
 
 ## Maintenance rules
 

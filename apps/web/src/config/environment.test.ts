@@ -11,4 +11,10 @@ describe('loadServerEnvironment', () => {
       'Invalid web environment',
     );
   });
+
+  it('requires an explicit API target in production', () => {
+    expect(() => loadServerEnvironment({ NODE_ENV: 'production' })).toThrow(
+      'Invalid web environment',
+    );
+  });
 });

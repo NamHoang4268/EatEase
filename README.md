@@ -35,7 +35,8 @@ Milestone hiện tại: **M1 — Project foundation**.
 - M0 documentation baseline: hoàn thành.
 - M1.1 technical decisions: hoàn thành.
 - M1.2–M1.5 workspace/API/web/database foundation: đã triển khai và verify trên task branch.
-- M1.6 quality expansion, M1.7 CI và M1.8 final audit: chưa hoàn thành.
+- M1.6 quality expansion: hoàn thành local verification.
+- M1.7 CI và M1.8 final audit: configuration hoàn thành; chờ hosted CI/public deployment evidence và owner milestone approval.
 
 ## Documentation
 
@@ -53,6 +54,7 @@ Milestone hiện tại: **M1 — Project foundation**.
 - [Phase 1 plan](docs/planning/phase-01.md)
 - [Decision log](docs/planning/decision-log.md)
 - [Local development setup](docs/development/local-setup.md)
+- [Portfolio deployment](docs/development/deployment.md)
 
 ## Repository boundaries
 

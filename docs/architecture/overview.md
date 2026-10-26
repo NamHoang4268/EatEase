@@ -92,6 +92,8 @@ Outbox publication, audit records, idempotency và observability helpers. Đây 
 
 MVP ưu tiên một web deployable, một API deployable và một PostgreSQL database. Outbox publisher có thể chạy cùng API process ban đầu nhưng phải có ownership/locking để scale an toàn. AWS/ECS/RDS/S3/Terraform chỉ được chi tiết ở M5.
 
+Portfolio/demo deployment sớm dùng Vercel Hobby cho web, Render Free cho API và Neon Free cho PostgreSQL theo [ADR-0007](adr/0007-portfolio-deployment.md). Đây không phải production SLA topology và không thay thế AWS/M5 direction.
+
 ## Source of truth
 
 - Product policy: [business rules](../product/business-rules.md)

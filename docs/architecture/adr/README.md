@@ -10,6 +10,7 @@ ADR ghi lại lý do và trade-off của quyết định kỹ thuật lâu dài.
 | [ADR-0004](0004-rest-realtime-outbox.md)     | REST, Socket.IO và transactional outbox                        | ACCEPTED |
 | [ADR-0005](0005-monorepo.md)                 | Monorepo boundaries                                            | ACCEPTED |
 | [ADR-0006](0006-m1-technical-foundation.md)  | M1 runtime, workspace, local development và quality foundation | ACCEPTED |
+| [ADR-0007](0007-portfolio-deployment.md)     | Vercel, Render và Neon portfolio deployment                    | ACCEPTED |
 
 ## Template
 

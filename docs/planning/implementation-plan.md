@@ -71,29 +71,29 @@ Mỗi assigned delivery bắt đầu từ updated `main`, giữ scope rõ và d�
 
 ### M1.6 — Quality and testing
 
-- **Status:** `TODO`.
+- **Status:** `DONE`.
 - **Branch:** `test/foundation-tooling`.
 - **Scope/artifacts:** ESLint Flat Config, separate Prettier, Vitest baseline, relevant React Testing Library/Supertest integration và Playwright foundation smoke coverage khi apps sẵn sàng.
 - **Acceptance:** tooling chỉ được thêm khi có actual target; real PostgreSQL được dùng cho database integration; không mock database invariants.
-- **Verification:** format check, lint, typecheck, unit, HTTP/database integration và foundation E2E commands phù hợp.
+- **Verification:** format/lint/typecheck pass; API health success/failure, environment, web environment/component tests pass; PostgreSQL-backed readiness integration pass; production builds pass. Playwright chưa thêm vì chưa có browser workflow ngoài foundation page/proxy.
 - **Checkpoint:** review tool/plugin peer compatibility và test evidence trước commit/PR.
 
 ### M1.7 — CI baseline
 
-- **Status:** `TODO`.
+- **Status:** `IN_PROGRESS` — workflow và local-equivalent validation hoàn tất; GitHub-hosted PR run cần owner push/PR để verify.
 - **Branch:** `ci/foundation-validation`.
 - **Scope/artifacts:** GitHub Actions validation cho Pull Requests và `main`, frozen pnpm install, quality/build jobs, PostgreSQL-backed integration và E2E smoke jobs khi ready.
 - **Acceptance:** clean checkout chạy lại được local-equivalent checks; CI không chứa secret hoặc silently skip failure.
-- **Verification:** workflow syntax/review và successful PR run cho format, lint, typecheck, tests, build cùng available integration/E2E checks.
+- **Verification:** workflow review/local commands pass cho frozen install, format, lint, typecheck, unit/component tests, Prisma validate/deploy, real PostgreSQL integration và builds; hosted run chưa có evidence.
 - **Checkpoint:** owner review workflow permissions/cost/evidence trước merge; CI approval không tự động hoàn tất M1.
 
 ### M1.8 — Developer guide and M1 audit
 
-- **Status:** `TODO`.
+- **Status:** `IN_PROGRESS` — local audit/setup/deployment guide hoàn tất; chờ hosted CI, public endpoint verification và owner milestone approval.
 - **Branch:** `docs/m1-developer-guide`.
 - **Scope/artifacts:** Windows-compatible setup guide, prerequisites, scripts, environment/migration workflow, M1 verification record và planning status updates.
 - **Acceptance:** fresh setup có thể follow tài liệu; mọi M1 acceptance criterion trong [roadmap](roadmap.md#m1--project-foundation) có evidence hoặc explicit unresolved blocker.
-- **Verification:** documentation links, clean-setup walkthrough và full CI-equivalent command suite.
+- **Verification:** local documentation links, Docker/Prisma integration và CI-equivalent command suite pass; Vercel/Render/Neon dashboard setup/public endpoints chưa được thực hiện vì cần owner accounts/secrets.
 - **Checkpoint:** dừng tại M1 milestone approval gate; không bắt đầu M2 nếu chưa có explicit owner approval.
 
 ## M2 — First business vertical slice
