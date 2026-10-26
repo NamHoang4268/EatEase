@@ -30,6 +30,12 @@ Last baseline update: 2026-10-26.
 - REST authoritative + Socket.IO notifications + transactional outbox.
 - Database constraints, transactions, idempotency, permission/resource scoping.
 - Guest idle timeout 30 phút là initial configurable security default với explicit recovery.
+- M1 technical foundation theo [ADR-0006](../architecture/adr/0006-m1-technical-foundation.md): Node.js 24 LTS, pnpm 12 workspaces, TypeScript 6, Next.js 16 App Router, NestJS 12/Express ESM-first, PostgreSQL 18 và Prisma ORM 7 stable.
+- M1 dùng native pnpm workspaces, không Turborepo/Nx; applications là `apps/web`, `apps/api`; initial shared packages chỉ gồm `packages/eslint-config`, `packages/tsconfig`.
+- PostgreSQL local qua Docker Compose; web/API chạy trực tiếp trên developer machine; scripts không phụ thuộc Bash; managed migrations phải committed/reviewed và không dùng schema push.
+- ESLint Flat Config + separate Prettier; per-application Zod environment validation.
+- Testing direction: Vitest, React Testing Library, Supertest, PostgreSQL thật và Playwright; thêm incrementally theo nhu cầu task.
+- GitHub Actions validate PR/`main` bằng frozen install, format, lint, typecheck, tests và build; database/E2E checks thêm khi foundation sẵn sàng.
 
 ## PROPOSED
 
@@ -40,6 +46,7 @@ Last baseline update: 2026-10-26.
 - Same-origin deployment direction (web/API/Socket.IO sau một public origin), dùng host-only `HttpOnly; Secure; SameSite=Lax` cookies.
 - CSRF: allowed-Origin validation + synchronizer/signed double-submit token.
 - Outbox publisher chạy cùng API process trong MVP với safe locking.
+- Candidate pins chờ compatibility/availability verification: Node.js `24.22.1`, pnpm `12.15.0`, TypeScript `6.0.3`, Next.js `16.4.3`, NestJS `12.2.0`, local PostgreSQL image `postgres:18.6-bookworm`; Prisma 7 exact patch chốt khi setup.
 
 Các proposal phải được validated/chốt ở milestone implementation liên quan, không được hardcode ngầm.
 
@@ -47,7 +54,8 @@ Các proposal phải được validated/chốt ở milestone implementation liê
 
 - Production domain và exact reverse-proxy topology.
 - Staff session representation: opaque server-side session hay access/refresh pair.
-- Node.js/package manager/workspace/tool versions cho M1.
+- Local Next.js REST rewrite, browser/API cookie-session boundary và Socket.IO proxy/WebSocket upgrade behavior.
+- Complete dependency/peer compatibility matrix cho M1 cho đến khi setup verification hoàn tất.
 - Menu modifiers chi tiết ngoài contract tối thiểu.
 - Manager force-close/correction procedure chi tiết.
 - Retention/cleanup periods cho idempotency, outbox, audit và closed guest sessions.

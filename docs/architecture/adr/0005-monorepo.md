@@ -2,6 +2,7 @@
 
 - Status: **ACCEPTED**
 - Date: 2026-10-26
+- Refined by: [ADR-0006](0006-m1-technical-foundation.md) for the initial M1 package set
 
 ## Context
 
@@ -22,6 +23,8 @@ docs
 ```
 
 M0 chỉ tạo placeholder top-level. Tooling/subdirectories được tạo ở M1 sau approval.
+
+ADR-0006 giữ monorepo boundary này nhưng giới hạn initial M1 shared packages vào `packages/eslint-config` và `packages/tsconfig`. Các package generic như `common`, `contracts`, `config`, `database` hoặc `testing` chỉ được tạo sau khi có demonstrated need và đúng dependency boundary.
 
 ## Consequences
 
