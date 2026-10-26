@@ -12,32 +12,32 @@ Status: **APPROVED baseline**
 
 ## Matrix
 
-| Capability | Guest | Waiter | Kitchen | Cashier | Manager/Admin |
-|---|:---:|:---:|:---:|:---:|:---:|
-| View public menu | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Request activation | ✓ |  |  |  |  |
-| Approve/reject activation |  | ✓ |  |  | ✓ |
-| Join bằng code | ✓ |  |  |  |  |
-| Generate/share join code | Authorized | ✓ |  |  | ✓ |
-| Rotate/revoke join code |  | ✓ |  |  | ✓ |
-| View own session/orders | ✓ | Location | Operational only | Bill only | ✓ |
-| Submit QR order | ✓ |  |  |  |  |
-| Submit staff order |  | ✓ |  |  | ✓ |
-| Request cancellation | ✓ | ✓ |  |  | ✓ |
-| Cancel `NEW` |  | ✓ |  |  | ✓ |
-| Forward `PREPARING` request |  | ✓ |  |  | ✓ |
-| Decide preparation stop |  |  | ✓ |  | ✓ |
-| Move item to PREPARING/READY |  |  | ✓ |  | ✓ |
-| Mark item served |  | ✓ |  |  | ✓ |
-| View fulfillment board |  | Optional | ✓ |  | ✓ |
-| View bill | Own session | ✓ | No amounts | ✓ | ✓ |
-| Request checkout | ✓ | ✓ |  | ✓ | ✓ |
-| Record cash payment |  |  |  | ✓ | ✓ |
-| Arbitrary financial adjustment |  |  |  |  | ✓ |
-| Close settled session |  | ✓ |  |  | ✓ |
-| Mark table ready |  | ✓ |  |  | ✓ |
-| Manage menu/tables/staff |  |  |  |  | ✓ |
-| View audit/reporting |  |  |  | Limited | ✓ |
+| Capability                     |    Guest    |  Waiter  |     Kitchen      |  Cashier  | Manager/Admin |
+| ------------------------------ | :---------: | :------: | :--------------: | :-------: | :-----------: |
+| View public menu               |      ✓      |    ✓     |        ✓         |     ✓     |       ✓       |
+| Request activation             |      ✓      |          |                  |           |               |
+| Approve/reject activation      |             |    ✓     |                  |           |       ✓       |
+| Join bằng code                 |      ✓      |          |                  |           |               |
+| Generate/share join code       | Authorized  |    ✓     |                  |           |       ✓       |
+| Rotate/revoke join code        |             |    ✓     |                  |           |       ✓       |
+| View own session/orders        |      ✓      | Location | Operational only | Bill only |       ✓       |
+| Submit QR order                |      ✓      |          |                  |           |               |
+| Submit staff order             |             |    ✓     |                  |           |       ✓       |
+| Request cancellation           |      ✓      |    ✓     |                  |           |       ✓       |
+| Cancel `NEW`                   |             |    ✓     |                  |           |       ✓       |
+| Forward `PREPARING` request    |             |    ✓     |                  |           |       ✓       |
+| Decide preparation stop        |             |          |        ✓         |           |       ✓       |
+| Move item to PREPARING/READY   |             |          |        ✓         |           |       ✓       |
+| Mark item served               |             |    ✓     |                  |           |       ✓       |
+| View fulfillment board         |             | Optional |        ✓         |           |       ✓       |
+| View bill                      | Own session |    ✓     |    No amounts    |     ✓     |       ✓       |
+| Request checkout               |      ✓      |    ✓     |                  |     ✓     |       ✓       |
+| Record cash payment            |             |          |                  |     ✓     |       ✓       |
+| Arbitrary financial adjustment |             |          |                  |           |       ✓       |
+| Close settled session          |             |    ✓     |                  |           |       ✓       |
+| Mark table ready               |             |    ✓     |                  |           |       ✓       |
+| Manage menu/tables/staff       |             |          |                  |           |       ✓       |
+| View audit/reporting           |             |          |                  |  Limited  |       ✓       |
 
 ## Initial permission codes
 

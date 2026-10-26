@@ -1,0 +1,36 @@
+:root {
+  color-scheme: light;
+  font-family: Arial, Helvetica, sans-serif;
+  background: #f5f1e8;
+  color: #20251f;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+main {
+  width: min(680px, calc(100% - 2rem));
+  margin: 15vh auto;
+  padding: 2.5rem;
+  border: 1px solid #d7cebc;
+  border-radius: 1rem;
+  background: #fffdf8;
+  box-shadow: 0 1rem 3rem rgb(65 55 35 / 10%);
+}
+
+h1 {
+  margin: 0.25rem 0 1rem;
+  font-size: clamp(2.5rem, 8vw, 5rem);
+}
+
+.eyebrow {
+  color: #536b4b;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}

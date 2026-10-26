@@ -26,15 +26,16 @@ Dự án này là codebase mới, độc lập với repository EatEase legacy. 
 - Socket.IO cho realtime notification.
 - Transactional outbox cho reliable event publication.
 
-Đây mới là architecture baseline. Application chưa được scaffold và chưa có dependency nào được cài đặt.
+M1 foundation hiện cung cấp pnpm workspace, API/web shell, local PostgreSQL và Prisma integration. Business modules vẫn chưa được triển khai.
 
 ## Trạng thái
 
-Milestone hiện tại: **M0 — Repository and documentation bootstrap**.
+Milestone hiện tại: **M1 — Project foundation**.
 
-- Planning/documentation baseline: hoàn thành trong M0.
-- Application implementation: chưa bắt đầu.
-- M1 chỉ được bắt đầu sau khi có phê duyệt rõ ràng.
+- M0 documentation baseline: hoàn thành.
+- M1.1 technical decisions: hoàn thành.
+- M1.2–M1.5 workspace/API/web/database foundation: đã triển khai và verify trên task branch.
+- M1.6 quality expansion, M1.7 CI và M1.8 final audit: chưa hoàn thành.
 
 ## Documentation
 
@@ -51,12 +52,14 @@ Milestone hiện tại: **M0 — Repository and documentation bootstrap**.
 - [Implementation plan](docs/planning/implementation-plan.md)
 - [Phase 1 plan](docs/planning/phase-01.md)
 - [Decision log](docs/planning/decision-log.md)
+- [Local development setup](docs/development/local-setup.md)
 
 ## Repository boundaries
 
-- `apps/`: future web and API applications.
-- `packages/`: future shared contracts and repository tooling.
-- `infrastructure/`: future local and cloud infrastructure definitions.
+- `apps/web`: Next.js App Router application shell.
+- `apps/api`: NestJS API, Prisma boundary và health/readiness endpoints.
+- `packages/`: shared ESLint và TypeScript configuration packages.
+- `infrastructure/local`: PostgreSQL Docker Compose foundation.
 - `docs/`: current source of truth cho product, architecture và planning.
 
 Đọc [AGENTS.md](AGENTS.md) trước khi thực hiện thay đổi trong repository.

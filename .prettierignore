@@ -1,0 +1,6 @@
+node_modules
+.next
+dist
+coverage
+apps/api/src/generated
+pnpm-lock.yaml

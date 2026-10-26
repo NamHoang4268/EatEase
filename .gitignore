@@ -8,6 +8,7 @@ dist/
 build/
 coverage/
 .turbo/
+*.tsbuildinfo
 
 # Environment and secrets
 .env
@@ -33,6 +34,7 @@ Thumbs.db
 *.tfstate
 *.tfstate.*
 .docker-data/
+apps/api/src/generated/
 
 # Temporary files
 tmp/
