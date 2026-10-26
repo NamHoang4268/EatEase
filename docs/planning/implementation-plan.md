@@ -2,7 +2,7 @@
 
 Status values: `TODO`, `IN_PROGRESS`, `BLOCKED`, `DONE`.
 
-Planning completion và implementation completion là hai việc khác nhau. M1–M5 hiện chưa được implement.
+Planning completion và implementation completion là hai việc khác nhau. M1 foundation đã được implement và verified; M2–M5 chưa được implement.
 
 ## M0 — Repository and documentation bootstrap
 
@@ -21,6 +21,8 @@ Planning completion và implementation completion là hai việc khác nhau. M1�
 ## M1 — Project foundation
 
 Dependency: M0 complete và approved. Technical baseline: [ADR-0006](../architecture/adr/0006-m1-technical-foundation.md).
+
+**Milestone status:** implementation và verification `DONE`; chờ explicit owner approval tại milestone gate trước khi bắt đầu M2.
 
 Mỗi assigned delivery bắt đầu từ updated `main`, giữ scope rõ và dừng tại review/authorization checkpoint. M1.2–M1.7 là planning workstreams: owner có thể giao từng workstream riêng hoặc gộp các workstream liền kề thành một cohesive foundation delivery. Branch được ghi dưới mỗi workstream là default khi thực hiện standalone; cohesive delivery dùng branch được owner chỉ định. Không yêu cầu approval giữa internal steps đã nằm trong assigned scope, nhưng vẫn phải verify và cập nhật status/evidence cho từng workstream. Không tự động commit, push, tạo/merge PR hoặc bắt đầu task chưa được giao.
 
@@ -80,20 +82,20 @@ Mỗi assigned delivery bắt đầu từ updated `main`, giữ scope rõ và d�
 
 ### M1.7 — CI baseline
 
-- **Status:** `IN_PROGRESS` — workflow và local-equivalent validation hoàn tất; GitHub-hosted PR run cần owner push/PR để verify.
+- **Status:** `DONE`.
 - **Branch:** `ci/foundation-validation`.
 - **Scope/artifacts:** GitHub Actions validation cho Pull Requests và `main`, frozen pnpm install, quality/build jobs, PostgreSQL-backed integration và E2E smoke jobs khi ready.
 - **Acceptance:** clean checkout chạy lại được local-equivalent checks; CI không chứa secret hoặc silently skip failure.
-- **Verification:** workflow review/local commands pass cho frozen install, format, lint, typecheck, unit/component tests, Prisma validate/deploy, real PostgreSQL integration và builds; hosted run chưa có evidence.
-- **Checkpoint:** owner review workflow permissions/cost/evidence trước merge; CI approval không tự động hoàn tất M1.
+- **Verification:** GitHub Actions workflow chạy trên Pull Requests và `main`; frozen install, format, lint, typecheck, unit/component tests, Prisma validate/deploy, real PostgreSQL integration và builds đều là required executable steps. Initial cloud deployment từ `main` và Render `checksPass` auto-deploy đã được verify.
+- **Checkpoint:** hosted CI và automatic deployment đã được verify; M1 milestone approval vẫn là gate độc lập trước M2.
 
 ### M1.8 — Developer guide and M1 audit
 
-- **Status:** `IN_PROGRESS` — local audit/setup/deployment guide hoàn tất; chờ hosted CI, public endpoint verification và owner milestone approval.
+- **Status:** `DONE` — local setup/audit và cloud deployment record đã hoàn tất; owner milestone approval vẫn là gate độc lập trước M2.
 - **Branch:** `docs/m1-developer-guide`.
 - **Scope/artifacts:** Windows-compatible setup guide, prerequisites, scripts, environment/migration workflow, M1 verification record và planning status updates.
 - **Acceptance:** fresh setup có thể follow tài liệu; mọi M1 acceptance criterion trong [roadmap](roadmap.md#m1--project-foundation) có evidence hoặc explicit unresolved blocker.
-- **Verification:** local documentation links, Docker/Prisma integration và CI-equivalent command suite pass; Vercel/Render/Neon dashboard setup/public endpoints chưa được thực hiện vì cần owner accounts/secrets.
+- **Verification:** local documentation links, Docker/Prisma integration và CI-equivalent command suite pass; Vercel web, Render API, Neon-backed readiness và same-origin API rewrite được verify ngày `2026-10-27`. Xem [deployment verification record](../development/deployment.md#m1-verification-record).
 - **Checkpoint:** dừng tại M1 milestone approval gate; không bắt đầu M2 nếu chưa có explicit owner approval.
 
 ## M2 — First business vertical slice

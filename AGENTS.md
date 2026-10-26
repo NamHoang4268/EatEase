@@ -108,6 +108,16 @@ Dùng các status: `TODO`, `IN_PROGRESS`, `BLOCKED`, `DONE`.
 - Không báo hoàn thành nếu chưa chạy verification phù hợp; nếu không thể chạy, nêu rõ phần chưa xác minh.
 - Không bỏ qua lỗi lint/type/test để đạt trạng thái xanh giả tạo.
 
+## Environment files and secrets
+
+- Xem mọi environment file thật (`.env`, `.env.*`) là sensitive.
+- Mặc định không đọc, sửa, sao chép, in hoặc expose environment file thật.
+- Có thể đọc và cập nhật `.env.example` chỉ chứa placeholder trong task liên quan.
+- Mọi thay đổi environment file thật cần explicit, task-specific authorization từ người dùng.
+- Quyền sửa environment file không tự động cấp quyền expose nội dung của file đó.
+- Không bao giờ commit credential, token, connection string hoặc secret khác.
+- Ưu tiên cập nhật `.env.example` và document required variables để người dùng tự cấu hình giá trị thật.
+
 ## Change safety
 
 - Không commit, push, tạo remote, provision cloud hoặc cài dependency nếu chưa được cấp quyền.

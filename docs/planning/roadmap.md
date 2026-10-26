@@ -22,6 +22,8 @@ Mỗi milestone chỉ bắt đầu khi dependency hoàn tất và có authorizat
 
 **Goal:** runnable monorepo foundation chưa triển khai business vertical.
 
+**Status:** implementation và initial cloud deployment verified; chờ explicit owner approval để qua milestone gate.
+
 **Dependencies:** M0 approved.
 
 **Scope/tasks:** workspace/package manager decision, Next.js/NestJS scaffolds, TypeScript/lint/format/test tooling, PostgreSQL/Prisma foundation, local Docker environment, config validation, CI-quality commands.

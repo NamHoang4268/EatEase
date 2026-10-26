@@ -1,16 +1,28 @@
-# Portfolio deployment: Vercel, Render and Neon
+# M1 portfolio deployment: Vercel, Render and Neon
 
-Guide này chuẩn bị public portfolio/demo deployment `$0/month`. Nó không phải production SLA architecture và không thay thế AWS/M5 direction. Quyết định authoritative nằm trong [ADR-0007](../architecture/adr/0007-portfolio-deployment.md).
+Guide này ghi lại và hướng dẫn tái tạo public portfolio/demo deployment `$0/month`. Nó không phải production SLA architecture và không thay thế AWS/M5 direction. Quyết định authoritative nằm trong [ADR-0007](../architecture/adr/0007-portfolio-deployment.md).
+
+## Current M1 deployment
+
+Initial cloud deployment đã được verify ngày `2026-10-27`.
+
+| Component  | Provider/plan | Public endpoint                         | Region/configuration                                  |
+| ---------- | ------------- | --------------------------------------- | ----------------------------------------------------- |
+| Web        | Vercel Hobby  | `https://eat-ease.vercel.app`           | Vercel-managed; repository không pin execution region |
+| API        | Render Free   | `https://eatease-api-rbgu.onrender.com` | Singapore                                             |
+| PostgreSQL | Neon Free     | Không public trong tài liệu             | Singapore; database `neondb`                          |
+
+Các URL trên là operational deployment record, không phải production domain hoặc SLA commitment.
 
 ## Topology
 
 ```text
 Browser
-  └─ https://<vercel-project>.vercel.app
+  └─ https://eat-ease.vercel.app
        ├─ / and /health        → Next.js on Vercel
        └─ /api/*               → server-side rewrite
-                                  └─ https://<render-service>.onrender.com/api/*
-                                       └─ pooled PostgreSQL connection → Neon
+                                  └─ https://eatease-api-rbgu.onrender.com/api/*
+                                       └─ pooled PostgreSQL connection → Neon Singapore
 ```
 
 Browser chỉ thấy same-origin `/api/...`. `API_INTERNAL_URL` không có prefix `NEXT_PUBLIC_` và không phải browser variable. API/database secrets chỉ nằm ở Render/Neon.
@@ -37,6 +49,43 @@ Không đặt `DATABASE_URL` hoặc `DIRECT_DATABASE_URL` ở Vercel.
 | `API_INTERNAL_URL` |   No   | Render origin, ví dụ `https://<name>.onrender.com` |
 
 Không thêm trailing `/api`; rewrite hiện tự giữ `/api/:path*`. Production build fail fast nếu thiếu biến này.
+
+## Deployment configuration
+
+### Render
+
+`render.yaml` là source-controlled configuration cho API service:
+
+- Runtime/plan: Node.js web service trên Free plan.
+- Region hiện tại: Singapore, được chọn trong Render dashboard.
+- Build command: `pnpm install --frozen-lockfile && pnpm db:generate && pnpm --filter @eatease/api build`.
+- Start command: `pnpm --filter @eatease/api start`.
+- Health check path: `/api/v1/health/ready` để kiểm tra cả process và Neon connectivity.
+- Auto-deploy: `checksPass`; commit trên linked `main` chỉ deploy sau khi GitHub checks pass.
+
+API bind vào `0.0.0.0` và ưu tiên platform-provided `PORT`; không hardcode Render hostname hoặc port vào application code.
+
+### Vercel
+
+- Git repository root directory: `apps/web`.
+- Framework Preset: Next.js; `apps/web/vercel.json` cũng khai báo `framework: nextjs`.
+- Bật **Include source files outside of the Root Directory** để Vercel có thể đọc workspace manifest và lockfile ở repository root.
+- Production environment cần `API_INTERNAL_URL=https://eatease-api-rbgu.onrender.com`.
+- Output dùng `.next` mặc định; không cần custom build output directory.
+- Git integration tự tạo deployment khi `main` được cập nhật. Preview deployment cần environment variable riêng và không được mặc định dùng production data khi M2 bắt đầu có mutations.
+
+### GitHub Actions and deployment flow
+
+`.github/workflows/ci.yml` chạy trên Pull Request và push vào `main`: frozen install, Prisma Client generation, formatting, lint, typecheck, unit/component tests, Prisma validation/migration deploy trên PostgreSQL service, database checks, integration tests và production builds.
+
+```text
+Pull Request → GitHub Actions validation → review/merge to main
+                                           ├─ Vercel automatic web deployment
+                                           └─ Render checksPass API deployment
+                                                        └─ Neon pooled runtime connection
+```
+
+GitHub Actions không provision Neon, không lưu production database secrets và không thay thế explicit production migration gate.
 
 ## One-time owner setup
 
@@ -69,8 +118,8 @@ Foundation hiện chưa có domain migration nên command hợp lệ sẽ báo k
 7. Sau deploy, kiểm tra:
 
 ```text
-https://<render-service>.onrender.com/api/v1/health
-https://<render-service>.onrender.com/api/v1/health/ready
+https://eatease-api-rbgu.onrender.com/api/v1/health
+https://eatease-api-rbgu.onrender.com/api/v1/health/ready
 ```
 
 Liveness phải trả `200` với `status: ok`; readiness phải trả `200` với `database: reachable`.
@@ -81,18 +130,40 @@ Liveness phải trả `200` với `status: ok`; readiness phải trả `200` v�
 2. Import GitHub repository vào Vercel.
 3. Chọn Root Directory `apps/web` và bật **Include source files outside of the Root Directory** để workspace config/lockfile ở repository root khả dụng.
 4. Giữ Framework Preset `Next.js`, default pnpm install và default `.next` output.
-5. Đặt `API_INTERNAL_URL` bằng verified Render origin cho Production.
+5. Đặt `API_INTERNAL_URL=https://eatease-api-rbgu.onrender.com` cho Production.
 6. Nếu bật Preview deployments, phải cung cấp Preview `API_INTERNAL_URL`. Chỉ dùng production API tạm thời khi foundation còn read-only; trước M2 mutations phải dùng isolated preview backend/database hoặc tắt preview deployment.
 7. Deploy và kiểm tra:
 
 ```text
-https://<vercel-project>.vercel.app/
-https://<vercel-project>.vercel.app/health
-https://<vercel-project>.vercel.app/api/v1/health
-https://<vercel-project>.vercel.app/api/v1/health/ready
+https://eat-ease.vercel.app/
+https://eat-ease.vercel.app/health
+https://eat-ease.vercel.app/api/v1/health
+https://eat-ease.vercel.app/api/v1/health/ready
 ```
 
 Public deployment chỉ được ghi nhận `VERIFIED` khi bốn URL trên trả kết quả đúng. Repository preparation hoặc dashboard báo deploy thành công chưa đủ.
+
+## M1 verification record
+
+Verified ngày `2026-10-27`:
+
+| Check                         | Expected result                                       | Status     |
+| ----------------------------- | ----------------------------------------------------- | ---------- |
+| Vercel `/`                    | HTTP `200`; foundation page hiển thị `API: available` | `VERIFIED` |
+| Vercel `/health`              | HTTP `200`                                            | `VERIFIED` |
+| Render `/api/v1/health`       | `{"status":"ok","service":"api"}`                     | `VERIFIED` |
+| Render `/api/v1/health/ready` | `{"status":"ready","database":"reachable"}`           | `VERIFIED` |
+| Vercel `/api/v1/health`       | Same-origin rewrite trả API liveness response         | `VERIFIED` |
+| Vercel `/api/v1/health/ready` | Same-origin rewrite trả database readiness response   | `VERIFIED` |
+
+Kiểm tra lại bằng browser hoặc HTTP client; cold start có thể làm request đầu chậm:
+
+```powershell
+Invoke-RestMethod https://eatease-api-rbgu.onrender.com/api/v1/health
+Invoke-RestMethod https://eatease-api-rbgu.onrender.com/api/v1/health/ready
+Invoke-RestMethod https://eat-ease.vercel.app/api/v1/health
+Invoke-RestMethod https://eat-ease.vercel.app/api/v1/health/ready
+```
 
 ## Actionable free-tier limitations
 
@@ -108,7 +179,12 @@ Free-tier terms và quotas có thể thay đổi. Trước mỗi public demo/rel
 
 ## Rollback and troubleshooting
 
+- Nếu GitHub Actions fail: sửa validation failure trên task branch; không bypass check hoặc deploy commit lỗi trực tiếp từ dashboard.
+- Nếu Render build fail: kiểm tra Node/pnpm pins, frozen lockfile, Prisma generation và build logs; không sửa production secret trong source.
+- Nếu Render start fail: xác nhận start command, platform `PORT`, required environment variables và Neon URLs đã được đặt trong dashboard.
 - Nếu migration fail: dừng release, không deploy code phụ thuộc schema mới.
 - Nếu Render liveness pass nhưng readiness fail: kiểm tra Neon state và Render secret values; không log/paste connection strings.
 - Nếu Vercel `/health` pass nhưng proxied `/api` fail: kiểm tra `API_INTERNAL_URL`, Render cold start và public API endpoints.
+- Nếu frontend hiển thị `API: unavailable` nhưng direct Render health pass: kiểm tra Vercel Production environment, redeploy sau khi đổi environment variable và kiểm tra rewrite path không có duplicated `/api`.
+- Nếu request đầu mất gần một phút nhưng request sau bình thường: đây thường là Render Free cold start; không dùng keep-alive traffic để lách free-tier policy.
 - Rollback application deploy không tự rollback database. Domain migration tương lai phải có forward-compatible rollout/rollback plan trong task tương ứng.
