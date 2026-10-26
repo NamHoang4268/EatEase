@@ -3,4 +3,5 @@ node_modules
 dist
 coverage
 apps/api/src/generated
+apps/web/next-env.d.ts
 pnpm-lock.yaml
