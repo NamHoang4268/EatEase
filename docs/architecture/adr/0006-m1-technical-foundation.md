@@ -16,15 +16,15 @@ M1 chỉ xây project foundation. Business modules, domain schema và applicatio
 
 Các major/version line sau được phê duyệt:
 
-| Component | Approved line | Candidate pin |
-|---|---|---|
-| Node.js | 24 LTS | `24.22.1` |
-| pnpm | 12 | `12.15.0` |
-| TypeScript | 6 | `6.0.3` |
-| Next.js | 16 App Router | `16.4.3` |
-| NestJS | 12 với Express adapter | `12.2.0` |
-| PostgreSQL | 18 | `postgres:18.6-bookworm` cho local |
-| Prisma ORM | 7 stable | Chốt exact patch khi setup |
+| Component  | Approved line          | Candidate pin                      |
+| ---------- | ---------------------- | ---------------------------------- |
+| Node.js    | 24 LTS                 | `24.22.1`                          |
+| pnpm       | 12                     | `12.15.0`                          |
+| TypeScript | 6                      | `6.0.3`                            |
+| Next.js    | 16 App Router          | `16.4.3`                           |
+| NestJS     | 12 với Express adapter | `12.2.0`                           |
+| PostgreSQL | 18                     | `postgres:18.6-bookworm` cho local |
+| Prisma ORM | 7 stable               | Chốt exact patch khi setup         |
 
 Candidate pins chỉ được ghi vào project sau khi task setup tương ứng xác minh availability, peer dependencies, build và runtime compatibility. Không dùng forced install, bỏ qua peer conflict hoặc coi toàn bộ matrix đã verified chỉ vì từng release tồn tại riêng lẻ.
 

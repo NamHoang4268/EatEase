@@ -1,0 +1,29 @@
+{
+  "name": "eatease",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@12.15.0",
+  "engines": {
+    "node": ">=24.15.0 <25",
+    "pnpm": ">=12 <13"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --filter @eatease/api --filter @eatease/web dev",
+    "build": "pnpm --recursive --if-present build",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "pnpm --recursive --if-present lint",
+    "typecheck": "pnpm --recursive --if-present typecheck",
+    "test": "pnpm --recursive --if-present test",
+    "db:up": "docker compose -f infrastructure/local/compose.yaml up -d postgres",
+    "db:down": "docker compose -f infrastructure/local/compose.yaml down",
+    "db:logs": "docker compose -f infrastructure/local/compose.yaml logs postgres",
+    "db:generate": "pnpm --filter @eatease/api db:generate",
+    "db:validate": "pnpm --filter @eatease/api db:validate",
+    "db:migrate:status": "pnpm --filter @eatease/api db:migrate:status",
+    "db:migrate:deploy": "pnpm --filter @eatease/api db:migrate:deploy"
+  },
+  "devDependencies": {
+    "prettier": "3.9.10"
+  }
+}

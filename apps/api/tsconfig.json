@@ -1,0 +1,12 @@
+{
+  "extends": "@eatease/tsconfig/node.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": ".",
+    "sourceMap": true,
+    "declaration": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true
+  },
+  "include": ["src/**/*.ts", "scripts/**/*.ts", "prisma7.config.ts", "vitest.config.ts"]
+}
