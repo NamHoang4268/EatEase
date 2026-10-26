@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: eatease-api
+    runtime: node
+    plan: free
+    buildCommand: pnpm install --frozen-lockfile && pnpm db:generate && pnpm --filter @eatease/api build
+    startCommand: pnpm --filter @eatease/api start
+    healthCheckPath: /api/v1/health/ready
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: NODE_VERSION
+        value: 24.22.1
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_POOL_MAX
+        value: 5
+      - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_DATABASE_URL
+        sync: false

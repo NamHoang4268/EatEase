@@ -10,4 +10,4 @@ const application = await NestFactory.create(AppModule);
 application.setGlobalPrefix('api/v1');
 application.useGlobalFilters(new FoundationExceptionFilter());
 application.enableShutdownHooks();
-await application.listen(environment.API_PORT);
+await application.listen(environment.API_PORT, '0.0.0.0');

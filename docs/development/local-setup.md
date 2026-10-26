@@ -46,7 +46,7 @@ Các URL mặc định:
 
 ## Environment files
 
-- `apps/api/.env`: `NODE_ENV`, `API_PORT`, `DATABASE_URL`.
+- `apps/api/.env`: `NODE_ENV`, `API_PORT`, `DATABASE_URL`, `DIRECT_DATABASE_URL`, `DATABASE_POOL_MAX`.
 - `apps/web/.env`: `API_INTERNAL_URL`.
 - `infrastructure/local/.env`: optional override cho PostgreSQL Compose.
 
@@ -63,6 +63,7 @@ pnpm format:check
 pnpm lint
 pnpm typecheck
 pnpm test
+pnpm test:integration
 pnpm build
 
 pnpm db:up
@@ -95,3 +96,15 @@ Không dùng `prisma db push` cho managed environment. Foundation hiện chưa c
 - ESLint `9.39.5` được dùng vì plugins đi kèm `eslint-config-next@16.4.3` chưa khai báo tương thích ESLint 10. Không force hoặc ignore peer dependency.
 - pnpm 12 dùng `allowBuilds` tối thiểu cho Prisma, esbuild và native resolver scripts.
 - pnpm có thể phát hiện optional agent skill do package dependency cung cấp. EatEase không approve skill đó vì không cần cho runtime hoặc build.
+- API ưu tiên platform-provided `PORT`, giữ `API_PORT=3001` làm local fallback và bind `0.0.0.0` để chạy được trong managed web service.
+- `DATABASE_URL` dùng cho application traffic; `DIRECT_DATABASE_URL` được Prisma CLI ưu tiên cho migration. Local Docker có thể dùng cùng một URL cho cả hai.
+
+Real-database integration test yêu cầu PostgreSQL đang chạy và API env đã được load:
+
+```powershell
+pnpm db:up
+$env:DATABASE_URL='postgresql://eatease:eatease_dev@localhost:5432/eatease?schema=public'
+$env:DIRECT_DATABASE_URL=$env:DATABASE_URL
+pnpm test:integration
+pnpm db:down
+```

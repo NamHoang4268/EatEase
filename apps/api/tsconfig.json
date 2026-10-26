@@ -8,5 +8,11 @@
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true
   },
-  "include": ["src/**/*.ts", "scripts/**/*.ts", "prisma7.config.ts", "vitest.config.ts"]
+  "include": [
+    "src/**/*.ts",
+    "scripts/**/*.ts",
+    "prisma7.config.ts",
+    "vitest.config.ts",
+    "vitest.integration.config.ts"
+  ]
 }

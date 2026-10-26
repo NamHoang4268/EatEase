@@ -1,6 +1,6 @@
 # Decision log
 
-Last baseline update: 2026-10-26.
+Last baseline update: 2026-10-27.
 
 ## APPROVED
 
@@ -36,6 +36,8 @@ Last baseline update: 2026-10-26.
 - ESLint Flat Config + separate Prettier; per-application Zod environment validation.
 - Testing direction: Vitest, React Testing Library, Supertest, PostgreSQL thật và Playwright; thêm incrementally theo nhu cầu task.
 - GitHub Actions validate PR/`main` bằng frozen install, format, lint, typecheck, tests và build; database/E2E checks thêm khi foundation sẵn sàng.
+- Exact M1 pins đã verify: Node.js `24.22.1`, pnpm `12.15.0`, TypeScript `6.0.3`, Next.js `16.4.3`, NestJS `12.2.0`, PostgreSQL `18.6-bookworm` và Prisma `7.10.1`.
+- Portfolio/demo deployment theo [ADR-0007](../architecture/adr/0007-portfolio-deployment.md): Vercel Hobby web, Render Free API và Neon Free PostgreSQL; không thay thế AWS/M5 production direction.
 
 ## PROPOSED
 
@@ -46,16 +48,14 @@ Last baseline update: 2026-10-26.
 - Same-origin deployment direction (web/API/Socket.IO sau một public origin), dùng host-only `HttpOnly; Secure; SameSite=Lax` cookies.
 - CSRF: allowed-Origin validation + synchronizer/signed double-submit token.
 - Outbox publisher chạy cùng API process trong MVP với safe locking.
-- Candidate pins chờ compatibility/availability verification: Node.js `24.22.1`, pnpm `12.15.0`, TypeScript `6.0.3`, Next.js `16.4.3`, NestJS `12.2.0`, local PostgreSQL image `postgres:18.6-bookworm`; Prisma 7 exact patch chốt khi setup.
-
-Các proposal phải được validated/chốt ở milestone implementation liên quan, không được hardcode ngầm.
+  Các proposal phải được validated/chốt ở milestone implementation liên quan, không được hardcode ngầm.
 
 ## OPEN
 
 - Production domain và exact reverse-proxy topology.
 - Staff session representation: opaque server-side session hay access/refresh pair.
 - Local Next.js REST rewrite, browser/API cookie-session boundary và Socket.IO proxy/WebSocket upgrade behavior.
-- Complete dependency/peer compatibility matrix cho M1 cho đến khi setup verification hoàn tất.
+- Public Vercel/Render/Neon URLs và deployment verification evidence.
 - Menu modifiers chi tiết ngoài contract tối thiểu.
 - Manager force-close/correction procedure chi tiết.
 - Retention/cleanup periods cho idempotency, outbox, audit và closed guest sessions.

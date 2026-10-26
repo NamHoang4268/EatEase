@@ -7,7 +7,14 @@ import { loadEnvironment } from '../config/environment.js';
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
   constructor() {
     const environment = loadEnvironment();
-    super({ adapter: new PrismaPg({ connectionString: environment.DATABASE_URL }) });
+    super({
+      adapter: new PrismaPg({
+        connectionString: environment.DATABASE_URL,
+        max: environment.DATABASE_POOL_MAX,
+        connectionTimeoutMillis: 10_000,
+        idleTimeoutMillis: 30_000,
+      }),
+    });
   }
 
   async onModuleInit(): Promise<void> {

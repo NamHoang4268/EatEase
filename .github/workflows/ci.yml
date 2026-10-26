@@ -1,0 +1,89 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate foundation
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:18.6-bookworm
+        env:
+          POSTGRES_DB: eatease
+          POSTGRES_USER: eatease
+          POSTGRES_PASSWORD: eatease_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U eatease -d eatease"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://eatease:eatease_ci@localhost:5432/eatease?schema=public
+      DIRECT_DATABASE_URL: postgresql://eatease:eatease_ci@localhost:5432/eatease?schema=public
+      DATABASE_POOL_MAX: 5
+      API_INTERNAL_URL: http://127.0.0.1:3001
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 12.15.0
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma Client
+        run: pnpm db:generate
+
+      - name: Check formatting
+        run: pnpm format:check
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Run unit and component tests
+        run: pnpm test
+
+      - name: Validate Prisma schema
+        run: pnpm db:validate
+
+      - name: Apply reviewed migrations
+        run: pnpm db:migrate:deploy
+
+      - name: Check database connection
+        run: pnpm --filter @eatease/api db:check
+
+      - name: Run PostgreSQL integration tests
+        run: pnpm test:integration
+
+      - name: Build applications
+        run: pnpm build
