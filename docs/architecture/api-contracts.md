@@ -1,6 +1,6 @@
 # API contracts — first vertical slice
 
-Status: **APPROVED planning baseline**. M2.2 public table/menu reads đã được implement; guest/session và mutation contracts còn lại tiếp tục theo milestone task tương ứng.
+Status: **APPROVED planning baseline**. M2.2 public table/menu reads và M2.3 staff authentication đã được implement; guest/session và business mutation contracts còn lại tiếp tục theo milestone task tương ứng.
 
 Base path: `/api/v1`. REST là authoritative; Socket.IO event chỉ báo client refetch state.
 
@@ -88,6 +88,38 @@ Trả active public categories/items theo deterministic order, VND integer price
 ```
 
 `priceAmount` là decimal integer string trong JSON để serialize PostgreSQL/Prisma `BIGINT` không mất precision; frontend dùng integer-safe arithmetic và không xem local draft value là authoritative khi submit ở task tương lai.
+
+## Staff authentication
+
+Staff endpoints dùng opaque host-only cookie `eatease_staff_session`; raw session token không xuất hiện trong JSON. CSRF-bearing responses luôn `Cache-Control: no-store`.
+
+### `POST /staff/auth/login`
+
+Requires exact trusted `Origin`. `locationId` có thể bỏ qua khi user chỉ có đúng một active membership; nếu có nhiều active memberships thì client phải chọn location. Invalid credentials/scope/status dùng cùng generic `401 STAFF_AUTHENTICATION_FAILED`.
+
+```json
+{
+  "email": "manager@example.test",
+  "password": "user-provided secret",
+  "locationId": "uuid"
+}
+```
+
+Successful response sets staff cookie and returns staff scope/effective permissions, absolute `expiresAt` và raw `csrfToken` để client giữ trong memory. Password và raw session token không được trả về.
+
+### `GET /staff/auth/me`
+
+Requires valid staff cookie; read-only và không cần CSRF header. Response trả current user, membership, restaurant/location scope và effective permissions. Session expiry không được extend.
+
+### `GET /staff/auth/csrf-token`
+
+CSRF recovery sau browser refresh. Requires valid staff cookie và trusted `Origin`; atomically replaces stored CSRF hash, returns replacement raw token với `Cache-Control: no-store`, không tạo staff session mới. Token trước đó hết hiệu lực.
+
+### `POST /staff/auth/logout`
+
+Requires valid staff cookie, trusted `Origin` và `X-CSRF-Token`. Revokes session immediately, clears cookie và trả `204`.
+
+Protected staff mutations dùng `StaffSessionGuard` + `StaffCsrfGuard`; business handlers additionally declare required permission và validate resource relationship/location. Thiếu permission, wrong scope hoặc missing authorization metadata đều deny by default.
 
 ## Activation
 

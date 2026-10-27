@@ -31,16 +31,20 @@ Browser chỉ thấy same-origin `/api/...`. `API_INTERNAL_URL` không có prefi
 
 ### Render API
 
-| Variable              | Secret | Value/source                                                                      |
-| --------------------- | :----: | --------------------------------------------------------------------------------- |
-| `NODE_ENV`            |   No   | `production`                                                                      |
-| `NODE_VERSION`        |   No   | `24.22.1`                                                                         |
-| `DATABASE_POOL_MAX`   |   No   | `5` cho single Free instance                                                      |
-| `DATABASE_URL`        |  Yes   | Neon pooled URL; hostname thường có `-pooler`                                     |
-| `DIRECT_DATABASE_URL` |  Yes   | Neon direct/unpooled URL cho Prisma migrations                                    |
-| `PORT`                |   No   | Render tự cấp; API ưu tiên `PORT` và fallback về `API_PORT` cho local development |
+| Variable              | Secret | Value/source                                                                       |
+| --------------------- | :----: | ---------------------------------------------------------------------------------- |
+| `NODE_ENV`            |   No   | `production`                                                                       |
+| `NODE_VERSION`        |   No   | `24.22.1`                                                                          |
+| `DATABASE_POOL_MAX`   |   No   | `5` cho single Free instance                                                       |
+| `TRUSTED_WEB_ORIGINS` |   No   | Comma-separated exact origins; staff deployment dùng `https://eat-ease.vercel.app` |
+| `TRUST_PROXY_HOPS`    |   No   | `0` cho tới khi exact trusted proxy-hop topology được verify                       |
+| `DATABASE_URL`        |  Yes   | Neon pooled URL; hostname thường có `-pooler`                                      |
+| `DIRECT_DATABASE_URL` |  Yes   | Neon direct/unpooled URL cho Prisma migrations                                     |
+| `PORT`                |   No   | Render tự cấp; API ưu tiên `PORT` và fallback về `API_PORT` cho local development  |
 
 Không đặt `DATABASE_URL` hoặc `DIRECT_DATABASE_URL` ở Vercel.
+
+Staff authenticated browser requests cần credentials và exact Origin allowlist. Production API set host-only `SameSite=None; Secure; HttpOnly` staff cookie; một số browser/privacy modes vẫn có thể block third-party cookies. Không tăng `TRUST_PROXY_HOPS` theo header do client gửi; chỉ thay sau khi verify Render proxy chain. Các biến này phải được owner cấu hình/review riêng trong Render dashboard trước khi coi staff login cloud deployment là verified.
 
 ### Vercel web
 

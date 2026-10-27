@@ -1,6 +1,6 @@
 # Security model
 
-Status: **APPROVED principles**, timeout/domain specifics được đánh dấu rõ.
+Status: **APPROVED principles**. Staff authentication baseline được owner approve cho M2.3; guest timeout/domain specifics vẫn được đánh dấu rõ.
 
 ## Trust model
 
@@ -12,7 +12,7 @@ Status: **APPROVED principles**, timeout/domain specifics được đánh dấu 
 
 ## Deployment origin strategy
 
-### Recommended default
+### Recommended future topology
 
 Expose web và API dưới cùng một site/domain qua reverse proxy:
 
@@ -29,7 +29,7 @@ Lợi ích:
 - CSRF policy nhất quán.
 - Local dev có thể dùng Next.js proxy/reverse proxy để giữ một browser origin.
 
-`OPEN`: production domain cụ thể chỉ chốt ở deployment milestone. Nếu buộc dùng subdomains, phải review cookie Domain, CORS allowlist và CSRF assumptions; không wildcard credentials origins.
+Portfolio deployment hiện tại dùng hai site khác nhau: web `https://eat-ease.vercel.app` và API `https://eatease-api-rbgu.onrender.com`. Staff browser requests vì vậy dùng explicit CORS allowlist với credentials, không wildcard hoặc dynamic Origin trust. Production staff cookie dùng `SameSite=None; Secure; HttpOnly`; browser vẫn có thể chặn third-party cookies theo policy/privacy setting, nên topology này không được xem là universally compatible. Same-site reverse proxy vẫn là direction tốt hơn cho deployment tương lai sau explicit review.
 
 ## Guest cookies
 
@@ -52,13 +52,12 @@ Host-only cookie
 
 ## Staff authentication cookies
 
-- Staff login credential/session tách namespace với guest cookie.
-- Password dùng modern password hashing configuration được chốt ở M1.
-- Short-lived staff access session + server-side revocation/refresh strategy.
-- Cookie cũng `HttpOnly`, `Secure`, `SameSite=Lax`, host-only.
-- Sensitive permission/membership status được kiểm tra lại server-side; token cũ không vượt qua disabled membership.
-
-`OPEN`: exact staff session format (opaque server session hay access/refresh token pair) được chốt trong M1 security design. Không được đưa bearer token vào localStorage mặc định.
+- Staff session là opaque CSPRNG token; database chỉ lưu SHA-256 hash và raw token chỉ tồn tại trong host-only cookie `eatease_staff_session`.
+- Session bind đúng một active staff membership/location, absolute expiry 8 giờ, không rolling refresh. Expired session bắt buộc login lại.
+- Mỗi request xác thực lại expiry, revocation, active staff user, active membership, active location/restaurant và permission/resource scope từ database.
+- Logout revoke session ngay trong database. Raw session token không xuất hiện trong JSON response, log hoặc database.
+- Local cookie dùng `HttpOnly; SameSite=Lax; Path=/` và không `Secure` để tương thích HTTP localhost. Production cross-site cookie dùng `HttpOnly; Secure; SameSite=None; Path=/`. Không set `Domain`, nên cookie luôn host-only.
+- Password hash dùng Node.js `scrypt` với random salt; không lưu hoặc log plaintext password.
 
 ## CSRF protection
 
@@ -70,15 +69,33 @@ SameSite không phải lớp bảo vệ duy nhất. Mọi state-changing cookie-
 4. Reject missing/mismatched token.
 5. Không thay đổi state qua GET.
 
-Guest bootstrap có thể cấp CSRF token không nhạy cảm cho client; credential cookie vẫn HttpOnly. Staff session dùng cơ chế tương tự.
+Guest bootstrap có thể cấp CSRF token không nhạy cảm cho client; credential cookie vẫn HttpOnly. Guest exact mechanism vẫn thuộc M2.4.
+
+Staff session dùng synchronizer token riêng cho từng session:
+
+- Login trả raw CSRF token trong `Cache-Control: no-store` response; database chỉ lưu SHA-256 hash.
+- Client giữ token trong memory và gửi `X-CSRF-Token` cho authenticated mutation; không dùng localStorage hoặc persistent browser storage.
+- Mutation kiểm tra cả exact trusted `Origin` và token bằng constant-time comparison.
+- `GET /staff/auth/me` chỉ đọc và không cần CSRF header.
+- Sau browser refresh, `GET /staff/auth/csrf-token` yêu cầu valid staff session + trusted Origin, atomically thay hash cũ bằng hash của replacement token và trả token mới với `Cache-Control: no-store`. Endpoint không tạo session mới và token cũ hết hiệu lực ngay.
+
+## Staff login abuse protection
+
+- Tối đa 5 failed attempts trong 15 phút cho key `normalized email + source IP`; attempt tiếp theo trả `429`.
+- Limiter là in-memory cho MVP single API instance, reset khi process restart và không phối hợp giữa nhiều replicas.
+- Login errors dùng generic message cho unknown user, wrong password, inactive user/membership và ambiguous membership selection.
+- Source IP lấy từ Express request sau cấu hình proxy trust. `TRUST_PROXY_HOPS=0` mặc định không trust client-provided forwarding headers; chỉ set exact hop count sau khi verify deployment topology.
+- Không persistent account lockout trong MVP.
 
 Webhook endpoints tương lai không dùng browser CSRF token; chúng dùng provider signature, raw body, event idempotency và endpoint-specific authentication.
 
 ## Session expiration and recovery
 
-Config keys dự kiến, chưa tạo configuration file:
+Staff origin/proxy keys đã được validate trong API configuration; guest lifecycle keys vẫn là planned values cho các task tương ứng:
 
 ```text
+TRUSTED_WEB_ORIGINS=http://localhost:3000  # IMPLEMENTED
+TRUST_PROXY_HOPS=0                        # IMPLEMENTED
 ACTIVATION_REQUEST_TTL_MINUTES=5        # PROPOSED
 JOIN_CODE_TTL_MINUTES=30                # PROPOSED
 GUEST_IDLE_TIMEOUT_MINUTES=30           # APPROVED initial default
@@ -139,3 +156,7 @@ Không auto-submit draft sau recovery.
 - Expiry/revocation and recovery E2E tests.
 - Join-code brute-force/rate-limit tests.
 - WebSocket handshake, room authorization và revoked-session tests.
+
+## Staff bootstrap
+
+Privileged staff account chỉ được tạo bằng explicit owner-invoked `pnpm db:bootstrap:staff`. Command nhận identity, password và location qua process-scoped inputs, từ chối managed database, validate active target scope và không overwrite existing identity. Migration/application startup không tự tạo privileged account; password/session secret không được print.

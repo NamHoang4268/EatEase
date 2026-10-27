@@ -107,7 +107,7 @@ Dependency: M1 complete/owner-approved; [Phase 1 plan](phase-01.md) approved. M2
 | DONE   | M2.0     | Clarify catalog/table baseline, approved constraints và remaining decision gates |
 | DONE   | M2.1     | Implement scoped restaurant/location/table/menu schema + synthetic fixtures      |
 | DONE   | M2.2     | Implement public static-QR table context, menu API và customer browse/cart       |
-| TODO   | M2.3     | Implement staff auth, memberships, multi-role permissions và login               |
+| DONE   | M2.3     | Implement staff auth, memberships, multi-role permissions và login               |
 | TODO   | M2.4     | Implement browse-only guest session, cookie/origin boundary và CSRF              |
 | TODO   | M2.5     | Implement activation request, generic waiting state và staff queue               |
 | TODO   | M2.6     | Implement atomic approval/rejection và approved credential-claim contract        |
@@ -121,6 +121,8 @@ Dependency: M1 complete/owner-approved; [Phase 1 plan](phase-01.md) approved. M2
 M2.1 evidence: versioned Prisma migration deploys cleanly on isolated PostgreSQL; integration tests cover scoped relationships, documented uniqueness/check constraints, MVP one-active-location partial index và idempotent synthetic fixtures. Public menu/API behavior remains M2.2 scope.
 
 M2.2 evidence: read-only public table/menu endpoints enforce active scope and safe errors, serialize VND `BIGINT` without precision loss, and pass real PostgreSQL scope/ordering tests. `/t/[publicId]` provides responsive browse states and an in-memory draft cart with tested quantity/subtotal behavior; it creates no credential, activation request or order.
+
+M2.3 evidence: versioned staff/RBAC/session migration deploys cleanly on isolated PostgreSQL; opaque hash-only 8-hour sessions, salted `scrypt`, revocation, CSRF rotation/origin enforcement, explicit CORS/cookie policy and in-memory login throttling are covered by unit/integration tests. Authorization guard tests cover allowed, denied và wrong-location access; inactive/expired/revoked session paths use current database state. Local owner bootstrap is explicit and refuses managed database targets.
 
 ## M3 — Fulfillment, cancellation and serving
 

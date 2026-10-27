@@ -1,6 +1,6 @@
 # Relational data model
 
-Status: **APPROVED logical baseline**. M2.1 đã triển khai physical Prisma schema và migration cho restaurant/location/table/menu catalog; các domain tables còn lại tiếp tục là logical baseline cho các task M2–M4 tương ứng.
+Status: **APPROVED logical baseline**. M2.1 đã triển khai physical Prisma schema/migration cho restaurant/location/table/menu catalog; M2.3 đã triển khai staff identity, membership, roles/permissions và staff session. Các domain tables còn lại tiếp tục là logical baseline cho các task M2–M4 tương ứng.
 
 ## ERD
 
@@ -117,8 +117,17 @@ Index này là MVP-only. Không đổi `is_active` hoặc status terminology đ�
 - `permission(id, code)`
 - `membership_role(membership_id, role_id)`
 - `role_permission(role_id, permission_id)`
+- `staff_session(id, staff_user_id, membership_id, token_hash, csrf_token_hash, expires_at, revoked_at, created_at)`
 
-Unique `(staff_user_id, location_id)`; effective permissions là union của roles trên active membership.
+Important constraints:
+
+- `staff_user.email` unique, trimmed lowercase và non-empty; password field chỉ lưu encoded salted `scrypt` hash.
+- Staff user status là `ACTIVE|INACTIVE`; membership status là `ACTIVE|INACTIVE|REVOKED` để disable tạm thời hoặc thu hồi scope rõ ràng.
+- Unique `(staff_user_id, location_id)`; effective permissions là union của roles trên active membership.
+- Composite membership/location FK enforce membership restaurant/location scope; `membership_role` chứa `restaurant_id` để composite FKs chặn role từ restaurant khác.
+- `staff_session(membership_id, staff_user_id)` references đúng membership/user pair; session không thể bind membership của user khác.
+- Session và CSRF token chỉ lưu lowercase SHA-256 hash 64 ký tự; raw token không persistence.
+- `expires_at > created_at`; `revoked_at` null hoặc không trước `created_at`. Application đặt absolute expiry đúng 8 giờ và không rolling refresh.
 
 ### Menu
 

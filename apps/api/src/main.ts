@@ -7,6 +7,17 @@ import { loadEnvironment } from './config/environment.js';
 
 const environment = loadEnvironment();
 const application = await NestFactory.create(AppModule);
+application.enableCors({
+  origin: environment.TRUSTED_WEB_ORIGINS,
+  credentials: true,
+  allowedHeaders: ['Content-Type', 'X-CSRF-Token'],
+});
+if (environment.TRUST_PROXY_HOPS > 0) {
+  const express = application.getHttpAdapter().getInstance() as {
+    set(name: string, value: number): void;
+  };
+  express.set('trust proxy', environment.TRUST_PROXY_HOPS);
+}
 application.setGlobalPrefix('api/v1');
 application.useGlobalFilters(new FoundationExceptionFilter());
 application.enableShutdownHooks();

@@ -47,7 +47,7 @@ Các URL mặc định:
 
 ## Environment files
 
-- `apps/api/.env`: `NODE_ENV`, `API_PORT`, `DATABASE_URL`, `DIRECT_DATABASE_URL`, `DATABASE_POOL_MAX`.
+- `apps/api/.env`: `NODE_ENV`, `API_PORT`, `DATABASE_URL`, `DIRECT_DATABASE_URL`, `DATABASE_POOL_MAX`, `TRUSTED_WEB_ORIGINS`, `TRUST_PROXY_HOPS`.
 - `apps/web/.env`: `API_INTERNAL_URL`.
 - `infrastructure/local/.env`: optional override cho PostgreSQL Compose.
 
@@ -72,6 +72,7 @@ pnpm db:logs
 pnpm db:validate
 pnpm db:generate
 pnpm db:seed:catalog
+pnpm db:bootstrap:staff
 pnpm db:migrate:status
 pnpm db:migrate:deploy
 pnpm --filter @eatease/api db:check
@@ -101,6 +102,23 @@ pnpm db:seed:catalog
 
 Command có thể chạy lại mà không tạo duplicate và không chạy trong migration hoặc application startup. Script mặc định từ chối managed database; public portfolio seed chỉ được thực hiện bằng một owner-approved operation riêng. Fixtures không chứa staff/guest credentials, tokens, secrets hoặc personal information.
 
+## Explicit local staff bootstrap
+
+M2.3 không tạo privileged account trong migration hoặc application startup. Sau khi review đúng local database target, owner có thể tạo initial Manager bằng process-scoped inputs. Command từ chối non-local database và existing email; nó không print password/session secret.
+
+```powershell
+$env:DATABASE_URL='postgresql://eatease:eatease_dev@localhost:5432/eatease?schema=public'
+$env:STAFF_BOOTSTRAP_EMAIL='owner@example.test'
+$env:STAFF_BOOTSTRAP_NAME='Local Owner'
+$env:STAFF_BOOTSTRAP_LOCATION_ID='<active-location-uuid>'
+$staffBootstrapPassword = Read-Host 'Staff password (minimum 12 characters)' -AsSecureString
+$env:STAFF_BOOTSTRAP_PASSWORD = [Net.NetworkCredential]::new('', $staffBootstrapPassword).Password
+pnpm db:bootstrap:staff
+Remove-Item Env:STAFF_BOOTSTRAP_EMAIL,Env:STAFF_BOOTSTRAP_NAME,Env:STAFF_BOOTSTRAP_LOCATION_ID,Env:STAFF_BOOTSTRAP_PASSWORD
+```
+
+Không đặt bootstrap password trong `.env`, shell script committed hoặc command argument. Managed/public portfolio bootstrap cần owner authorization riêng và không dùng command local-only này.
+
 ## Current compatibility notes
 
 - Approved pins đã được build/test bằng Node.js `24.22.1`.
@@ -124,3 +142,5 @@ pnpm db:down
 ```
 
 Nếu database đã tồn tại, bỏ qua lệnh `createdb`. Catalog integration suite từ chối non-local URL và từ chối database local không đúng tên; GitHub Actions dùng PostgreSQL service tạm thời riêng cho từng job.
+
+Staff auth integration suite dùng cùng isolated database guard. M2.3 migration phải được apply trước khi chạy và suite xóa chỉ các synthetic IDs riêng của nó. Không trỏ `DATABASE_URL` vào Neon/shared database.
