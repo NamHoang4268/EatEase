@@ -116,4 +116,50 @@ describe('PublicMenuExperience', () => {
     render(<PublicMenuExperience publicId={tableResponse.data.publicId} />);
     await waitFor(() => expect(screen.getByText('Chưa thể tải thực đơn')).toBeDefined());
   });
+
+  it('triggers guest bootstrap when table context loads successfully', async () => {
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/api/v1/public/tables/')) {
+        return Promise.resolve(mockResponse(tableResponse));
+      }
+      if (url.includes('/api/v1/public/menu')) {
+        return Promise.resolve(mockResponse(menuResponse));
+      }
+      if (url.includes('/api/v1/guest-sessions')) {
+        return Promise.resolve(
+          mockResponse({
+            data: {
+              table: tableResponse.data,
+              activationState: 'NOT_REQUESTED',
+              session: {
+                accessLevel: 'BROWSE_ONLY',
+                idleExpiresAt: new Date(Date.now() + 1800000).toISOString(),
+                absoluteExpiresAt: new Date(Date.now() + 28800000).toISOString(),
+              },
+              csrfToken: 'test-csrf-token',
+            },
+          }),
+        );
+      }
+      return Promise.reject(new Error(`Unhandled url: ${url}`));
+    });
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<PublicMenuExperience publicId={tableResponse.data.publicId} />);
+    expect(await screen.findByText('Bếp Mây Demo')).toBeDefined();
+
+    await waitFor(() => {
+      const bootstrapCall = fetchMock.mock.calls.find(
+        (call: unknown[]) =>
+          typeof call[0] === 'string' && call[0].includes('/api/v1/guest-sessions'),
+      );
+      expect(bootstrapCall).toBeDefined();
+    });
+
+    const notice = screen.getByRole('note');
+    await waitFor(() => {
+      expect(notice.getAttribute('data-session-established')).toBe('true');
+    });
+  });
 });

@@ -5,6 +5,8 @@ const environmentSchema = z.object({
   API_PORT: z.coerce.number().int().min(1).max(65_535).default(3001),
   DATABASE_URL: z.url().startsWith('postgresql://'),
   DATABASE_POOL_MAX: z.coerce.number().int().min(1).max(20).default(5),
+  GUEST_IDLE_TIMEOUT_MINUTES: z.coerce.number().int().min(1).max(1440).default(30),
+  GUEST_ABSOLUTE_TIMEOUT_HOURS: z.coerce.number().int().min(1).max(72).default(8),
   TRUSTED_WEB_ORIGINS: z
     .string()
     .default('http://localhost:3000')

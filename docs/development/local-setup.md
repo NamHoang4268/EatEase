@@ -47,7 +47,7 @@ Các URL mặc định:
 
 ## Environment files
 
-- `apps/api/.env`: `NODE_ENV`, `API_PORT`, `DATABASE_URL`, `DIRECT_DATABASE_URL`, `DATABASE_POOL_MAX`, `TRUSTED_WEB_ORIGINS`, `TRUST_PROXY_HOPS`.
+- `apps/api/.env`: `NODE_ENV`, `API_PORT`, `DATABASE_URL`, `DIRECT_DATABASE_URL`, `DATABASE_POOL_MAX`, `TRUSTED_WEB_ORIGINS`, `TRUST_PROXY_HOPS`, `GUEST_IDLE_TIMEOUT_MINUTES`, `GUEST_ABSOLUTE_TIMEOUT_HOURS`.
 - `apps/web/.env`: `API_INTERNAL_URL`.
 - `infrastructure/local/.env`: optional override cho PostgreSQL Compose.
 
@@ -143,4 +143,4 @@ pnpm db:down
 
 Nếu database đã tồn tại, bỏ qua lệnh `createdb`. Catalog integration suite từ chối non-local URL và từ chối database local không đúng tên; GitHub Actions dùng PostgreSQL service tạm thời riêng cho từng job.
 
-Staff auth integration suite dùng cùng isolated database guard. M2.3 migration phải được apply trước khi chạy và suite xóa chỉ các synthetic IDs riêng của nó. Không trỏ `DATABASE_URL` vào Neon/shared database.
+Staff auth và guest session integration suites dùng cùng isolated database guard. M2.3 và M2.4 migrations phải được apply trước khi chạy và các test suites xóa chỉ các synthetic IDs riêng của chúng. Không trỏ `DATABASE_URL` vào Neon/shared database.

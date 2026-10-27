@@ -15,8 +15,23 @@ describe('loadEnvironment', () => {
       API_PORT: 3101,
       DATABASE_URL: 'postgresql://user:password@localhost:5432/eatease',
       DATABASE_POOL_MAX: 7,
+      GUEST_IDLE_TIMEOUT_MINUTES: 30,
+      GUEST_ABSOLUTE_TIMEOUT_HOURS: 8,
       TRUSTED_WEB_ORIGINS: ['http://localhost:3000'],
       TRUST_PROXY_HOPS: 0,
+    });
+  });
+
+  it('parses custom guest timeout configurations', () => {
+    expect(
+      loadEnvironment({
+        DATABASE_URL: 'postgresql://user:password@localhost:5432/eatease',
+        GUEST_IDLE_TIMEOUT_MINUTES: '45',
+        GUEST_ABSOLUTE_TIMEOUT_HOURS: '12',
+      }),
+    ).toMatchObject({
+      GUEST_IDLE_TIMEOUT_MINUTES: 45,
+      GUEST_ABSOLUTE_TIMEOUT_HOURS: 12,
     });
   });
 

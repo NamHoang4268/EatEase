@@ -49,15 +49,18 @@ Last baseline update: 2026-10-28.
 - Staff CSRF dùng per-session synchronizer token hash. Login trả raw token một lần; authenticated mutation cần `X-CSRF-Token` + trusted Origin. Authenticated recovery endpoint rotate replacement token và không tạo session mới.
 - Staff password dùng Node.js `scrypt` với random salt. Login abuse protection cho phép tối đa 5 failures/15 phút theo normalized email + source IP bằng in-memory limiter cho MVP single instance; không persistent lockout.
 - Portfolio cross-site staff auth dùng explicit credentialed CORS allowlist và host-only production cookie `HttpOnly; Secure; SameSite=None`; local HTTP dùng `SameSite=Lax` không `Secure`. Browser third-party-cookie restrictions vẫn là deployment limitation.
+- Guest browse session (M2.4) dùng opaque CSPRNG token, chỉ persist SHA-256 hash trong database, bind một active table/location/restaurant context với access level `BROWSE_ONLY`. Safe reuse/refresh trên cùng một bàn ngăn chặn việc tạo session tràn lan khi tải lại trang; không cấp quyền ordering hay kích hoạt bàn.
+- Guest session timeouts: idle timeout 30 phút (gia hạn khi có hoạt động hợp lệ trên cùng bàn) và absolute timeout 8 giờ (không thể kéo dài), cấu hình qua `GUEST_IDLE_TIMEOUT_MINUTES` và `GUEST_ABSOLUTE_TIMEOUT_HOURS`.
+- Guest CSRF dùng per-session synchronizer token hash: bootstrap cấp raw token trong response `Cache-Control: no-store`, database chỉ lưu SHA-256 hash, authenticated requests yêu cầu trusted Origin và `X-CSRF-Token`. Endpoint `GET /guest-sessions/csrf-token` rotate token sau browser refresh.
+- Guest cookie `eatease_guest_session` tách biệt hoàn toàn với staff cookie, host-only `HttpOnly`, `SameSite=Lax` trong local dev và `SameSite=None; Secure` trong cross-site production.
+- Defer `TableSession` physical relation: `guest_session.table_session_id` là nullable column và chưa tạo FK vật lý ở M2.4 để tránh tạo placeholder table sớm.
 
 ## PROPOSED
 
 - Activation request TTL: 5 phút.
 - Join-code TTL: 30 phút.
-- Guest absolute timeout: 8 giờ.
 - Activation polling dùng read-only `GET`; sau approval, một idempotent `POST` credential-claim command rotate credential và cấp order-enabled access. Exact endpoint/effects đang chờ owner approval.
 - Same-origin deployment direction (web/API/Socket.IO sau một public origin), dùng host-only `HttpOnly; Secure; SameSite=Lax` cookies.
-- Guest CSRF exact mechanism cho M2.4: allowed-Origin validation + synchronizer/signed double-submit token. Staff synchronizer-token contract đã `APPROVED` và implement ở M2.3.
 - Outbox publisher chạy cùng API process trong MVP với safe locking.
   Các proposal phải được validated/chốt ở milestone implementation liên quan, không được hardcode ngầm.
 
