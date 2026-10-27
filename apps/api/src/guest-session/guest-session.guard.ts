@@ -25,4 +25,3 @@ export class GuestSessionGuard implements CanActivate {
     return true;
   }
 }
-

@@ -24,4 +24,3 @@ describe('guestCookieOptions', () => {
     expect(prodOptions).not.toHaveProperty('domain');
   });
 });
-

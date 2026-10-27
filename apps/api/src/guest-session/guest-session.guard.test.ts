@@ -56,4 +56,3 @@ describe('GuestSessionGuard', () => {
     await expect(guard.canActivate(context)).rejects.toThrow(UnauthorizedException);
   });
 });
-

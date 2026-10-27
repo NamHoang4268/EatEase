@@ -34,4 +34,3 @@ export type GuestBootstrapResult = {
   table: GuestBootstrapTableContext;
   activationState: 'NOT_REQUESTED';
 };
-

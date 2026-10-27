@@ -27,4 +27,3 @@ export class GuestCsrfGuard implements CanActivate {
     return true;
   }
 }
-
