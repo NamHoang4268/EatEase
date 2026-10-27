@@ -1,6 +1,6 @@
 # Decision log
 
-Last baseline update: 2026-10-27.
+Last baseline update: 2026-10-28.
 
 ## APPROVED
 
@@ -45,6 +45,10 @@ Last baseline update: 2026-10-27.
 - Initial M1 cloud deployment verified ngày `2026-10-27`: Vercel web, Render Singapore API, Neon Singapore database và same-origin API rewrite. Operational URLs/evidence nằm trong [deployment guide](../development/deployment.md#current-m1-deployment); đây không phải production domain decision.
 - Trong MVP, mỗi restaurant có tối đa một active location; PostgreSQL enforce bằng partial unique index trên `location(restaurant_id)` khi `is_active = true`. Đây là MVP-only constraint; multi-location tương lai cần explicit approval và reviewed migration để thay thế hoặc loại bỏ index, không thay đổi scoped schema foundation.
 - Public portfolio deployment được phép dùng deterministic, synthetic restaurant/location/table/menu fixtures. Fixtures không được chứa real credential, secret, personal information hoặc dữ liệu người thật và chỉ được load bằng explicit operation.
+- Staff authentication dùng opaque CSPRNG server-side session, chỉ persist SHA-256 token hash, bind một active membership/location, absolute expiry 8 giờ không rolling refresh và immediate database revocation khi logout.
+- Staff CSRF dùng per-session synchronizer token hash. Login trả raw token một lần; authenticated mutation cần `X-CSRF-Token` + trusted Origin. Authenticated recovery endpoint rotate replacement token và không tạo session mới.
+- Staff password dùng Node.js `scrypt` với random salt. Login abuse protection cho phép tối đa 5 failures/15 phút theo normalized email + source IP bằng in-memory limiter cho MVP single instance; không persistent lockout.
+- Portfolio cross-site staff auth dùng explicit credentialed CORS allowlist và host-only production cookie `HttpOnly; Secure; SameSite=None`; local HTTP dùng `SameSite=Lax` không `Secure`. Browser third-party-cookie restrictions vẫn là deployment limitation.
 
 ## PROPOSED
 
@@ -53,14 +57,13 @@ Last baseline update: 2026-10-27.
 - Guest absolute timeout: 8 giờ.
 - Activation polling dùng read-only `GET`; sau approval, một idempotent `POST` credential-claim command rotate credential và cấp order-enabled access. Exact endpoint/effects đang chờ owner approval.
 - Same-origin deployment direction (web/API/Socket.IO sau một public origin), dùng host-only `HttpOnly; Secure; SameSite=Lax` cookies.
-- CSRF: allowed-Origin validation + synchronizer/signed double-submit token.
+- Guest CSRF exact mechanism cho M2.4: allowed-Origin validation + synchronizer/signed double-submit token. Staff synchronizer-token contract đã `APPROVED` và implement ở M2.3.
 - Outbox publisher chạy cùng API process trong MVP với safe locking.
   Các proposal phải được validated/chốt ở milestone implementation liên quan, không được hardcode ngầm.
 
 ## OPEN
 
 - Production domain và exact reverse-proxy topology.
-- Staff session representation: opaque server-side session hay access/refresh pair.
 - Local Next.js REST rewrite, browser/API cookie-session boundary và Socket.IO proxy/WebSocket upgrade behavior.
 - Menu modifiers chi tiết ngoài contract tối thiểu.
 - Manager force-close/correction procedure chi tiết.

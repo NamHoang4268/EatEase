@@ -46,31 +46,144 @@ enum FulfillmentStation {
   @@map("fulfillment_station")
 }
 
+enum StaffUserStatus {
+  ACTIVE
+  INACTIVE
+
+  @@map("staff_user_status")
+}
+
+enum StaffMembershipStatus {
+  ACTIVE
+  INACTIVE
+  REVOKED
+
+  @@map("staff_membership_status")
+}
+
 model Restaurant {
-  id        String           @id @default(uuid()) @db.Uuid
-  name      String           @db.VarChar(160)
-  status    RestaurantStatus @default(ACTIVE)
-  createdAt DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
-  locations Location[]
+  id               String            @id @default(uuid()) @db.Uuid
+  name             String            @db.VarChar(160)
+  status           RestaurantStatus  @default(ACTIVE)
+  createdAt        DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  locations        Location[]
+  staffMemberships StaffMembership[]
+  roles            Role[]
 
   @@map("restaurant")
 }
 
 model Location {
-  id           String            @id @default(uuid()) @db.Uuid
-  restaurantId String            @map("restaurant_id") @db.Uuid
-  code         String            @db.VarChar(32)
-  name         String            @db.VarChar(160)
-  timezone     String            @default("Asia/Ho_Chi_Minh") @db.VarChar(64)
-  currency     String            @default("VND") @db.Char(3)
-  isActive     Boolean           @default(false) @map("is_active")
-  restaurant   Restaurant        @relation(fields: [restaurantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  tables       RestaurantTable[]
-  categories   MenuCategory[]
+  id               String            @id @default(uuid()) @db.Uuid
+  restaurantId     String            @map("restaurant_id") @db.Uuid
+  code             String            @db.VarChar(32)
+  name             String            @db.VarChar(160)
+  timezone         String            @default("Asia/Ho_Chi_Minh") @db.VarChar(64)
+  currency         String            @default("VND") @db.Char(3)
+  isActive         Boolean           @default(false) @map("is_active")
+  restaurant       Restaurant        @relation(fields: [restaurantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  tables           RestaurantTable[]
+  categories       MenuCategory[]
+  staffMemberships StaffMembership[]
 
   @@unique([id, restaurantId], map: "location_id_restaurant_id_key")
   @@unique([restaurantId, code], map: "location_restaurant_id_code_key")
   @@map("location")
+}
+
+model StaffUser {
+  id           String            @id @default(uuid()) @db.Uuid
+  email        String            @unique(map: "staff_user_email_key") @db.VarChar(320)
+  passwordHash String            @map("password_hash") @db.VarChar(255)
+  name         String            @db.VarChar(160)
+  status       StaffUserStatus   @default(ACTIVE)
+  createdAt    DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  memberships  StaffMembership[]
+  sessions     StaffSession[]
+
+  @@map("staff_user")
+}
+
+model StaffMembership {
+  id           String                @id @default(uuid()) @db.Uuid
+  staffUserId  String                @map("staff_user_id") @db.Uuid
+  restaurantId String                @map("restaurant_id") @db.Uuid
+  locationId   String                @map("location_id") @db.Uuid
+  status       StaffMembershipStatus @default(ACTIVE)
+  createdAt    DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  staffUser    StaffUser             @relation(fields: [staffUserId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  restaurant   Restaurant            @relation(fields: [restaurantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  location     Location              @relation(fields: [locationId, restaurantId], references: [id, restaurantId], onDelete: Restrict, onUpdate: Cascade)
+  roles        MembershipRole[]
+  sessions     StaffSession[]
+
+  @@unique([staffUserId, locationId], map: "staff_membership_user_location_key")
+  @@unique([id, staffUserId], map: "staff_membership_id_user_key")
+  @@unique([id, restaurantId], map: "staff_membership_id_restaurant_key")
+  @@index([locationId, status], map: "staff_membership_location_status_idx")
+  @@map("staff_membership")
+}
+
+model Role {
+  id           String           @id @default(uuid()) @db.Uuid
+  restaurantId String           @map("restaurant_id") @db.Uuid
+  code         String           @db.VarChar(64)
+  name         String           @db.VarChar(120)
+  isSystem     Boolean          @default(false) @map("is_system")
+  restaurant   Restaurant       @relation(fields: [restaurantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  memberships  MembershipRole[]
+  permissions  RolePermission[]
+
+  @@unique([restaurantId, code], map: "role_restaurant_code_key")
+  @@unique([id, restaurantId], map: "role_id_restaurant_key")
+  @@map("role")
+}
+
+model Permission {
+  id    String           @id @default(uuid()) @db.Uuid
+  code  String           @unique(map: "permission_code_key") @db.VarChar(96)
+  roles RolePermission[]
+
+  @@map("permission")
+}
+
+model MembershipRole {
+  membershipId String          @map("membership_id") @db.Uuid
+  roleId       String          @map("role_id") @db.Uuid
+  restaurantId String          @map("restaurant_id") @db.Uuid
+  membership   StaffMembership @relation(fields: [membershipId, restaurantId], references: [id, restaurantId], onDelete: Restrict, onUpdate: Cascade)
+  role         Role            @relation(fields: [roleId, restaurantId], references: [id, restaurantId], onDelete: Restrict, onUpdate: Cascade)
+
+  @@id([membershipId, roleId])
+  @@index([roleId], map: "membership_role_role_id_idx")
+  @@map("membership_role")
+}
+
+model RolePermission {
+  roleId       String     @map("role_id") @db.Uuid
+  permissionId String     @map("permission_id") @db.Uuid
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([permissionId], map: "role_permission_permission_id_idx")
+  @@map("role_permission")
+}
+
+model StaffSession {
+  id            String          @id @default(uuid()) @db.Uuid
+  staffUserId   String          @map("staff_user_id") @db.Uuid
+  membershipId  String          @map("membership_id") @db.Uuid
+  tokenHash     String          @unique(map: "staff_session_token_hash_key") @map("token_hash") @db.Char(64)
+  csrfTokenHash String          @map("csrf_token_hash") @db.Char(64)
+  expiresAt     DateTime        @map("expires_at") @db.Timestamptz(3)
+  revokedAt     DateTime?       @map("revoked_at") @db.Timestamptz(3)
+  createdAt     DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  staffUser     StaffUser       @relation(fields: [staffUserId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  membership    StaffMembership @relation(fields: [membershipId, staffUserId], references: [id, staffUserId], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([membershipId, expiresAt], map: "staff_session_membership_expiry_idx")
+  @@map("staff_session")
 }
 
 model RestaurantTable {

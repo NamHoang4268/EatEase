@@ -15,6 +15,8 @@ describe('loadEnvironment', () => {
       API_PORT: 3101,
       DATABASE_URL: 'postgresql://user:password@localhost:5432/eatease',
       DATABASE_POOL_MAX: 7,
+      TRUSTED_WEB_ORIGINS: ['http://localhost:3000'],
+      TRUST_PROXY_HOPS: 0,
     });
   });
 
@@ -30,5 +32,20 @@ describe('loadEnvironment', () => {
 
   it('fails fast when required settings are invalid', () => {
     expect(() => loadEnvironment({ API_PORT: 'invalid' })).toThrow('Invalid API environment');
+  });
+
+  it('parses an explicit origin allowlist and rejects wildcard origins', () => {
+    expect(
+      loadEnvironment({
+        DATABASE_URL: 'postgresql://user:password@localhost:5432/eatease',
+        TRUSTED_WEB_ORIGINS: 'http://localhost:3000,https://eat-ease.vercel.app',
+      }).TRUSTED_WEB_ORIGINS,
+    ).toEqual(['http://localhost:3000', 'https://eat-ease.vercel.app']);
+    expect(() =>
+      loadEnvironment({
+        DATABASE_URL: 'postgresql://user:password@localhost:5432/eatease',
+        TRUSTED_WEB_ORIGINS: '*',
+      }),
+    ).toThrow('Invalid API environment');
   });
 });
