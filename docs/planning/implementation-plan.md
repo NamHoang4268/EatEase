@@ -2,7 +2,7 @@
 
 Status values: `TODO`, `IN_PROGRESS`, `BLOCKED`, `DONE`.
 
-Planning completion và implementation completion là hai việc khác nhau. M1 foundation đã được implement và verified; M2–M5 chưa được implement.
+Planning completion và implementation completion là hai việc khác nhau. M1 foundation đã được implement và verified; M2 đang được triển khai theo task sequence, M3–M5 chưa được implement.
 
 ## M0 — Repository and documentation bootstrap
 
@@ -106,7 +106,7 @@ Dependency: M1 complete/owner-approved; [Phase 1 plan](phase-01.md) approved. M2
 | ------ | -------- | -------------------------------------------------------------------------------- |
 | DONE   | M2.0     | Clarify catalog/table baseline, approved constraints và remaining decision gates |
 | DONE   | M2.1     | Implement scoped restaurant/location/table/menu schema + synthetic fixtures      |
-| TODO   | M2.2     | Implement public static-QR table context, menu API và customer browse/cart       |
+| DONE   | M2.2     | Implement public static-QR table context, menu API và customer browse/cart       |
 | TODO   | M2.3     | Implement staff auth, memberships, multi-role permissions và login               |
 | TODO   | M2.4     | Implement browse-only guest session, cookie/origin boundary và CSRF              |
 | TODO   | M2.5     | Implement activation request, generic waiting state và staff queue               |
@@ -119,6 +119,8 @@ Dependency: M1 complete/owner-approved; [Phase 1 plan](phase-01.md) approved. M2
 | TODO   | M2.12    | Complete unit/integration/authorization/concurrency/E2E evidence                 |
 
 M2.1 evidence: versioned Prisma migration deploys cleanly on isolated PostgreSQL; integration tests cover scoped relationships, documented uniqueness/check constraints, MVP one-active-location partial index và idempotent synthetic fixtures. Public menu/API behavior remains M2.2 scope.
+
+M2.2 evidence: read-only public table/menu endpoints enforce active scope and safe errors, serialize VND `BIGINT` without precision loss, and pass real PostgreSQL scope/ordering tests. `/t/[publicId]` provides responsive browse states and an in-memory draft cart with tested quantity/subtotal behavior; it creates no credential, activation request or order.
 
 ## M3 — Fulfillment, cancellation and serving
 

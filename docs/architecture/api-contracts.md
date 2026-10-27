@@ -1,6 +1,6 @@
 # API contracts — first vertical slice
 
-Status: **APPROVED planning baseline**. Endpoint implementation chưa bắt đầu.
+Status: **APPROVED planning baseline**. M2.2 public table/menu reads đã được implement; guest/session và mutation contracts còn lại tiếp tục theo milestone task tương ứng.
 
 Base path: `/api/v1`. REST là authoritative; Socket.IO event chỉ báo client refetch state.
 
@@ -29,6 +29,25 @@ Relevant status codes: `400`, `401`, `403`, `404`, `409`, `422`, `429`.
 
 ## Guest bootstrap and menu
 
+### `GET /public/tables/{publicId}`
+
+Resolve opaque static-QR table identifier thành public browse context. Endpoint không tạo guest session, credential, activation request hoặc business mutation.
+
+```json
+{
+  "data": {
+    "publicId": "uuid",
+    "restaurantName": "Bếp Mây Demo",
+    "locationName": "Chi nhánh Demo",
+    "tableLabel": "A01",
+    "capacity": 2,
+    "availability": "AVAILABLE"
+  }
+}
+```
+
+`availability` là public presentation state: `AVAILABLE`, `BROWSE_ONLY` hoặc `UNAVAILABLE`; không expose exact internal workflow data. Unknown/inactive restaurant, location hoặc table trả generic `404 PUBLIC_TABLE_NOT_FOUND`.
+
 ### `POST /guest-sessions`
 
 Establish browse-only device session from static QR.
@@ -41,7 +60,34 @@ Response sets guest cookie and returns public table context. Nếu table có pen
 
 ### `GET /public/menu?tablePublicId={uuid}`
 
-Trả public categories/items, VND integer price, availability và station. Không trả internal inventory/security fields.
+Trả active public categories/items theo deterministic order, VND integer price, availability và station. Không trả internal inventory/security fields hoặc data thuộc location khác.
+
+```json
+{
+  "data": {
+    "currency": "VND",
+    "categories": [
+      {
+        "id": "uuid",
+        "name": "Món Việt",
+        "items": [
+          {
+            "id": "uuid",
+            "name": "Cơm gà lá chanh",
+            "description": "Cơm thơm, gà áp chảo và lá chanh.",
+            "priceAmount": "79000",
+            "currency": "VND",
+            "fulfillmentStation": "KITCHEN",
+            "available": true
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+`priceAmount` là decimal integer string trong JSON để serialize PostgreSQL/Prisma `BIGINT` không mất precision; frontend dùng integer-safe arithmetic và không xem local draft value là authoritative khi submit ở task tương lai.
 
 ## Activation
 

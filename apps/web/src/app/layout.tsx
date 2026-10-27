@@ -4,12 +4,12 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: 'EatEase',
-  description: 'Restaurant ordering and operations platform',
+  description: 'Trải nghiệm gọi món tại bàn cùng EatEase',
 };
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
   return (
-    <html lang="en">
+    <html lang="vi">
       <body>{children}</body>
     </html>
   );
