@@ -21,6 +21,10 @@ Last baseline update: 2026-10-27.
 - VND integer; displayed server-side price authoritative; tax/service charge = 0 MVP.
 - One restaurant/one active location initially, scoped schema from beginning.
 
+### Design
+
+- UI/UX dùng **Modern Editorial SaaS — Soft Yellow & Neutral** theo [authoritative design guideline](../design/ui-guidelines.md); customer mobile-first editorial, management Modern SaaS và POS/kitchen operational clarity. Bento là preferred composition khi cải thiện hierarchy, không phải mandatory page layout.
+
 ### Technical
 
 - TypeScript monorepo.
