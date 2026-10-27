@@ -43,13 +43,15 @@ Last baseline update: 2026-10-27.
 - Exact M1 pins đã verify: Node.js `24.22.1`, pnpm `12.15.0`, TypeScript `6.0.3`, Next.js `16.4.3`, NestJS `12.2.0`, PostgreSQL `18.6-bookworm` và Prisma `7.10.1`.
 - Portfolio/demo deployment theo [ADR-0007](../architecture/adr/0007-portfolio-deployment.md): Vercel Hobby web, Render Free API và Neon Free PostgreSQL; không thay thế AWS/M5 production direction.
 - Initial M1 cloud deployment verified ngày `2026-10-27`: Vercel web, Render Singapore API, Neon Singapore database và same-origin API rewrite. Operational URLs/evidence nằm trong [deployment guide](../development/deployment.md#current-m1-deployment); đây không phải production domain decision.
+- Trong MVP, mỗi restaurant có tối đa một active location; PostgreSQL enforce bằng partial unique index trên `location(restaurant_id)` khi `is_active = true`. Đây là MVP-only constraint; multi-location tương lai cần explicit approval và reviewed migration để thay thế hoặc loại bỏ index, không thay đổi scoped schema foundation.
+- Public portfolio deployment được phép dùng deterministic, synthetic restaurant/location/table/menu fixtures. Fixtures không được chứa real credential, secret, personal information hoặc dữ liệu người thật và chỉ được load bằng explicit operation.
 
 ## PROPOSED
 
 - Activation request TTL: 5 phút.
 - Join-code TTL: 30 phút.
 - Guest absolute timeout: 8 giờ.
-- One active location partial unique index trong MVP.
+- Activation polling dùng read-only `GET`; sau approval, một idempotent `POST` credential-claim command rotate credential và cấp order-enabled access. Exact endpoint/effects đang chờ owner approval.
 - Same-origin deployment direction (web/API/Socket.IO sau một public origin), dùng host-only `HttpOnly; Secure; SameSite=Lax` cookies.
 - CSRF: allowed-Origin validation + synchronizer/signed double-submit token.
 - Outbox publisher chạy cùng API process trong MVP với safe locking.

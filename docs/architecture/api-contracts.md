@@ -69,7 +69,16 @@ Nếu đã có pending request, trả `200/202` waiting representation cho curre
 
 ### `GET /activation-requests/current`
 
-Guest chỉ poll request gắn với credential hiện tại. Sau approval response nâng access level và có thể trả initial join code một lần. Không nhận hoặc submit cart.
+Current planning baseline cho guest poll request gắn với credential hiện tại và sau approval từng dự kiến nâng access level/trả initial join code trong response. Cách mô tả này xung đột với security rule không thay đổi state qua `GET`.
+
+`PROPOSED — pending owner approval`:
+
+- `GET /activation-requests/current` chỉ đọc và trả activation state; không rotate cookie, nâng access hoặc issue join code.
+- Sau trạng thái `APPROVED`, frontend gọi idempotent `POST /activation-requests/current/claim` với CSRF protection.
+- Claim command revoke/rotate browse credential và cấp independent `ORDER_ENABLED` credential; exact join-code effect được chốt cùng activation/join-code contract.
+- Không endpoint nào nhận hoặc tự submit cart.
+
+Cho tới khi proposal được owner approve, M2.6 activation approval/claim không được implement dựa trên assumption ngầm.
 
 ### `GET /staff/activation-requests?status=PENDING`
 
@@ -80,6 +89,8 @@ Permission: `table.activation.read`.
 Headers: `Idempotency-Key`, version precondition, CSRF token.
 
 Atomic effects: activation approved, TableSession + Bill created, table occupied, requester guest upgraded, join code/outbox/audit created.
+
+`PROPOSED — pending owner approval`: approval transaction vẫn tạo TableSession/Bill và occupy table atomically, nhưng requester credential upgrade/join-code issuance chuyển sang explicit claim command ở trên. Proposal này chưa thay thế approved baseline.
 
 ### `POST /staff/activation-requests/{id}/reject`
 

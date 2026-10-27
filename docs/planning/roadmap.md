@@ -22,7 +22,7 @@ Mỗi milestone chỉ bắt đầu khi dependency hoàn tất và có authorizat
 
 **Goal:** runnable monorepo foundation chưa triển khai business vertical.
 
-**Status:** implementation và initial cloud deployment verified; chờ explicit owner approval để qua milestone gate.
+**Status:** implementation, verification và milestone gate `DONE`; owner đã approve chuyển sang M2.
 
 **Dependencies:** M0 approved.
 
@@ -38,7 +38,9 @@ Mỗi milestone chỉ bắt đầu khi dependency hoàn tất và có authorizat
 
 **Goal:** static QR đến kitchen queue với hybrid ordering và consolidated bill preview.
 
-**Dependencies:** M1; schema/permission/API contract review.
+**Status:** readiness review và M2.0 contract clarification hoàn tất; implementation `TODO`. M2.1 chỉ bắt đầu sau explicit implementation authorization.
+
+**Dependencies:** M1 completed/owner-approved; schema/permission/API contract review theo task liên quan.
 
 **Scope/tasks:** restaurant/location/table fixtures, staff auth/RBAC, public menu, activation waiting/approval, guest credential/join code/recovery, explicit QR submit, waiter order, bill preview, kitchen queue, transactions/idempotency/outbox.
 

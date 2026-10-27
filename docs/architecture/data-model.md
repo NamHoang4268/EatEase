@@ -34,7 +34,15 @@ erDiagram
 
 Operational tables carry `restaurant_id` và `location_id` where useful. Parent tables expose composite unique keys so child composite foreign keys can enforce same-scope relationships rather than relying only on application filters.
 
-MVP has one restaurant/active location in use, but schema must not require destructive retrofit to add locations later.
+MVP has one restaurant/active location in use. Scope columns vẫn tồn tại từ đầu; future multi-location approval chỉ cần reviewed migration thay MVP-only active-location index và không yêu cầu destructive retrofit cho operational relationships.
+
+M2.1 catalog/table relationships dùng các database guards sau:
+
+- `location.restaurant_id` references `restaurant.id`; `location` exposes unique `(id, restaurant_id)` cho scoped child FKs.
+- `restaurant_table(location_id, restaurant_id)` references `location(id, restaurant_id)` và exposes unique `(id, restaurant_id, location_id)` cho future operational children.
+- `menu_category(location_id, restaurant_id)` references `location(id, restaurant_id)` và exposes unique `(id, restaurant_id, location_id)`.
+- `menu_item(category_id, restaurant_id, location_id)` references `menu_category(id, restaurant_id, location_id)` và exposes unique `(id, restaurant_id, location_id)` cho future snapshots/relationships.
+- Client-provided scope không được dùng để bypass các composite FKs hoặc server-side scope resolution.
 
 ## Core tables
 
@@ -47,9 +55,17 @@ MVP has one restaurant/active location in use, but schema must not require destr
 Important constraints:
 
 - Unique `(restaurant_id, code)`.
-- Currency `VND` trong MVP.
+- Currency là `VND` trong MVP; schema và fixtures không dùng floating-point monetary values.
 - Timezone default `Asia/Ho_Chi_Minh`.
-- `PROPOSED`: unique active location per restaurant bằng partial index trong MVP.
+- At most one active location per restaurant được enforce bằng PostgreSQL partial unique index:
+
+```sql
+CREATE UNIQUE INDEX location_one_active_per_restaurant_idx
+ON location (restaurant_id)
+WHERE is_active = true;
+```
+
+Index này là MVP-only. Không đổi `is_active` hoặc status terminology đã approved; future multi-location support phải thay/drop index qua reviewed migration.
 
 ### Physical table
 
@@ -57,8 +73,9 @@ Important constraints:
 
 - Unique `public_id`; đây là opaque identifier in trong QR, không phải secret.
 - Unique `(location_id, code)`.
-- `capacity > 0`, `version >= 0`.
-- Composite scope FK tới location.
+- `capacity > 0`; `version` mặc định `0` và luôn `>= 0`.
+- State-changing update tương lai increment `version` atomically; M2.1 chỉ thiết lập invariant, không thêm table workflow.
+- Composite scope FK tới location theo scope model ở trên.
 
 ### Activation request
 
@@ -108,7 +125,15 @@ Unique `(staff_user_id, location_id)`; effective permissions là union của rol
 - `menu_category(id, restaurant_id, location_id, name, display_order, status)`
 - `menu_item(id, restaurant_id, location_id, category_id, name, description, price_amount, fulfillment_station, status, version)`
 
-`price_amount` là `BIGINT`, không âm. Historical usage ngăn hard-delete menu item.
+`price_amount` là integer VND lưu bằng `BIGINT` với check `price_amount >= 0`; không dùng floating point. `menu_item.version` mặc định `0` và luôn `>= 0`. Historical usage ngăn hard-delete menu item.
+
+### M2 fixtures
+
+- Cho phép deterministic, synthetic restaurant/location/table/menu fixtures cho local, test và public portfolio demo.
+- Fixtures có thể dùng stable synthetic IDs/codes/public table IDs để rerun không tạo duplicate; static table `public_id` vẫn chỉ là public identifier, không phải credential.
+- Không chứa real credential, secret, personal information hoặc dữ liệu người thật.
+- Không tạo staff password/session, guest credential hoặc join code trong M2.1 catalog fixtures.
+- Fixture loading là explicit owner/developer operation, không chạy ngầm trong migration hoặc application startup.
 
 ### Order and item snapshots
 
