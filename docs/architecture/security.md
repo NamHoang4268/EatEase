@@ -33,22 +33,16 @@ Portfolio deployment hiện tại dùng hai site khác nhau: web `https://eat-ea
 
 ## Guest cookies
 
-Guest credential là opaque high-entropy random token; database chỉ lưu hash.
+Guest credential là opaque high-entropy random token; database chỉ lưu SHA-256 hash và raw token chỉ được vận chuyển qua host-only cookie `eatease_guest_session`.
 
-Recommended attributes:
-
-```text
-HttpOnly
-Secure (production)
-SameSite=Lax
-Path=/
-Host-only cookie
-```
-
+- Local development: `HttpOnly; SameSite=Lax; Path=/` và không `Secure`.
+- Production cross-site deployment: `HttpOnly; Secure; SameSite=None; Path=/`.
+- Không set `Domain`, luôn là host-only cookie.
 - Không lưu token trong URL, localStorage hoặc readable JavaScript state.
 - Rotate token khi `BROWSE_ONLY → ORDER_ENABLED`.
 - Revoke server-side khi session đóng, staff revokes hoặc security event xảy ra.
 - Không log raw token.
+- Phân tách độc lập với staff cookie `eatease_staff_session`.
 
 ## Staff authentication cookies
 
@@ -69,7 +63,12 @@ SameSite không phải lớp bảo vệ duy nhất. Mọi state-changing cookie-
 4. Reject missing/mismatched token.
 5. Không thay đổi state qua GET.
 
-Guest bootstrap có thể cấp CSRF token không nhạy cảm cho client; credential cookie vẫn HttpOnly. Guest exact mechanism vẫn thuộc M2.4.
+Guest session dùng per-session synchronizer token hash (M2.4):
+
+- Bootstrap endpoint `POST /guest-sessions` được bảo vệ bằng strict Origin validation và CORS allowlist.
+- Bootstrap trả raw CSRF token trong response `Cache-Control: no-store`; database chỉ lưu SHA-256 hash.
+- Client giữ token trong memory; mutation yêu cầu trusted `Origin` và `X-CSRF-Token`.
+- Endpoint `GET /guest-sessions/csrf-token` cho phép recovery sau khi refresh trang, atomically thay thế token hash cũ bằng hash mới.
 
 Staff session dùng synchronizer token riêng cho từng session:
 
@@ -96,10 +95,10 @@ Staff origin/proxy keys đã được validate trong API configuration; guest li
 ```text
 TRUSTED_WEB_ORIGINS=http://localhost:3000  # IMPLEMENTED
 TRUST_PROXY_HOPS=0                        # IMPLEMENTED
+GUEST_IDLE_TIMEOUT_MINUTES=30           # IMPLEMENTED
+GUEST_ABSOLUTE_TIMEOUT_HOURS=8           # IMPLEMENTED
 ACTIVATION_REQUEST_TTL_MINUTES=5        # PROPOSED
 JOIN_CODE_TTL_MINUTES=30                # PROPOSED
-GUEST_IDLE_TIMEOUT_MINUTES=30           # APPROVED initial default
-GUEST_ABSOLUTE_TIMEOUT_HOURS=8           # PROPOSED
 ```
 
 Values phải được đọc từ centralized validated configuration, không hardcode ở nhiều module.

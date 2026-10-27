@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   addDraftItem,
   calculateDraftSubtotal,
@@ -28,6 +28,9 @@ export function PublicMenuExperience({ publicId }: { publicId: string }) {
   const [reloadToken, setReloadToken] = useState(0);
   const [view, setView] = useState<'menu' | 'cart'>('menu');
   const [cart, setCart] = useState<DraftCartLine[]>([]);
+  const [sessionEstablished, setSessionEstablished] = useState(false);
+  const [, setCsrfToken] = useState<string | null>(null);
+  const bootstrappedTableRef = useRef<string | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -54,6 +57,35 @@ export function PublicMenuExperience({ publicId }: { publicId: string }) {
           menuResponse.json(),
         ])) as [{ data: PublicTableContext }, { data: PublicMenu }];
         setLoadState({ status: 'ready', table: tablePayload.data, menu: menuPayload.data });
+
+        if (bootstrappedTableRef.current !== publicId) {
+          bootstrappedTableRef.current = publicId;
+          try {
+            const bootstrapResult = fetch('/api/v1/guest-sessions', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ tablePublicId: publicId }),
+              signal: controller.signal,
+            });
+            if (bootstrapResult && typeof bootstrapResult.then === 'function') {
+              void bootstrapResult
+                .then(async (res) => {
+                  if (res && res.ok) {
+                    const payload = (await res.json()) as { data?: { csrfToken?: string } };
+                    if (payload?.data?.csrfToken) {
+                      setCsrfToken(payload.data.csrfToken);
+                      setSessionEstablished(true);
+                    }
+                  }
+                })
+                .catch(() => {
+                  // Non-blocking: public table/menu browsing remains fully functional even without guest session
+                });
+            }
+          } catch {
+            // Non-blocking
+          }
+        }
       })
       .catch((error: unknown) => {
         if (!(error instanceof DOMException && error.name === 'AbortError')) {
@@ -142,7 +174,11 @@ export function PublicMenuExperience({ publicId }: { publicId: string }) {
         </aside>
       </header>
 
-      <div className="draft-notice" role="note">
+      <div
+        className="draft-notice"
+        role="note"
+        data-session-established={sessionEstablished ? 'true' : 'false'}
+      >
         <strong>Đây là giỏ nháp trên thiết bị.</strong>
         <span>Chức năng kích hoạt bàn và gửi món chưa khả dụng ở bước này.</span>
       </div>

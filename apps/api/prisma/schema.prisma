@@ -61,6 +61,13 @@ enum StaffMembershipStatus {
   @@map("staff_membership_status")
 }
 
+enum GuestAccessLevel {
+  BROWSE_ONLY
+  ORDER_ENABLED
+
+  @@map("guest_access_level")
+}
+
 model Restaurant {
   id               String            @id @default(uuid()) @db.Uuid
   name             String            @db.VarChar(160)
@@ -197,6 +204,7 @@ model RestaurantTable {
   version        Int                 @default(0)
   isActive       Boolean             @default(true) @map("is_active")
   location       Location            @relation(fields: [locationId, restaurantId], references: [id, restaurantId], onDelete: Restrict, onUpdate: Cascade)
+  guestSessions  GuestSession[]
 
   @@unique([id, restaurantId, locationId], map: "restaurant_table_id_scope_key")
   @@unique([locationId, code], map: "restaurant_table_location_id_code_key")
@@ -235,4 +243,26 @@ model MenuItem {
   @@unique([id, restaurantId, locationId], map: "menu_item_id_scope_key")
   @@index([categoryId, status], map: "menu_item_category_status_idx")
   @@map("menu_item")
+}
+
+model GuestSession {
+  id                String           @id @default(uuid()) @db.Uuid
+  restaurantId      String           @map("restaurant_id") @db.Uuid
+  locationId        String           @map("location_id") @db.Uuid
+  tableId           String           @map("table_id") @db.Uuid
+  tableSessionId    String?          @map("table_session_id") @db.Uuid
+  tokenHash         String           @unique(map: "guest_session_token_hash_key") @map("token_hash") @db.Char(64)
+  csrfTokenHash     String           @map("csrf_token_hash") @db.Char(64)
+  accessLevel       GuestAccessLevel @default(BROWSE_ONLY) @map("access_level")
+  idleExpiresAt     DateTime         @map("idle_expires_at") @db.Timestamptz(3)
+  absoluteExpiresAt DateTime         @map("absolute_expires_at") @db.Timestamptz(3)
+  revokedAt         DateTime?        @map("revoked_at") @db.Timestamptz(3)
+  lastSeenAt        DateTime         @default(now()) @map("last_seen_at") @db.Timestamptz(3)
+  createdAt         DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  version           Int              @default(0)
+  table             RestaurantTable  @relation(fields: [tableId, restaurantId, locationId], references: [id, restaurantId, locationId], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([tableId, accessLevel], map: "guest_session_table_access_level_idx")
+  @@index([tableId, idleExpiresAt], map: "guest_session_table_idle_expiry_idx")
+  @@map("guest_session")
 }

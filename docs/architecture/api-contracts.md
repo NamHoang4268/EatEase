@@ -1,6 +1,6 @@
 # API contracts — first vertical slice
 
-Status: **APPROVED planning baseline**. M2.2 public table/menu reads và M2.3 staff authentication đã được implement; guest/session và business mutation contracts còn lại tiếp tục theo milestone task tương ứng.
+Status: **APPROVED planning baseline**. M2.2 public table/menu reads, M2.3 staff authentication và M2.4 guest browse session đã được implement; activation và business mutation contracts còn lại tiếp tục theo milestone task tương ứng.
 
 Base path: `/api/v1`. REST là authoritative; Socket.IO event chỉ báo client refetch state.
 
@@ -50,13 +50,68 @@ Resolve opaque static-QR table identifier thành public browse context. Endpoint
 
 ### `POST /guest-sessions`
 
-Establish browse-only device session from static QR.
+Establish browse-only device session from static QR. Requires trusted `Origin`.
 
 ```json
 { "tablePublicId": "uuid" }
 ```
 
-Response sets guest cookie and returns public table context. Nếu table có pending activation, response chỉ trả `activationState: "PENDING"`; không trả request ID/credential của guest khác. Nếu đã active, response vẫn `BROWSE_ONLY` và yêu cầu join code.
+Response sets guest cookie `eatease_guest_session` and returns public table context with `Cache-Control: no-store`:
+
+```json
+{
+  "data": {
+    "table": {
+      "publicId": "uuid",
+      "restaurantName": "Bếp Mây Demo",
+      "locationName": "Chi nhánh Demo",
+      "tableLabel": "A01",
+      "capacity": 2,
+      "availability": "AVAILABLE"
+    },
+    "activationState": "NOT_REQUESTED",
+    "session": {
+      "accessLevel": "BROWSE_ONLY",
+      "idleExpiresAt": "2026-10-28T12:30:00.000Z",
+      "absoluteExpiresAt": "2026-10-28T20:00:00.000Z"
+    },
+    "csrfToken": "opaque-token"
+  }
+}
+```
+
+Nếu client đã có session hợp lệ trên cùng bàn, endpoint tái sử dụng session, gia hạn idle expiration (tối đa tới absolute expiration) và cấp CSRF token mới mà không tạo thêm record database dư thừa. Khi bàn chưa có TableSession hay ActivationRequest (M2.4 scope), `activationState` trả về giá trị an toàn `NOT_REQUESTED`.
+
+### `GET /guest-sessions/csrf-token`
+
+CSRF recovery sau browser refresh cho guest. Yêu cầu valid guest cookie và trusted `Origin`. Atomically thay `csrfTokenHash` trong database, trả về raw replacement token với `Cache-Control: no-store`.
+
+```json
+{
+  "data": {
+    "csrfToken": "opaque-token"
+  }
+}
+```
+
+### `GET /guest-sessions/current`
+
+Đọc thông tin phiên làm việc hiện tại của guest. Yêu cầu valid guest cookie. Trả về access level, thời hạn và thông tin bàn.
+
+```json
+{
+  "data": {
+    "session": {
+      "accessLevel": "BROWSE_ONLY",
+      "idleExpiresAt": "2026-10-28T12:30:00.000Z",
+      "absoluteExpiresAt": "2026-10-28T20:00:00.000Z"
+    },
+    "table": {
+      "publicId": "uuid"
+    }
+  }
+}
+```
 
 ### `GET /public/menu?tablePublicId={uuid}`
 

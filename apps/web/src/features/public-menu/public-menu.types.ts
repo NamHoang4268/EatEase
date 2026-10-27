@@ -27,3 +27,14 @@ export type PublicMenu = {
   currency: 'VND';
   categories: PublicMenuCategory[];
 };
+
+export type GuestSessionData = {
+  table: PublicTableContext;
+  activationState: string;
+  session: {
+    accessLevel: 'BROWSE_ONLY' | 'ORDER_ENABLED';
+    idleExpiresAt: string;
+    absoluteExpiresAt: string;
+  };
+  csrfToken: string;
+};

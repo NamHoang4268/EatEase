@@ -108,7 +108,7 @@ Dependency: M1 complete/owner-approved; [Phase 1 plan](phase-01.md) approved. M2
 | DONE   | M2.1     | Implement scoped restaurant/location/table/menu schema + synthetic fixtures      |
 | DONE   | M2.2     | Implement public static-QR table context, menu API và customer browse/cart       |
 | DONE   | M2.3     | Implement staff auth, memberships, multi-role permissions và login               |
-| TODO   | M2.4     | Implement browse-only guest session, cookie/origin boundary và CSRF              |
+| DONE   | M2.4     | Implement browse-only guest session, cookie/origin boundary và CSRF              |
 | TODO   | M2.5     | Implement activation request, generic waiting state và staff queue               |
 | TODO   | M2.6     | Implement atomic approval/rejection và approved credential-claim contract        |
 | TODO   | M2.7     | Implement join-code issue/rotate/rate-limit/recovery                             |
@@ -123,6 +123,8 @@ M2.1 evidence: versioned Prisma migration deploys cleanly on isolated PostgreSQL
 M2.2 evidence: read-only public table/menu endpoints enforce active scope and safe errors, serialize VND `BIGINT` without precision loss, and pass real PostgreSQL scope/ordering tests. `/t/[publicId]` provides responsive browse states and an in-memory draft cart with tested quantity/subtotal behavior; it creates no credential, activation request or order.
 
 M2.3 evidence: versioned staff/RBAC/session migration deploys cleanly on isolated PostgreSQL; opaque hash-only 8-hour sessions, salted `scrypt`, revocation, CSRF rotation/origin enforcement, explicit CORS/cookie policy and in-memory login throttling are covered by unit/integration tests. Authorization guard tests cover allowed, denied và wrong-location access; inactive/expired/revoked session paths use current database state. Local owner bootstrap is explicit and refuses managed database targets.
+
+M2.4 evidence: versioned `guest_session` migration deploys cleanly on isolated PostgreSQL; opaque hash-only tokens, 30-minute idle and 8-hour absolute timeouts, synchronizer CSRF tokens, origin enforcement, safe session reuse on the same table, device/table isolation and separation between staff and guest cookies are covered by unit and PostgreSQL integration tests. Web client `/t/[publicId]` seamlessly integrates non-blocking guest bootstrap while preserving independent public menu and draft-cart functionality. TableSession foreign key is intentionally deferred to avoid premature placeholder tables.
 
 ## M3 — Fulfillment, cancellation and serving
 

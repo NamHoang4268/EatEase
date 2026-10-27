@@ -1,6 +1,6 @@
 # Relational data model
 
-Status: **APPROVED logical baseline**. M2.1 đã triển khai physical Prisma schema/migration cho restaurant/location/table/menu catalog; M2.3 đã triển khai staff identity, membership, roles/permissions và staff session. Các domain tables còn lại tiếp tục là logical baseline cho các task M2–M4 tương ứng.
+Status: **APPROVED logical baseline**. M2.1 đã triển khai physical Prisma schema/migration cho restaurant/location/table/menu catalog; M2.3 đã triển khai staff identity, membership, roles/permissions và staff session; M2.4 đã triển khai guest browse session. Các domain tables còn lại tiếp tục là logical baseline cho các task M2–M4 tương ứng.
 
 ## ERD
 
@@ -95,11 +95,13 @@ Index này là MVP-only. Không đổi `is_active` hoặc status terminology đ�
 
 ### Guest session
 
-`guest_session(id, restaurant_id, location_id, table_id, table_session_id, token_hash, access_level, idle_expires_at, absolute_expires_at, revoked_at, last_seen_at, version)`
+`guest_session(id, restaurant_id, location_id, table_id, table_session_id, token_hash, csrf_token_hash, access_level, idle_expires_at, absolute_expires_at, revoked_at, last_seen_at, created_at, version)`
 
 - Unique `token_hash`; không lưu raw token.
-- `ORDER_ENABLED` yêu cầu non-null `table_session_id`.
-- Guest session không được chuyển sang table/table session khác.
+- `csrf_token_hash` lưu SHA-256 hash của synchronizer CSRF token.
+- Composite foreign key `(table_id, restaurant_id, location_id)` tham chiếu `restaurant_table(id, restaurant_id, location_id)`.
+- `ORDER_ENABLED` yêu cầu non-null `table_session_id` trong tương lai; ở M2.4, `table_session_id` là nullable column và foreign key vật lý được hoãn (deferred) cho đến khi `table_session` được tạo ở milestone sau.
+- Guest session gắn chặt vào table và không được chuyển sang table khác. Safe reuse/refresh trên cùng một bàn tái sử dụng session hợp lệ thay vì tạo duplicate records.
 
 ### Session join code
 
