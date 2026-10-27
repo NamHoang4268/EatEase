@@ -105,7 +105,7 @@ Dependency: M1 complete/owner-approved; [Phase 1 plan](phase-01.md) approved. M2
 | Status | Sequence | Task                                                                             |
 | ------ | -------- | -------------------------------------------------------------------------------- |
 | DONE   | M2.0     | Clarify catalog/table baseline, approved constraints và remaining decision gates |
-| TODO   | M2.1     | Implement scoped restaurant/location/table/menu schema + synthetic fixtures      |
+| DONE   | M2.1     | Implement scoped restaurant/location/table/menu schema + synthetic fixtures      |
 | TODO   | M2.2     | Implement public static-QR table context, menu API và customer browse/cart       |
 | TODO   | M2.3     | Implement staff auth, memberships, multi-role permissions và login               |
 | TODO   | M2.4     | Implement browse-only guest session, cookie/origin boundary và CSRF              |
@@ -117,6 +117,8 @@ Dependency: M1 complete/owner-approved; [Phase 1 plan](phase-01.md) approved. M2
 | TODO   | M2.10    | Implement read-only unified kitchen queue                                        |
 | TODO   | M2.11    | Implement approved outbox publisher/realtime topology                            |
 | TODO   | M2.12    | Complete unit/integration/authorization/concurrency/E2E evidence                 |
+
+M2.1 evidence: versioned Prisma migration deploys cleanly on isolated PostgreSQL; integration tests cover scoped relationships, documented uniqueness/check constraints, MVP one-active-location partial index và idempotent synthetic fixtures. Public menu/API behavior remains M2.2 scope.
 
 ## M3 — Fulfillment, cancellation and serving
 

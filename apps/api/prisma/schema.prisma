@@ -7,3 +7,119 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+
+enum RestaurantStatus {
+  ACTIVE
+  INACTIVE
+
+  @@map("restaurant_status")
+}
+
+enum TablePhysicalStatus {
+  AVAILABLE
+  OCCUPIED
+  CLEANING
+  OUT_OF_SERVICE
+
+  @@map("table_physical_status")
+}
+
+enum MenuCategoryStatus {
+  ACTIVE
+  INACTIVE
+
+  @@map("menu_category_status")
+}
+
+enum MenuItemStatus {
+  ACTIVE
+  INACTIVE
+
+  @@map("menu_item_status")
+}
+
+enum FulfillmentStation {
+  KITCHEN
+  BAR
+  DIRECT
+
+  @@map("fulfillment_station")
+}
+
+model Restaurant {
+  id        String           @id @default(uuid()) @db.Uuid
+  name      String           @db.VarChar(160)
+  status    RestaurantStatus @default(ACTIVE)
+  createdAt DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  locations Location[]
+
+  @@map("restaurant")
+}
+
+model Location {
+  id           String            @id @default(uuid()) @db.Uuid
+  restaurantId String            @map("restaurant_id") @db.Uuid
+  code         String            @db.VarChar(32)
+  name         String            @db.VarChar(160)
+  timezone     String            @default("Asia/Ho_Chi_Minh") @db.VarChar(64)
+  currency     String            @default("VND") @db.Char(3)
+  isActive     Boolean           @default(false) @map("is_active")
+  restaurant   Restaurant        @relation(fields: [restaurantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  tables       RestaurantTable[]
+  categories   MenuCategory[]
+
+  @@unique([id, restaurantId], map: "location_id_restaurant_id_key")
+  @@unique([restaurantId, code], map: "location_restaurant_id_code_key")
+  @@map("location")
+}
+
+model RestaurantTable {
+  id             String              @id @default(uuid()) @db.Uuid
+  restaurantId   String              @map("restaurant_id") @db.Uuid
+  locationId     String              @map("location_id") @db.Uuid
+  publicId       String              @unique(map: "restaurant_table_public_id_key") @default(uuid()) @map("public_id") @db.Uuid
+  code           String              @db.VarChar(32)
+  capacity       Int
+  physicalStatus TablePhysicalStatus @default(AVAILABLE) @map("physical_status")
+  version        Int                 @default(0)
+  isActive       Boolean             @default(true) @map("is_active")
+  location       Location            @relation(fields: [locationId, restaurantId], references: [id, restaurantId], onDelete: Restrict, onUpdate: Cascade)
+
+  @@unique([id, restaurantId, locationId], map: "restaurant_table_id_scope_key")
+  @@unique([locationId, code], map: "restaurant_table_location_id_code_key")
+  @@index([locationId, physicalStatus], map: "restaurant_table_location_status_idx")
+  @@map("restaurant_table")
+}
+
+model MenuCategory {
+  id           String             @id @default(uuid()) @db.Uuid
+  restaurantId String             @map("restaurant_id") @db.Uuid
+  locationId   String             @map("location_id") @db.Uuid
+  name         String             @db.VarChar(120)
+  displayOrder Int                @map("display_order")
+  status       MenuCategoryStatus @default(ACTIVE)
+  location     Location           @relation(fields: [locationId, restaurantId], references: [id, restaurantId], onDelete: Restrict, onUpdate: Cascade)
+  items        MenuItem[]
+
+  @@unique([id, restaurantId, locationId], map: "menu_category_id_scope_key")
+  @@index([locationId, status, displayOrder], map: "menu_category_location_status_order_idx")
+  @@map("menu_category")
+}
+
+model MenuItem {
+  id                 String             @id @default(uuid()) @db.Uuid
+  restaurantId       String             @map("restaurant_id") @db.Uuid
+  locationId         String             @map("location_id") @db.Uuid
+  categoryId         String             @map("category_id") @db.Uuid
+  name               String             @db.VarChar(160)
+  description        String?            @db.Text
+  priceAmount        BigInt             @map("price_amount")
+  fulfillmentStation FulfillmentStation @map("fulfillment_station")
+  status             MenuItemStatus     @default(ACTIVE)
+  version            Int                @default(0)
+  category           MenuCategory       @relation(fields: [categoryId, restaurantId, locationId], references: [id, restaurantId, locationId], onDelete: Restrict, onUpdate: Cascade)
+
+  @@unique([id, restaurantId, locationId], map: "menu_item_id_scope_key")
+  @@index([categoryId, status], map: "menu_item_category_status_idx")
+  @@map("menu_item")
+}

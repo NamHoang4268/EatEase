@@ -14,6 +14,7 @@
     "db:generate": "prisma generate --config prisma7.config.ts",
     "db:validate": "prisma validate --config prisma7.config.ts",
     "db:check": "tsx scripts/check-database.ts",
+    "db:seed:catalog": "tsx scripts/seed-catalog.ts",
     "db:migrate:status": "prisma migrate status --config prisma7.config.ts",
     "db:migrate:deploy": "prisma migrate deploy --config prisma7.config.ts"
   },
