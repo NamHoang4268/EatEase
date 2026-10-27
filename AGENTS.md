@@ -99,6 +99,14 @@ Dùng các status: `TODO`, `IN_PROGRESS`, `BLOCKED`, `DONE`.
 - Payment settlement không tự đóng session hoặc đưa bàn về available.
 - Giá do server quyết định; tiền VND dùng integer.
 
+## Frontend and UI design
+
+- Trước mọi frontend/UI task, đọc và tuân thủ [UI/UX design guidelines](docs/design/ui-guidelines.md).
+- Giữ đúng Modern Editorial SaaS — Soft Yellow & Neutral direction, semantic design tokens và surface-specific UX.
+- Bento là preferred pattern khi cải thiện content hierarchy, không được ép vào task-oriented workflow.
+- Visual reference không được thay đổi business rules, permissions, API contracts, security controls hoặc state transitions.
+- Không tự nghiên cứu hoặc áp dụng competing visual style nếu chưa có explicit owner approval.
+
 ## Testing and quality
 
 - Test ở mức phù hợp với rủi ro: unit, integration với PostgreSQL thật, authorization, concurrency và end-to-end.

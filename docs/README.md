@@ -1,11 +1,15 @@
 # EatEase documentation
 
-Thư mục này là source of truth cho product, architecture và implementation planning. Chat history không được xem là nguồn thay thế lâu dài.
+Thư mục này là source of truth cho product, design, architecture và implementation planning. Chat history không được xem là nguồn thay thế lâu dài.
 
 ## Product
 
 - [MVP requirements](product/requirements.md): phạm vi sản phẩm, actors và end-to-end workflow.
 - [Business rules](product/business-rules.md): invariants và policy nghiệp vụ authoritative.
+
+## Design
+
+- [UI/UX design guidelines](design/ui-guidelines.md): visual identity, semantic palette, surface patterns, Bento composition, responsive behavior và accessibility.
 
 ## Architecture
 
