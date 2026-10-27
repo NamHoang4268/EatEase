@@ -1,6 +1,6 @@
 # Relational data model
 
-Status: **APPROVED logical baseline**. Physical Prisma schema và migrations chưa được tạo.
+Status: **APPROVED logical baseline**. M2.1 đã triển khai physical Prisma schema và migration cho restaurant/location/table/menu catalog; các domain tables còn lại tiếp tục là logical baseline cho các task M2–M4 tương ứng.
 
 ## ERD
 

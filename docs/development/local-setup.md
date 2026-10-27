@@ -1,6 +1,6 @@
 # Local development setup
 
-Hướng dẫn này mô tả foundation hiện có của EatEase trên Windows. Chưa có business module hoặc domain migration trong M1 foundation.
+Hướng dẫn này mô tả foundation hiện có của EatEase trên Windows, gồm M2.1 restaurant/location/table/menu catalog schema.
 
 ## Prerequisites
 
@@ -30,6 +30,7 @@ Copy-Item apps/web/.env.example apps/web/.env
 pnpm install --frozen-lockfile
 pnpm db:generate
 pnpm db:up
+pnpm db:migrate:deploy
 pnpm --filter @eatease/api db:check
 pnpm dev
 ```
@@ -70,6 +71,7 @@ pnpm db:up
 pnpm db:logs
 pnpm db:validate
 pnpm db:generate
+pnpm db:seed:catalog
 pnpm db:migrate:status
 pnpm db:migrate:deploy
 pnpm --filter @eatease/api db:check
@@ -87,7 +89,17 @@ pnpm db:down
 5. Commit schema và migration đã review cùng nhau.
 6. Dùng `db:migrate:deploy` cho CI/deployment.
 
-Không dùng `prisma db push` cho managed environment. Foundation hiện chưa có business model nên `prisma/migrations` chưa tồn tại và deploy sạch báo không có pending migration.
+Không dùng `prisma db push` cho managed environment. Migration M2.1 tạo catalog/table schema và chứa reviewed custom SQL cho `CHECK` constraints cùng MVP-only partial unique active-location index.
+
+## Synthetic catalog fixtures
+
+Sau khi review đúng database target và apply migrations, load fictional catalog fixtures bằng explicit command:
+
+```powershell
+pnpm db:seed:catalog
+```
+
+Command có thể chạy lại mà không tạo duplicate và không chạy trong migration hoặc application startup. Script mặc định từ chối managed database; public portfolio seed chỉ được thực hiện bằng một owner-approved operation riêng. Fixtures không chứa staff/guest credentials, tokens, secrets hoặc personal information.
 
 ## Current compatibility notes
 
@@ -99,12 +111,16 @@ Không dùng `prisma db push` cho managed environment. Foundation hiện chưa c
 - API ưu tiên platform-provided `PORT`, giữ `API_PORT=3001` làm local fallback và bind `0.0.0.0` để chạy được trong managed web service.
 - `DATABASE_URL` dùng cho application traffic; `DIRECT_DATABASE_URL` được Prisma CLI ưu tiên cho migration. Local Docker có thể dùng cùng một URL cho cả hai.
 
-Real-database integration test yêu cầu PostgreSQL đang chạy và API env đã được load:
+Real-database integration tests dùng database local cô lập tên chính xác `eatease_m2_test`. Tạo database một lần, apply migrations rồi chạy tests:
 
 ```powershell
 pnpm db:up
-$env:DATABASE_URL='postgresql://eatease:eatease_dev@localhost:5432/eatease?schema=public'
+docker compose -f infrastructure/local/compose.yaml exec postgres createdb -U eatease eatease_m2_test
+$env:DATABASE_URL='postgresql://eatease:eatease_dev@localhost:5432/eatease_m2_test?schema=public'
 $env:DIRECT_DATABASE_URL=$env:DATABASE_URL
+pnpm db:migrate:deploy
 pnpm test:integration
 pnpm db:down
 ```
+
+Nếu database đã tồn tại, bỏ qua lệnh `createdb`. Catalog integration suite từ chối non-local URL và từ chối database local không đúng tên; GitHub Actions dùng PostgreSQL service tạm thời riêng cho từng job.
