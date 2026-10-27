@@ -22,7 +22,7 @@ Planning completion và implementation completion là hai việc khác nhau. M1 
 
 Dependency: M0 complete và approved. Technical baseline: [ADR-0006](../architecture/adr/0006-m1-technical-foundation.md).
 
-**Milestone status:** implementation và verification `DONE`; chờ explicit owner approval tại milestone gate trước khi bắt đầu M2.
+**Milestone status:** implementation, verification và owner approval `DONE`; M2 readiness review đã hoàn tất.
 
 Mỗi assigned delivery bắt đầu từ updated `main`, giữ scope rõ và dừng tại review/authorization checkpoint. M1.2–M1.7 là planning workstreams: owner có thể giao từng workstream riêng hoặc gộp các workstream liền kề thành một cohesive foundation delivery. Branch được ghi dưới mỗi workstream là default khi thực hiện standalone; cohesive delivery dùng branch được owner chỉ định. Không yêu cầu approval giữa internal steps đã nằm trong assigned scope, nhưng vẫn phải verify và cập nhật status/evidence cho từng workstream. Không tự động commit, push, tạo/merge PR hoặc bắt đầu task chưa được giao.
 
@@ -87,36 +87,36 @@ Mỗi assigned delivery bắt đầu từ updated `main`, giữ scope rõ và d�
 - **Scope/artifacts:** GitHub Actions validation cho Pull Requests và `main`, frozen pnpm install, quality/build jobs, PostgreSQL-backed integration và E2E smoke jobs khi ready.
 - **Acceptance:** clean checkout chạy lại được local-equivalent checks; CI không chứa secret hoặc silently skip failure.
 - **Verification:** GitHub Actions workflow chạy trên Pull Requests và `main`; frozen install, format, lint, typecheck, unit/component tests, Prisma validate/deploy, real PostgreSQL integration và builds đều là required executable steps. Initial cloud deployment từ `main` và Render `checksPass` auto-deploy đã được verify.
-- **Checkpoint:** hosted CI và automatic deployment đã được verify; M1 milestone approval vẫn là gate độc lập trước M2.
+- **Checkpoint:** hosted CI và automatic deployment đã được verify; M1 milestone gate sau đó đã được owner approve.
 
 ### M1.8 — Developer guide and M1 audit
 
-- **Status:** `DONE` — local setup/audit và cloud deployment record đã hoàn tất; owner milestone approval vẫn là gate độc lập trước M2.
+- **Status:** `DONE` — local setup/audit, cloud deployment record và owner milestone approval đã hoàn tất.
 - **Branch:** `docs/m1-developer-guide`.
 - **Scope/artifacts:** Windows-compatible setup guide, prerequisites, scripts, environment/migration workflow, M1 verification record và planning status updates.
 - **Acceptance:** fresh setup có thể follow tài liệu; mọi M1 acceptance criterion trong [roadmap](roadmap.md#m1--project-foundation) có evidence hoặc explicit unresolved blocker.
 - **Verification:** local documentation links, Docker/Prisma integration và CI-equivalent command suite pass; Vercel web, Render API, Neon-backed readiness và same-origin API rewrite được verify ngày `2026-10-27`. Xem [deployment verification record](../development/deployment.md#m1-verification-record).
-- **Checkpoint:** dừng tại M1 milestone approval gate; không bắt đầu M2 nếu chưa có explicit owner approval.
+- **Checkpoint:** M1 milestone gate đã được owner approve; M2 implementation vẫn cần task-specific authorization.
 
 ## M2 — First business vertical slice
 
-Dependency: M1 complete; [Phase 1 plan](phase-01.md) approved.
+Dependency: M1 complete/owner-approved; [Phase 1 plan](phase-01.md) approved. M2 readiness review đã hoàn tất; các decision còn pending chỉ block task phụ thuộc trực tiếp, không block M2.1 catalog schema.
 
-| Status | Task                                                                 |
-| ------ | -------------------------------------------------------------------- |
-| TODO   | Implement restaurant/location/table/menu minimum model + fixtures    |
-| TODO   | Implement staff auth, memberships, multi-role permissions            |
-| TODO   | Implement static QR public table/menu context                        |
-| TODO   | Implement browse-only guest session + CSRF                           |
-| TODO   | Implement activation request/waiting UX and concurrent guard         |
-| TODO   | Implement waiter approval transaction                                |
-| TODO   | Implement join-code issue/rotate/rate-limit/recovery                 |
-| TODO   | Implement explicit guest SubmitOrder                                 |
-| TODO   | Implement waiter-assisted SubmitOrder using same use case            |
-| TODO   | Implement consolidated bill preview                                  |
-| TODO   | Implement unified kitchen queue read                                 |
-| TODO   | Implement idempotency/outbox publisher and authorized realtime rooms |
-| TODO   | Complete unit/integration/authorization/concurrency/E2E suite        |
+| Status | Sequence | Task                                                                             |
+| ------ | -------- | -------------------------------------------------------------------------------- |
+| DONE   | M2.0     | Clarify catalog/table baseline, approved constraints và remaining decision gates |
+| TODO   | M2.1     | Implement scoped restaurant/location/table/menu schema + synthetic fixtures      |
+| TODO   | M2.2     | Implement public static-QR table context, menu API và customer browse/cart       |
+| TODO   | M2.3     | Implement staff auth, memberships, multi-role permissions và login               |
+| TODO   | M2.4     | Implement browse-only guest session, cookie/origin boundary và CSRF              |
+| TODO   | M2.5     | Implement activation request, generic waiting state và staff queue               |
+| TODO   | M2.6     | Implement atomic approval/rejection và approved credential-claim contract        |
+| TODO   | M2.7     | Implement join-code issue/rotate/rate-limit/recovery                             |
+| TODO   | M2.8     | Implement ordering/billing/idempotency/outbox persistence                        |
+| TODO   | M2.9     | Implement shared guest/Waiter `SubmitOrder` and consolidated bill preview        |
+| TODO   | M2.10    | Implement read-only unified kitchen queue                                        |
+| TODO   | M2.11    | Implement approved outbox publisher/realtime topology                            |
+| TODO   | M2.12    | Complete unit/integration/authorization/concurrency/E2E evidence                 |
 
 ## M3 — Fulfillment, cancellation and serving
 
