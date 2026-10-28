@@ -1,6 +1,6 @@
 # API contracts — first vertical slice
 
-Status: **APPROVED planning baseline**. M2.2 public table/menu reads, M2.3 staff authentication, M2.4 guest browse session và M2.5 activation request/read-only queue đã được implement; activation approval và business mutation contracts còn lại tiếp tục theo milestone task tương ứng.
+Status: **APPROVED planning baseline**. M2.2 public table/menu reads, M2.3 staff authentication, M2.4 guest browse session và M2.5 activation request/read-only queue đã được implement. M2.6 approval, rejection và requester claim contracts đã được owner approve và được đặc tả tại đây; implementation vẫn chưa hoàn thành.
 
 Base path: `/api/v1`. REST là authoritative; Socket.IO event chỉ báo client refetch state.
 
@@ -202,9 +202,9 @@ Request mới trả `202`. Idempotent replay giữ nguyên response/status; nế
 
 ### `GET /activation-requests/current`
 
-`APPROVED`: endpoint này strictly read-only và trả effective activation state; expiry có thể được project thành `EXPIRED` mà không lazy-write. Endpoint không rotate cookie, renew guest session, nâng access, issue join code hoặc nhận/tự submit cart.
+Endpoint này strictly read-only và trả effective activation state; expiry có thể được project thành `EXPIRED` mà không lazy-write. Endpoint không rotate cookie, renew guest session, nâng access, issue join code hoặc nhận/tự submit cart.
 
-`PROPOSED — pending owner approval for M2.6`: sau trạng thái `APPROVED`, frontend gọi idempotent `POST /activation-requests/current/claim` với CSRF protection. Exact credential rotation và join-code effects chưa được chốt; không implement dựa trên assumption ngầm.
+Chỉ requester device nhận activation request `id` và `version`; guest khác tại cùng bàn chỉ nhận generic waiting state. Khi request là `APPROVED`, requester response cho biết explicit claim action đang available nhưng không chứa TableSession ID, credential hoặc staff data.
 
 ### `GET /staff/activation-requests?status=PENDING`
 
@@ -214,17 +214,116 @@ M2.5 chỉ hỗ trợ query `status=PENDING`, scope theo authenticated staff mem
 
 ### `POST /staff/activation-requests/{id}/approve`
 
-Headers: `Idempotency-Key`, version precondition, CSRF token.
+Permission: `table.activation.approve`. Requires valid staff session, authenticated membership location scope, trusted `Origin`, `X-CSRF-Token` và `Idempotency-Key`.
 
-Atomic effects: activation approved, TableSession + Bill created, table occupied, requester guest upgraded, join code/outbox/audit created.
+```json
+{
+  "expectedVersion": 0,
+  "physicalPresenceConfirmed": true
+}
+```
 
-`PROPOSED — pending owner approval`: approval transaction vẫn tạo TableSession/Bill và occupy table atomically, nhưng requester credential upgrade/join-code issuance chuyển sang explicit claim command ở trên. Proposal này chưa thay thế approved baseline.
+`physicalPresenceConfirmed` phải đúng bằng `true`; missing/false trả `400 PHYSICAL_PRESENCE_CONFIRMATION_REQUIRED`. Server không suy ra physical presence từ GPS, static QR hoặc client location. Success trả `200` với activation request status/version/handled time, table status/version, TableSession `ACTIVE` và Bill `OPEN`; response không chứa guest identifier, raw credential hoặc join code.
+
+```json
+{
+  "data": {
+    "activationRequest": {
+      "id": "uuid",
+      "status": "APPROVED",
+      "version": 1,
+      "handledAt": "ISO-8601"
+    },
+    "table": {
+      "publicId": "uuid",
+      "physicalStatus": "OCCUPIED",
+      "version": 1
+    },
+    "tableSession": { "id": "uuid", "status": "ACTIVE", "version": 0 },
+    "bill": {
+      "id": "uuid",
+      "status": "OPEN",
+      "subtotalAmount": "0",
+      "adjustmentAmount": "0",
+      "totalAmount": "0",
+      "paidAmount": "0",
+      "balanceAmount": "0",
+      "version": 0
+    }
+  }
+}
+```
+
+Transaction atomically:
+
+1. revalidates staff session, `table.activation.approve`, membership scope và request relationship;
+2. locks/revalidates table + request, yêu cầu request `PENDING`, unexpired, matching `expectedVersion`, table `AVAILABLE`;
+3. transitions request sang `APPROVED`, records handler/time và increments version;
+4. creates exactly one `ACTIVE` TableSession linked to request and one zero-value `OPEN` Bill;
+5. transitions table `AVAILABLE → OCCUPIED` và increments table version;
+6. persists sanitized idempotency response, approval audit và approved outbox records; rồi commit.
+
+Approval không upgrade requester credential, issue join code, create Order hoặc submit cart. Duplicate replay cùng actor/operation/key/fingerprint returns stored success without duplicate side effects. Same key với khác fingerprint trả conflict.
 
 ### `POST /staff/activation-requests/{id}/reject`
 
+Permission, session, scope, Origin, CSRF và idempotency requirements giống approval.
+
 ```json
-{ "reason": "Không có khách tại bàn" }
+{
+  "expectedVersion": 0,
+  "reason": "Không có khách tại bàn"
+}
 ```
+
+`reason` là trimmed, non-empty và tối đa 500 ký tự. Success trả `200` với request `REJECTED`, incremented version, handler/time và reason. Transaction locks/revalidates table + request, transitions request, persists sanitized idempotency response, rejection audit và `activation.updated` outbox event atomically. Nó không tạo TableSession/Bill, không thay đổi table state và không upgrade guest.
+
+```json
+{
+  "data": {
+    "activationRequest": {
+      "id": "uuid",
+      "status": "REJECTED",
+      "version": 1,
+      "handledAt": "ISO-8601",
+      "rejectionReason": "Không có khách tại bàn"
+    }
+  }
+}
+```
+
+Approve/reject dùng operations riêng `APPROVE_ACTIVATION`/`REJECT_ACTIVATION`. Missing authentication trả `401`; missing permission/wrong location/resource relationship trả generic `403`; stale `expectedVersion` trả `409 ACTIVATION_VERSION_CONFLICT`; expired request trả `409 ACTIVATION_REQUEST_EXPIRED`; terminal/non-pending request trả `409 ACTIVATION_REQUEST_NOT_PENDING`; approval khi table không còn `AVAILABLE` trả `409 TABLE_NOT_AVAILABLE`. Expiry persistence xảy ra write-side trước khi trả expired conflict.
+
+Sau khi authenticate/authorize actor và validate request shape, command resolves an existing same-key idempotency record + fingerprint **before** current-state/version rejection. Vì vậy retry của một committed success nhận stored logical success dù `expectedVersion` nay đã cũ; request mới với key khác vẫn nhận `409`. Authorization và location scope luôn được revalidated, kể cả khi replay.
+
+### `POST /activation-requests/current/claim`
+
+Requester-only command. Requires valid guest cookie, trusted `Origin`, matching `X-CSRF-Token` và `Idempotency-Key`.
+
+```json
+{ "expectedVersion": 1 }
+```
+
+Server derives request/restaurant/location/table từ guest session, requires the current guest session to be `requester_guest_session_id`, request `APPROVED` at `expectedVersion`, and its linked TableSession to be `ACTIVE`. Other devices receive generic denial and cannot claim by knowing an ID. Success atomically upgrades that same guest session from `BROWSE_ONLY` to `ORDER_ENABLED`, binds it to the approved TableSession, increments guest-session version, rotates both guest cookie token and CSRF token, and persists claim audit + sanitized idempotency result. It does not change activation version, create an Order, submit cart or issue a join code.
+
+Response sets replacement `eatease_guest_session` cookie and uses `Cache-Control: no-store`:
+
+```json
+{
+  "data": {
+    "session": {
+      "accessLevel": "ORDER_ENABLED",
+      "tableSessionId": "uuid",
+      "version": 1
+    },
+    "csrfToken": "opaque-token"
+  }
+}
+```
+
+Retry safety follows the 120-second previous-token recovery contract in [security](security.md#guest-claim-rotation-recovery). A retry with the valid previous cookie + previous CSRF token and the same idempotency key may reissue fresh current credentials without repeating the logical access transition or audit. Raw token/CSRF values are never stored in idempotency, audit, outbox or logs.
+
+Invalid/expired guest credentials trả `401`; non-requester dùng generic `403 ACTIVATION_CLAIM_NOT_ALLOWED`; stale activation `expectedVersion` trả `409 ACTIVATION_VERSION_CONFLICT`; request chưa `APPROVED` hoặc linked TableSession không `ACTIVE` trả `409 ACTIVATION_CLAIM_NOT_AVAILABLE`. Error không expose requester identity hoặc cross-location resource existence.
 
 ## Join active session
 
@@ -308,7 +407,15 @@ table.session.updated
 
 ### Approve activation
 
-Lock request/table; validate pending/unexpired/available; create session/bill; occupy table; upgrade guest; create code/audit/outbox/idempotent response; commit atomically.
+Lock table, then activation request; validate pending/unexpired/version/available and staff scope; create linked session + bill; occupy table; write idempotency/audit/outbox; commit atomically. Requester credential upgrade is a separate claim transaction.
+
+### Reject activation
+
+Use the same table → activation-request lock order; validate pending/unexpired/version/scope; reject request and write idempotency/audit/outbox atomically. No session, bill or table mutation.
+
+### Claim approved activation
+
+Lock activation request, linked TableSession and requester guest session in deterministic order; validate requester/version/state relationship; upgrade + bind guest, rotate credentials, and write audit/idempotency atomically. Credential recovery retries may reissue only ephemeral credentials within the bounded previous-token window.
 
 ### Submit order
 

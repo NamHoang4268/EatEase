@@ -1,6 +1,6 @@
 # Relational data model
 
-Status: **APPROVED logical baseline**. M2.1 đã triển khai physical Prisma schema/migration cho restaurant/location/table/menu catalog; M2.3 đã triển khai staff identity, membership, roles/permissions và staff session; M2.4 đã triển khai guest browse session; M2.5 đã thêm activation request và minimal idempotency persistence. Các domain tables còn lại tiếp tục là logical baseline cho các task M2–M4 tương ứng.
+Status: **APPROVED logical baseline**. M2.1 đã triển khai physical Prisma schema/migration cho restaurant/location/table/menu catalog; M2.3 đã triển khai staff identity, membership, roles/permissions và staff session; M2.4 đã triển khai guest browse session; M2.5 đã thêm activation request và minimal idempotency persistence. M2.6 persistence contract dưới đây đã được owner approve nhưng chưa được implement; các domain tables còn lại tiếp tục là logical baseline cho task tương ứng.
 
 ## ERD
 
@@ -16,6 +16,7 @@ erDiagram
   MENU_CATEGORY ||--o{ MENU_ITEM : contains
   RESTAURANT_TABLE ||--o{ ACTIVATION_REQUEST : receives
   RESTAURANT_TABLE ||--o{ TABLE_SESSION : hosts
+  ACTIVATION_REQUEST ||--o| TABLE_SESSION : activates
   TABLE_SESSION ||--o{ GUEST_SESSION : authorizes
   TABLE_SESSION ||--o{ SESSION_JOIN_CODE : joins
   TABLE_SESSION ||--o{ ORDER : receives
@@ -90,20 +91,24 @@ Index này là MVP-only. Không đổi `is_active` hoặc status terminology đ�
 
 ### Table session
 
-`table_session(id, restaurant_id, location_id, table_id, status, activated_by_membership_id, activated_at, checkout_locked_at, closed_by_membership_id, closed_at, close_reason, version)`
+`table_session(id, restaurant_id, location_id, table_id, activation_request_id, status, activated_by_membership_id, activated_at, checkout_locked_at, closed_by_membership_id, closed_at, close_reason, version)`
 
 - Partial unique `(table_id) WHERE status IN ('ACTIVE','CHECKOUT_LOCKED')`.
+- Unique `activation_request_id`; composite scoped foreign keys ensure request, table, activating membership và TableSession thuộc cùng restaurant/location.
+- M2.6 approval creates status `ACTIVE`, links exactly one TableSession to the approved request, and initializes `version = 0`.
 - Không hard-delete.
 - Closed fields phải nhất quán với status bằng check/application invariant.
 
 ### Guest session
 
-`guest_session(id, restaurant_id, location_id, table_id, table_session_id, token_hash, csrf_token_hash, access_level, idle_expires_at, absolute_expires_at, revoked_at, last_seen_at, created_at, version)`
+`guest_session(id, restaurant_id, location_id, table_id, table_session_id, token_hash, csrf_token_hash, previous_token_hash, previous_csrf_token_hash, previous_token_valid_until, access_level, idle_expires_at, absolute_expires_at, revoked_at, last_seen_at, created_at, version)`
 
 - Unique `token_hash`; không lưu raw token.
 - `csrf_token_hash` lưu SHA-256 hash của synchronizer CSRF token.
 - Composite foreign key `(table_id, restaurant_id, location_id)` tham chiếu `restaurant_table(id, restaurant_id, location_id)`.
 - `ORDER_ENABLED` yêu cầu non-null `table_session_id` trong tương lai; ở M2.4, `table_session_id` là nullable column và foreign key vật lý được hoãn (deferred) cho đến khi `table_session` được tạo ở milestone sau.
+- M2.6 tạo scoped foreign key cho `table_session_id`; claim chỉ bind requester session vào TableSession đã được tạo từ chính activation request của nó.
+- Ba `previous_*` fields là all-null hoặc all-non-null; chỉ chứa hashes và recovery deadline. Chúng chỉ hỗ trợ requester claim retry trong 120 giây, không phải general guest authentication.
 - Guest session gắn chặt vào table và không được chuyển sang table khác. Safe reuse/refresh trên cùng một bàn tái sử dụng session hợp lệ thay vì tạo duplicate records.
 
 ### Session join code
@@ -177,6 +182,7 @@ Important constraints:
 - Unique `table_session_id`.
 - `total = subtotal + adjustment`; `balance = total - paid`.
 - `SETTLED` yêu cầu balance bằng 0.
+- M2.6 approval creates exactly one `OPEN` Bill with all monetary totals `0` and `version = 0`; it creates no BillLine, adjustment, payment or settlement.
 
 `bill_line(id, bill_id, order_item_id, description_snapshot, quantity, unit_amount, line_amount)`
 
@@ -206,17 +212,25 @@ Important constraints:
 
 Unique `(actor_type, actor_id, operation, idempotency_key)`.
 
-M2.5 triển khai subset generic tối thiểu cho operation `REQUEST_ACTIVATION`: request payload được SHA-256 fingerprint, response/status commit cùng activation transaction, và reuse cùng key với payload khác bị reject. Cleanup/retention policy tổng quát vẫn `OPEN`; record hiện expire không muộn hơn absolute expiry của guest actor.
+M2.5 triển khai subset generic tối thiểu cho operation `REQUEST_ACTIVATION`. M2.6 extends operations with `APPROVE_ACTIVATION`, `REJECT_ACTIVATION` và `CLAIM_ACTIVATION`: request payload được SHA-256 fingerprint, sanitized response/status commit cùng command transaction, và reuse cùng actor/operation/key với payload khác bị reject. Raw credential/CSRF values không được persist trong response body. Cleanup/retention policy tổng quát vẫn `OPEN`; guest-actor record expire không muộn hơn absolute expiry của guest actor.
 
 ### Transactional outbox
 
-`outbox_event(id, aggregate_type, aggregate_id, event_type, payload, occurred_at, published_at, attempt_count, next_attempt_at)`
+`outbox_event(id, restaurant_id, location_id, aggregate_type, aggregate_id, event_type, payload, occurred_at, published_at, attempt_count, next_attempt_at)`
+
+- M2.6 chỉ persist events, chưa có publisher/worker hoặc realtime delivery.
+- Approval writes `activation.updated` và `table.session.updated`; rejection writes `activation.updated`. Claim is security-sensitive credential rotation and writes audit only, not an outbox event.
+- Payload chỉ chứa scoped resource IDs, status/version và event time; không chứa guest/session credential, CSRF token, requester identifier hoặc rejection detail không cần thiết.
+- New events initialize `published_at = null`, `attempt_count = 0`; delivery/retry behavior thuộc milestone sau.
 
 ### Audit
 
 `audit_log(id, restaurant_id, location_id, actor_type, actor_id, action, resource_type, resource_id, reason, metadata, created_at)`
 
-Không lưu raw credentials hoặc sensitive cookie values trong audit metadata.
+- M2.6 actions là `ACTIVATION_APPROVED`, `ACTIVATION_REJECTED` và `GUEST_ACTIVATION_CLAIMED`.
+- Approval audit records staff membership actor, physical-presence attestation, request/table/session IDs và before/after versions. Rejection audit records staff membership actor, reason và request versions. Claim audit records requester guest-session actor and linked request/session IDs.
+- Audit row commit atomically với command side effects; idempotent replay không tạo duplicate audit.
+- Không lưu raw credentials, CSRF tokens, sensitive cookie values hoặc idempotency response secrets trong audit metadata.
 
 ## Concurrency approach
 
@@ -224,4 +238,7 @@ Không lưu raw credentials hoặc sensitive cookie values trong audit metadata.
 - `version` hỗ trợ optimistic concurrency.
 - Row locks dùng cho activation, settlement và close-session commands.
 - Transition updates phải include expected state/version.
+- M2.6 approve/reject acquire locks theo order `restaurant_table → activation_request`; approval sau đó creates TableSession/Bill before reliability rows. Claim locks `activation_request → table_session → requester guest_session`. Mọi relationship/state/version phải được revalidate sau lock.
+- Partial unique active TableSession index và unique activation-request link là final guard cho exactly-once creation. Concurrent approve/approve hoặc approve/reject với cùng stale version chỉ cho một transaction transition; transaction còn lại trả `409` và không ghi partial side effects.
+- Write-side expiry transition được commit trước khi application trả expired conflict; read-only GET tiếp tục không lazy-write.
 - Prisma migrations phải được review; custom SQL được dùng khi schema DSL không biểu đạt đủ constraint.

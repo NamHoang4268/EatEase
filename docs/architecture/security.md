@@ -98,6 +98,7 @@ TRUST_PROXY_HOPS=0                        # IMPLEMENTED
 GUEST_IDLE_TIMEOUT_MINUTES=30           # IMPLEMENTED
 GUEST_ABSOLUTE_TIMEOUT_HOURS=8           # IMPLEMENTED
 ACTIVATION_REQUEST_TTL_MINUTES=5        # IMPLEMENTED
+GUEST_CLAIM_RECOVERY_TTL_SECONDS=120    # APPROVED FOR M2.6
 JOIN_CODE_TTL_MINUTES=30                # PROPOSED
 ```
 
@@ -115,6 +116,18 @@ Recovery flow:
 
 Không auto-submit draft sau recovery.
 
+### Guest claim rotation recovery
+
+M2.6 requester claim rotates both the opaque guest cookie token and synchronizer CSRF token when access changes from `BROWSE_ONLY` to `ORDER_ENABLED`. A lost HTTP response must not strand the requester after the old cookie has been replaced server-side.
+
+- Previous token recovery TTL is **120 seconds**, configured centrally by `GUEST_CLAIM_RECOVERY_TTL_SECONDS`. Hai phút đủ cho normal browser retry/Render cold-response recovery nhưng giới hạn exposure của old credential; production configuration phải validate một bounded range `30..300` seconds.
+- Database keeps only `previous_token_hash`, `previous_csrf_token_hash` và `previous_token_valid_until`; raw values never enter logs, audit, outbox or idempotency storage.
+- Previous cookie is accepted **only** by `POST /activation-requests/current/claim`, only for the original requester, only with trusted Origin, matching previous CSRF token, same claim idempotency key/operation, and before the recovery deadline. It is never accepted by general `GuestSessionGuard`, read endpoints or future order commands.
+- Initial claim keeps the old hashes and fixed deadline, installs fresh current hashes, upgrades/binds the session and returns new cookie + CSRF token with `Cache-Control: no-store`.
+- If that response is lost, a valid previous-credential retry may reissue another current token pair without repeating access transition or audit. Reissue does not extend the original recovery deadline, so repeated loss cannot create an unbounded old-token chain.
+- Current credentials continue to use normal guest authentication. After the deadline, previous credentials fail generically; the guest uses the documented staff/static-QR recovery path and, once implemented, M2.7 join flow.
+- Frontend generates one stable idempotency key per explicit claim action, keeps it in table/request-scoped `sessionStorage` only until claim settles or recovery expires, avoids parallel claim requests, and replaces in-memory CSRF state only after a successful response. The key is not a credential and is cleared on terminal failure/success.
+
 ## Concurrent activation privacy
 
 - Database cho tối đa một pending request mỗi table.
@@ -123,6 +136,7 @@ Không auto-submit draft sau recovery.
 - Activation request mặc định hết hạn sau 5 phút; `GET` chỉ project effective expiry, còn request command xử lý write-side expiry trước khi retry.
 - `Idempotency-Key` bind vào guest session, operation và SHA-256 request fingerprint; reuse key với payload khác bị reject.
 - Sau approval, guest thứ hai phải join bằng code; không được auto-upgrade từ static QR.
+- Approval itself never upgrades a guest. Only the original requester can invoke the explicit claim command; other devices cannot infer requester identity or use the previous-token recovery path.
 
 ## Join-code controls
 
@@ -146,7 +160,7 @@ Không auto-submit draft sau recovery.
 
 - Correlation/request ID trên HTTP và realtime operations.
 - Log token fingerprint/hash-safe reference, không raw cookie, password hoặc join code.
-- Audit activation, staff order, cancellation, waiver, cash payment, settlement, session close và table-ready actions.
+- Audit activation approve/reject/claim, staff order, cancellation, waiver, cash payment, settlement, session close và table-ready actions. Physical-presence attestation is recorded for approval.
 - Security failures trả thông tin tối thiểu nhưng có internal diagnostic correlation.
 
 ## Security verification expectations
