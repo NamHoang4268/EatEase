@@ -57,11 +57,16 @@ Last baseline update: 2026-10-28.
 - Activation request TTL mặc định 5 phút và configurable qua `ACTIVATION_REQUEST_TTL_MINUTES`.
 - `GET /activation-requests/current` là strictly read-only: không business-state mutation, cookie rotation, session renewal, credential upgrade hoặc join-code issuance. Effective expiry được project khi đọc; expiry persistence chỉ diễn ra trên write side.
 - M2.5 dùng minimal generic idempotency persistence cho `REQUEST_ACTIVATION`; cùng actor/operation/key với payload fingerprint khác phải bị reject.
+- M2.6 staff approval requires valid staff session, `table.activation.approve`, matching membership location scope, optimistic `expectedVersion` và explicit `physicalPresenceConfirmed: true`; không yêu cầu GPS hoặc dynamic QR.
+- Approval atomically transitions request `PENDING → APPROVED`, creates exactly one linked `ACTIVE` TableSession and zero-value `OPEN` Bill, changes table `AVAILABLE → OCCUPIED`, and writes idempotency, audit and minimal outbox records. Rejection atomically transitions `PENDING → REJECTED` with audit/outbox but creates no session/bill and does not occupy the table.
+- Approval không upgrade guest credential. Original requester must explicitly invoke `POST /activation-requests/current/claim`; other devices remain unauthorized and join codes remain M2.7.
+- Claim atomically binds the requester GuestSession to the approved TableSession, changes `BROWSE_ONLY → ORDER_ENABLED`, rotates guest + CSRF credentials and writes audit/idempotency. Previous credential recovery is restricted to this claim endpoint for 120 seconds, requires previous CSRF + same idempotency operation/key, never extends the original deadline, and persists hashes only.
+- M2.6 persists `activation.updated`/`table.session.updated` transactional outbox records but does not add publisher, worker or realtime delivery. Approve, reject and claim each create atomic audit records; no raw credential/CSRF data is stored.
+- M2.6 includes minimal staff login/session UI, location-scoped activation queue, approval attestation/rejection actions and an explicit guest “Continue with activated table” claim action. Ordering, cart submission, kitchen processing, BillLines and settlement remain out of scope.
 
 ## PROPOSED
 
 - Join-code TTL: 30 phút.
-- Sau approval, một idempotent `POST` credential-claim command có thể rotate credential và cấp order-enabled access. Exact endpoint/effects đang chờ owner approval cho M2.6.
 - Same-origin deployment direction (web/API/Socket.IO sau một public origin), dùng host-only `HttpOnly; Secure; SameSite=Lax` cookies.
 - Outbox publisher chạy cùng API process trong MVP với safe locking.
   Các proposal phải được validated/chốt ở milestone implementation liên quan, không được hardcode ngầm.

@@ -128,6 +128,21 @@ M2.4 evidence: versioned `guest_session` migration deploys cleanly on isolated P
 
 M2.5 evidence: Prisma schema validates/client generates; API and customer UI implement guest request/current polling, generic other-device waiting, 5-minute configurable TTL, minimal idempotency and location-scoped staff queue. Component tests cover explicit activation, CSRF recovery with stable idempotency key và draft-cart preservation. Migration deploy và 5 PostgreSQL integration tests pass trên isolated local `eatease_m2_test`, bao phủ concurrent requests, partial unique enforcement, idempotency/payload conflict, read-only expiry projection + write-side transition, other-device privacy và staff session/permission/location isolation.
 
+### M2.6 — Staff activation approval
+
+**Status:** `TODO`; contract clarification is approved, implementation has not started.
+
+- [ ] Add reviewed schema/migration for linked TableSession, one-to-one OPEN Bill, guest claim recovery hashes, scoped outbox and audit records.
+- [ ] Implement staff approve/reject commands with session + CSRF, `table.activation.approve`, location/resource isolation, `expectedVersion`, physical-presence attestation and command idempotency.
+- [ ] Enforce deterministic lock order, partial unique active-session guard, atomic request/session/bill/table/reliability writes, and race-safe `409` behavior.
+- [ ] Implement requester-only explicit claim with guest + CSRF rotation, fixed 120-second previous-token recovery window and no credential material in persistence/logging.
+- [ ] Add minimal `/staff/login` UI and location-scoped activation queue. Queue shows table code/capacity, request age/expiry/status/version; approval requires an explicit physical-presence checkbox, rejection requires a reason, actions keep one stable idempotency key and stale conflicts trigger refetch.
+- [ ] Add requester UI action **“Continue with activated table”**. Do not auto-claim while polling; preserve local draft cart, retain one request-scoped claim idempotency key in `sessionStorage` only for bounded recovery, avoid parallel claim calls, and never auto-submit cart.
+- [ ] Add unit, PostgreSQL integration, authorization/concurrency and UI tests for approval/rejection/claim, duplicate replay, stale versions, expiry, approve-vs-reject races, wrong location, other-device denial, token recovery before/after TTL, outbox/audit atomicity and absence of Order/BillLine/join-code side effects.
+- [ ] Update implementation evidence only after schema/API/UI checks and isolated PostgreSQL tests actually pass; do not mark M2.6 `DONE` from contract documentation alone.
+
+Out of scope: join-code lifecycle (M2.7), order/cart submission and billing lines (M2.8–M2.9), kitchen workflows, outbox worker/realtime delivery (M2.11), settlement and later milestones.
+
 ## M3 — Fulfillment, cancellation and serving
 
 Dependency: M2.

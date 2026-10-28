@@ -59,7 +59,7 @@ Serving, cancellation execution, checkout/payment và table cleaning thuộc mil
 - [ ] Approval creates no Order and never submits draft.
 - [ ] Exactly one active session is created under concurrent approval.
 - [ ] Table becomes occupied atomically with session activation.
-- [ ] Guest credential rotates when upgraded.
+- [ ] Approval không tự upgrade guest; requester explicit claim rotates guest + CSRF credentials khi nâng access.
 - [ ] Additional device needs valid join code and gets independent credential.
 - [ ] Expired/revoked code is rejected and attempts are rate-limited.
 - [ ] Expired guest keeps local draft, rejoins, revalidates and explicitly submits.

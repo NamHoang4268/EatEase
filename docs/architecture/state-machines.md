@@ -21,12 +21,14 @@ Không có transition trực tiếp `OCCUPIED → AVAILABLE`.
 | From      | Command/event      | To          |
 | --------- | ------------------ | ----------- |
 | none      | Guest request      | `PENDING`   |
-| `PENDING` | Waiter approve     | `APPROVED`  |
-| `PENDING` | Waiter reject      | `REJECTED`  |
+| `PENDING` | Staff approve      | `APPROVED`  |
+| `PENDING` | Staff reject       | `REJECTED`  |
 | `PENDING` | TTL reached        | `EXPIRED`   |
 | `PENDING` | Requester withdraw | `CANCELLED` |
 
-Approval tạo TableSession; nó không tạo Order.
+Approval requires `table.activation.approve`, matching location scope, expected version và explicit staff physical-presence attestation. Nó atomically tạo TableSession `ACTIVE` + Bill `OPEN` và chuyển table `AVAILABLE → OCCUPIED`; nó không upgrade guest, issue join code hoặc tạo Order. Rejection chỉ chuyển request sang `REJECTED`, không tạo các resource trên hoặc đổi table state. Concurrent approve/reject races được serialize bằng deterministic row locks + state/version checks; stale loser trả `409`.
+
+Sau approval, original requester phải explicit claim để chuyển chính GuestSession của mình `BROWSE_ONLY → ORDER_ENABLED` và bind vào TableSession. Claim không phải ActivationRequest state transition và không thay đổi activation version.
 
 ## TableSession
 
