@@ -54,12 +54,14 @@ Last baseline update: 2026-10-28.
 - Guest CSRF dùng per-session synchronizer token hash: bootstrap cấp raw token trong response `Cache-Control: no-store`, database chỉ lưu SHA-256 hash, authenticated requests yêu cầu trusted Origin và `X-CSRF-Token`. Endpoint `GET /guest-sessions/csrf-token` rotate token sau browser refresh.
 - Guest cookie `eatease_guest_session` tách biệt hoàn toàn với staff cookie, host-only `HttpOnly`, `SameSite=Lax` trong local dev và `SameSite=None; Secure` trong cross-site production.
 - Defer `TableSession` physical relation: `guest_session.table_session_id` là nullable column và chưa tạo FK vật lý ở M2.4 để tránh tạo placeholder table sớm.
+- Activation request TTL mặc định 5 phút và configurable qua `ACTIVATION_REQUEST_TTL_MINUTES`.
+- `GET /activation-requests/current` là strictly read-only: không business-state mutation, cookie rotation, session renewal, credential upgrade hoặc join-code issuance. Effective expiry được project khi đọc; expiry persistence chỉ diễn ra trên write side.
+- M2.5 dùng minimal generic idempotency persistence cho `REQUEST_ACTIVATION`; cùng actor/operation/key với payload fingerprint khác phải bị reject.
 
 ## PROPOSED
 
-- Activation request TTL: 5 phút.
 - Join-code TTL: 30 phút.
-- Activation polling dùng read-only `GET`; sau approval, một idempotent `POST` credential-claim command rotate credential và cấp order-enabled access. Exact endpoint/effects đang chờ owner approval.
+- Sau approval, một idempotent `POST` credential-claim command có thể rotate credential và cấp order-enabled access. Exact endpoint/effects đang chờ owner approval cho M2.6.
 - Same-origin deployment direction (web/API/Socket.IO sau một public origin), dùng host-only `HttpOnly; Secure; SameSite=Lax` cookies.
 - Outbox publisher chạy cùng API process trong MVP với safe locking.
   Các proposal phải được validated/chốt ở milestone implementation liên quan, không được hardcode ngầm.

@@ -38,3 +38,9 @@ export type GuestSessionData = {
   };
   csrfToken: string;
 };
+
+export type ActivationState = {
+  status: 'NOT_REQUESTED' | 'PENDING' | 'APPROVED' | 'REJECTED' | 'EXPIRED' | 'CANCELLED';
+  expiresAt?: string;
+  activationRequestId?: string;
+};
