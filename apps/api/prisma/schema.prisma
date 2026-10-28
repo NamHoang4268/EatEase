@@ -91,6 +91,31 @@ enum IdempotencyRecordStatus {
   @@map("idempotency_record_status")
 }
 
+enum TableSessionStatus {
+  ACTIVE
+  CHECKOUT_LOCKED
+  CLOSED
+  CANCELLED
+
+  @@map("table_session_status")
+}
+
+enum BillStatus {
+  OPEN
+  PAYMENT_PENDING
+  SETTLED
+  VOID
+
+  @@map("bill_status")
+}
+
+enum AuditActorType {
+  STAFF_MEMBERSHIP
+  GUEST_SESSION
+
+  @@map("audit_actor_type")
+}
+
 model Restaurant {
   id                 String              @id @default(uuid()) @db.Uuid
   name               String              @db.VarChar(160)
@@ -101,6 +126,10 @@ model Restaurant {
   roles              Role[]
   activationRequests ActivationRequest[]
   idempotencyRecords IdempotencyRecord[]
+  tableSessions      TableSession[]
+  bills              Bill[]
+  outboxEvents       OutboxEvent[]
+  auditLogs          AuditLog[]
 
   @@map("restaurant")
 }
@@ -118,6 +147,10 @@ model Location {
   categories         MenuCategory[]
   staffMemberships   StaffMembership[]
   activationRequests ActivationRequest[]
+  tableSessions      TableSession[]
+  bills              Bill[]
+  outboxEvents       OutboxEvent[]
+  auditLogs          AuditLog[]
 
   @@unique([id, restaurantId], map: "location_id_restaurant_id_key")
   @@unique([restaurantId, code], map: "location_restaurant_id_code_key")
@@ -150,6 +183,8 @@ model StaffMembership {
   roles                     MembershipRole[]
   sessions                  StaffSession[]
   handledActivationRequests ActivationRequest[]
+  activatedTableSessions    TableSession[]        @relation("TableSessionActivatedBy")
+  closedTableSessions       TableSession[]        @relation("TableSessionClosedBy")
 
   @@unique([staffUserId, locationId], map: "staff_membership_user_location_key")
   @@unique([id, staffUserId], map: "staff_membership_id_user_key")
@@ -234,6 +269,7 @@ model RestaurantTable {
   location           Location            @relation(fields: [locationId, restaurantId], references: [id, restaurantId], onDelete: Restrict, onUpdate: Cascade)
   guestSessions      GuestSession[]
   activationRequests ActivationRequest[]
+  tableSessions      TableSession[]
 
   @@unique([id, restaurantId, locationId], map: "restaurant_table_id_scope_key")
   @@unique([locationId, code], map: "restaurant_table_location_id_code_key")
@@ -275,22 +311,26 @@ model MenuItem {
 }
 
 model GuestSession {
-  id                 String              @id @default(uuid()) @db.Uuid
-  restaurantId       String              @map("restaurant_id") @db.Uuid
-  locationId         String              @map("location_id") @db.Uuid
-  tableId            String              @map("table_id") @db.Uuid
-  tableSessionId     String?             @map("table_session_id") @db.Uuid
-  tokenHash          String              @unique(map: "guest_session_token_hash_key") @map("token_hash") @db.Char(64)
-  csrfTokenHash      String              @map("csrf_token_hash") @db.Char(64)
-  accessLevel        GuestAccessLevel    @default(BROWSE_ONLY) @map("access_level")
-  idleExpiresAt      DateTime            @map("idle_expires_at") @db.Timestamptz(3)
-  absoluteExpiresAt  DateTime            @map("absolute_expires_at") @db.Timestamptz(3)
-  revokedAt          DateTime?           @map("revoked_at") @db.Timestamptz(3)
-  lastSeenAt         DateTime            @default(now()) @map("last_seen_at") @db.Timestamptz(3)
-  createdAt          DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
-  version            Int                 @default(0)
-  table              RestaurantTable     @relation(fields: [tableId, restaurantId, locationId], references: [id, restaurantId, locationId], onDelete: Restrict, onUpdate: Cascade)
-  activationRequests ActivationRequest[]
+  id                      String              @id @default(uuid()) @db.Uuid
+  restaurantId            String              @map("restaurant_id") @db.Uuid
+  locationId              String              @map("location_id") @db.Uuid
+  tableId                 String              @map("table_id") @db.Uuid
+  tableSessionId          String?             @map("table_session_id") @db.Uuid
+  tokenHash               String              @unique(map: "guest_session_token_hash_key") @map("token_hash") @db.Char(64)
+  csrfTokenHash           String              @map("csrf_token_hash") @db.Char(64)
+  previousTokenHash       String?             @unique(map: "guest_session_previous_token_hash_key") @map("previous_token_hash") @db.Char(64)
+  previousCsrfTokenHash   String?             @map("previous_csrf_token_hash") @db.Char(64)
+  previousTokenValidUntil DateTime?           @map("previous_token_valid_until") @db.Timestamptz(3)
+  accessLevel             GuestAccessLevel    @default(BROWSE_ONLY) @map("access_level")
+  idleExpiresAt           DateTime            @map("idle_expires_at") @db.Timestamptz(3)
+  absoluteExpiresAt       DateTime            @map("absolute_expires_at") @db.Timestamptz(3)
+  revokedAt               DateTime?           @map("revoked_at") @db.Timestamptz(3)
+  lastSeenAt              DateTime            @default(now()) @map("last_seen_at") @db.Timestamptz(3)
+  createdAt               DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  version                 Int                 @default(0)
+  table                   RestaurantTable     @relation(fields: [tableId, restaurantId, locationId], references: [id, restaurantId, locationId], onDelete: Restrict, onUpdate: Cascade)
+  tableSession            TableSession?       @relation(fields: [tableSessionId, restaurantId, locationId, tableId], references: [id, restaurantId, locationId, tableId], onDelete: Restrict, onUpdate: Cascade, map: "guest_session_table_session_scope_fkey")
+  activationRequests      ActivationRequest[]
 
   @@unique([id, restaurantId, locationId, tableId], map: "guest_session_id_scope_key")
   @@index([tableId, accessLevel], map: "guest_session_table_access_level_idx")
@@ -311,13 +351,15 @@ model ActivationRequest {
   rejectionReason         String?                 @map("rejection_reason") @db.Text
   version                 Int                     @default(0)
   createdAt               DateTime                @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt               DateTime                @updatedAt @map("updated_at") @db.Timestamptz(3)
+  updatedAt               DateTime                @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
   restaurant              Restaurant              @relation(fields: [restaurantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   location                Location                @relation(fields: [locationId, restaurantId], references: [id, restaurantId], onDelete: Restrict, onUpdate: Cascade)
-  table                   RestaurantTable         @relation(fields: [tableId, restaurantId, locationId], references: [id, restaurantId, locationId], onDelete: Restrict, onUpdate: Cascade)
-  requesterGuestSession   GuestSession            @relation(fields: [requesterGuestSessionId, restaurantId, locationId, tableId], references: [id, restaurantId, locationId, tableId], onDelete: Restrict, onUpdate: Cascade)
-  handledByMembership     StaffMembership?        @relation(fields: [handledByMembershipId, restaurantId, locationId], references: [id, restaurantId, locationId], onDelete: Restrict, onUpdate: Cascade)
+  table                   RestaurantTable         @relation(fields: [tableId, restaurantId, locationId], references: [id, restaurantId, locationId], onDelete: Restrict, onUpdate: Cascade, map: "activation_request_table_id_scope_fkey")
+  requesterGuestSession   GuestSession            @relation(fields: [requesterGuestSessionId, restaurantId, locationId, tableId], references: [id, restaurantId, locationId, tableId], onDelete: Restrict, onUpdate: Cascade, map: "activation_request_requester_scope_fkey")
+  handledByMembership     StaffMembership?        @relation(fields: [handledByMembershipId, restaurantId, locationId], references: [id, restaurantId, locationId], onDelete: Restrict, onUpdate: Cascade, map: "activation_request_handler_scope_fkey")
+  tableSession            TableSession?
 
+  @@unique([id, restaurantId, locationId, tableId], map: "activation_request_id_scope_key")
   @@index([locationId, status, createdAt], map: "activation_request_location_status_created_idx")
   @@index([tableId, expiresAt], map: "activation_request_table_expiry_idx")
   @@index([requesterGuestSessionId, createdAt], map: "activation_request_requester_created_idx")
@@ -343,4 +385,95 @@ model IdempotencyRecord {
   @@unique([actorType, actorId, operation, idempotencyKey], map: "idempotency_record_actor_operation_key")
   @@index([restaurantId, expiresAt], map: "idempotency_record_restaurant_expiry_idx")
   @@map("idempotency_record")
+}
+
+model TableSession {
+  id                      String             @id @default(uuid()) @db.Uuid
+  restaurantId            String             @map("restaurant_id") @db.Uuid
+  locationId              String             @map("location_id") @db.Uuid
+  tableId                 String             @map("table_id") @db.Uuid
+  activationRequestId     String             @unique(map: "table_session_activation_request_id_key") @map("activation_request_id") @db.Uuid
+  status                  TableSessionStatus @default(ACTIVE)
+  activatedByMembershipId String             @map("activated_by_membership_id") @db.Uuid
+  activatedAt             DateTime           @default(now()) @map("activated_at") @db.Timestamptz(3)
+  checkoutLockedAt        DateTime?          @map("checkout_locked_at") @db.Timestamptz(3)
+  closedByMembershipId    String?            @map("closed_by_membership_id") @db.Uuid
+  closedAt                DateTime?          @map("closed_at") @db.Timestamptz(3)
+  closeReason             String?            @map("close_reason") @db.Text
+  version                 Int                @default(0)
+  restaurant              Restaurant         @relation(fields: [restaurantId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "table_session_restaurant_fkey")
+  location                Location           @relation(fields: [locationId, restaurantId], references: [id, restaurantId], onDelete: Restrict, onUpdate: Cascade, map: "table_session_location_scope_fkey")
+  table                   RestaurantTable    @relation(fields: [tableId, restaurantId, locationId], references: [id, restaurantId, locationId], onDelete: Restrict, onUpdate: Cascade, map: "table_session_table_scope_fkey")
+  activationRequest       ActivationRequest  @relation(fields: [activationRequestId, restaurantId, locationId, tableId], references: [id, restaurantId, locationId, tableId], onDelete: Restrict, onUpdate: Cascade, map: "table_session_activation_scope_fkey")
+  activatedByMembership   StaffMembership    @relation("TableSessionActivatedBy", fields: [activatedByMembershipId, restaurantId, locationId], references: [id, restaurantId, locationId], onDelete: Restrict, onUpdate: Cascade, map: "table_session_activator_scope_fkey")
+  closedByMembership      StaffMembership?   @relation("TableSessionClosedBy", fields: [closedByMembershipId, restaurantId, locationId], references: [id, restaurantId, locationId], onDelete: Restrict, onUpdate: Cascade, map: "table_session_closer_scope_fkey")
+  guestSessions           GuestSession[]
+  bill                    Bill?
+
+  @@unique([id, restaurantId, locationId], map: "table_session_id_location_scope_key")
+  @@unique([id, restaurantId, locationId, tableId], map: "table_session_id_table_scope_key")
+  @@unique([activationRequestId, restaurantId, locationId, tableId], map: "table_session_activation_scope_key")
+  @@index([locationId, status, activatedAt], map: "table_session_location_status_activated_idx")
+  @@map("table_session")
+}
+
+model Bill {
+  id               String       @id @default(uuid()) @db.Uuid
+  restaurantId     String       @map("restaurant_id") @db.Uuid
+  locationId       String       @map("location_id") @db.Uuid
+  tableSessionId   String       @unique(map: "bill_table_session_id_key") @map("table_session_id") @db.Uuid
+  status           BillStatus   @default(OPEN)
+  subtotalAmount   BigInt       @default(0) @map("subtotal_amount")
+  adjustmentAmount BigInt       @default(0) @map("adjustment_amount")
+  totalAmount      BigInt       @default(0) @map("total_amount")
+  paidAmount       BigInt       @default(0) @map("paid_amount")
+  balanceAmount    BigInt       @default(0) @map("balance_amount")
+  version          Int          @default(0)
+  restaurant       Restaurant   @relation(fields: [restaurantId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "bill_restaurant_fkey")
+  location         Location     @relation(fields: [locationId, restaurantId], references: [id, restaurantId], onDelete: Restrict, onUpdate: Cascade, map: "bill_location_scope_fkey")
+  tableSession     TableSession @relation(fields: [tableSessionId, restaurantId, locationId], references: [id, restaurantId, locationId], onDelete: Restrict, onUpdate: Cascade, map: "bill_table_session_scope_fkey")
+
+  @@unique([tableSessionId, restaurantId, locationId], map: "bill_table_session_scope_key")
+  @@index([locationId, status], map: "bill_location_status_idx")
+  @@map("bill")
+}
+
+model OutboxEvent {
+  id            String     @id @default(uuid()) @db.Uuid
+  restaurantId  String     @map("restaurant_id") @db.Uuid
+  locationId    String     @map("location_id") @db.Uuid
+  aggregateType String     @map("aggregate_type") @db.VarChar(64)
+  aggregateId   String     @map("aggregate_id") @db.Uuid
+  eventType     String     @map("event_type") @db.VarChar(96)
+  payload       Json
+  occurredAt    DateTime   @default(now()) @map("occurred_at") @db.Timestamptz(3)
+  publishedAt   DateTime?  @map("published_at") @db.Timestamptz(3)
+  attemptCount  Int        @default(0) @map("attempt_count")
+  nextAttemptAt DateTime?  @map("next_attempt_at") @db.Timestamptz(3)
+  restaurant    Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "outbox_event_restaurant_fkey")
+  location      Location   @relation(fields: [locationId, restaurantId], references: [id, restaurantId], onDelete: Restrict, onUpdate: Cascade, map: "outbox_event_location_scope_fkey")
+
+  @@index([aggregateType, aggregateId, occurredAt], map: "outbox_event_aggregate_occurred_idx")
+  @@map("outbox_event")
+}
+
+model AuditLog {
+  id           String         @id @default(uuid()) @db.Uuid
+  restaurantId String         @map("restaurant_id") @db.Uuid
+  locationId   String         @map("location_id") @db.Uuid
+  actorType    AuditActorType @map("actor_type")
+  actorId      String         @map("actor_id") @db.Uuid
+  action       String         @db.VarChar(96)
+  resourceType String         @map("resource_type") @db.VarChar(64)
+  resourceId   String         @map("resource_id") @db.Uuid
+  reason       String?        @db.Text
+  metadata     Json
+  createdAt    DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  restaurant   Restaurant     @relation(fields: [restaurantId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "audit_log_restaurant_fkey")
+  location     Location       @relation(fields: [locationId, restaurantId], references: [id, restaurantId], onDelete: Restrict, onUpdate: Cascade, map: "audit_log_location_scope_fkey")
+
+  @@index([restaurantId, locationId, createdAt], map: "audit_log_scope_created_idx")
+  @@index([resourceType, resourceId, createdAt], map: "audit_log_resource_created_idx")
+  @@index([actorType, actorId, createdAt], map: "audit_log_actor_created_idx")
+  @@map("audit_log")
 }
