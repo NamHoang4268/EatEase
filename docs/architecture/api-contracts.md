@@ -1,6 +1,6 @@
 # API contracts — first vertical slice
 
-Status: **APPROVED planning baseline**. M2.2 public table/menu reads, M2.3 staff authentication và M2.4 guest browse session đã được implement; activation và business mutation contracts còn lại tiếp tục theo milestone task tương ứng.
+Status: **APPROVED planning baseline**. M2.2 public table/menu reads, M2.3 staff authentication, M2.4 guest browse session và M2.5 activation request/read-only queue đã được implement; activation approval và business mutation contracts còn lại tiếp tục theo milestone task tương ứng.
 
 Base path: `/api/v1`. REST là authoritative; Socket.IO event chỉ báo client refetch state.
 
@@ -198,24 +198,19 @@ Response `202`:
 }
 ```
 
-Nếu đã có pending request, trả `200/202` waiting representation cho current device mà không lộ requester data. Không tạo duplicate request/session.
+Request mới trả `202`. Idempotent replay giữ nguyên response/status; nếu table đã có pending request thì trả `200` waiting representation mà không tạo duplicate request/session. Chỉ requester device nhận `activationRequestId`; device khác chỉ nhận `status` và `expiresAt`. TTL mặc định 5 phút, cấu hình qua `ACTIVATION_REQUEST_TTL_MINUTES`.
 
 ### `GET /activation-requests/current`
 
-Current planning baseline cho guest poll request gắn với credential hiện tại và sau approval từng dự kiến nâng access level/trả initial join code trong response. Cách mô tả này xung đột với security rule không thay đổi state qua `GET`.
+`APPROVED`: endpoint này strictly read-only và trả effective activation state; expiry có thể được project thành `EXPIRED` mà không lazy-write. Endpoint không rotate cookie, renew guest session, nâng access, issue join code hoặc nhận/tự submit cart.
 
-`PROPOSED — pending owner approval`:
-
-- `GET /activation-requests/current` chỉ đọc và trả activation state; không rotate cookie, nâng access hoặc issue join code.
-- Sau trạng thái `APPROVED`, frontend gọi idempotent `POST /activation-requests/current/claim` với CSRF protection.
-- Claim command revoke/rotate browse credential và cấp independent `ORDER_ENABLED` credential; exact join-code effect được chốt cùng activation/join-code contract.
-- Không endpoint nào nhận hoặc tự submit cart.
-
-Cho tới khi proposal được owner approve, M2.6 activation approval/claim không được implement dựa trên assumption ngầm.
+`PROPOSED — pending owner approval for M2.6`: sau trạng thái `APPROVED`, frontend gọi idempotent `POST /activation-requests/current/claim` với CSRF protection. Exact credential rotation và join-code effects chưa được chốt; không implement dựa trên assumption ngầm.
 
 ### `GET /staff/activation-requests?status=PENDING`
 
 Permission: `table.activation.read`.
+
+M2.5 chỉ hỗ trợ query `status=PENDING`, scope theo authenticated staff membership location, loại request đã hết hạn và không trả guest/requester identifiers.
 
 ### `POST /staff/activation-requests/{id}/approve`
 

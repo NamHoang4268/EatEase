@@ -90,14 +90,14 @@ Webhook endpoints tương lai không dùng browser CSRF token; chúng dùng prov
 
 ## Session expiration and recovery
 
-Staff origin/proxy keys đã được validate trong API configuration; guest lifecycle keys vẫn là planned values cho các task tương ứng:
+Staff origin/proxy và guest/activation lifecycle keys đã được validate trong API configuration; join-code TTL vẫn là planned value cho task tương ứng:
 
 ```text
 TRUSTED_WEB_ORIGINS=http://localhost:3000  # IMPLEMENTED
 TRUST_PROXY_HOPS=0                        # IMPLEMENTED
 GUEST_IDLE_TIMEOUT_MINUTES=30           # IMPLEMENTED
 GUEST_ABSOLUTE_TIMEOUT_HOURS=8           # IMPLEMENTED
-ACTIVATION_REQUEST_TTL_MINUTES=5        # PROPOSED
+ACTIVATION_REQUEST_TTL_MINUTES=5        # IMPLEMENTED
 JOIN_CODE_TTL_MINUTES=30                # PROPOSED
 ```
 
@@ -120,6 +120,8 @@ Không auto-submit draft sau recovery.
 - Database cho tối đa một pending request mỗi table.
 - Guest thứ hai nhận generic waiting state và thời gian expiry.
 - Không trả activation request ID, polling secret, device ID hoặc join code của guest đầu.
+- Activation request mặc định hết hạn sau 5 phút; `GET` chỉ project effective expiry, còn request command xử lý write-side expiry trước khi retry.
+- `Idempotency-Key` bind vào guest session, operation và SHA-256 request fingerprint; reuse key với payload khác bị reject.
 - Sau approval, guest thứ hai phải join bằng code; không được auto-upgrade từ static QR.
 
 ## Join-code controls

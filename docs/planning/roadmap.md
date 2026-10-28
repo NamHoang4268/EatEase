@@ -38,7 +38,7 @@ Mỗi milestone chỉ bắt đầu khi dependency hoàn tất và có authorizat
 
 **Goal:** static QR đến kitchen queue với hybrid ordering và consolidated bill preview.
 
-**Status:** M2.0–M2.4 hoàn tất; M2.5 activation request là task kế tiếp theo implementation plan.
+**Status:** M2.0–M2.5 hoàn tất; M2.6 activation approval/claim chỉ bắt đầu sau owner approval.
 
 **Dependencies:** M1 completed/owner-approved; schema/permission/API contract review theo task liên quan.
 

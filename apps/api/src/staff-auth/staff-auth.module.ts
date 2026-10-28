@@ -21,6 +21,12 @@ import { StaffSessionService } from './staff-session.service.js';
     StaffSessionGuard,
     StaffSessionService,
   ],
-  exports: [StaffAuthorizationGuard, StaffCsrfGuard, StaffSessionGuard],
+  exports: [
+    StaffAuthorizationGuard,
+    StaffCookieService,
+    StaffCsrfGuard,
+    StaffSessionGuard,
+    StaffSessionService,
+  ],
 })
 export class StaffAuthModule {}

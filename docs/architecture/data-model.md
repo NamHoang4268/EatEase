@@ -1,6 +1,6 @@
 # Relational data model
 
-Status: **APPROVED logical baseline**. M2.1 đã triển khai physical Prisma schema/migration cho restaurant/location/table/menu catalog; M2.3 đã triển khai staff identity, membership, roles/permissions và staff session; M2.4 đã triển khai guest browse session. Các domain tables còn lại tiếp tục là logical baseline cho các task M2–M4 tương ứng.
+Status: **APPROVED logical baseline**. M2.1 đã triển khai physical Prisma schema/migration cho restaurant/location/table/menu catalog; M2.3 đã triển khai staff identity, membership, roles/permissions và staff session; M2.4 đã triển khai guest browse session; M2.5 đã thêm activation request và minimal idempotency persistence. Các domain tables còn lại tiếp tục là logical baseline cho các task M2–M4 tương ứng.
 
 ## ERD
 
@@ -79,9 +79,12 @@ Index này là MVP-only. Không đổi `is_active` hoặc status terminology đ�
 
 ### Activation request
 
-`activation_request(id, restaurant_id, location_id, table_id, requester_guest_session_id, status, expires_at, handled_by_membership_id, handled_at, rejection_reason, version)`
+`activation_request(id, restaurant_id, location_id, table_id, requester_guest_session_id, status, expires_at, handled_by_membership_id, handled_at, rejection_reason, version, created_at, updated_at)`
 
 - Partial unique `(table_id) WHERE status = 'PENDING'`.
+- Status values: `PENDING`, `APPROVED`, `REJECTED`, `EXPIRED`, `CANCELLED`.
+- Default expiry là 5 phút và configurable; read-only query project effective expiry, write-side request command chuyển pending đã hết hạn sang `EXPIRED` trước khi tạo request mới.
+- Composite foreign keys enforce cùng restaurant/location/table cho requester guest session và future handler membership.
 - Approval/rejection phải ghi handler và thời điểm.
 - Guest khác chỉ được đọc waiting state tổng quát, không đọc requester/session secrets.
 
@@ -202,6 +205,8 @@ Important constraints:
 `idempotency_record(id, restaurant_id, actor_type, actor_id, operation, idempotency_key, request_hash, status, response_status, response_body, resource_id, expires_at)`
 
 Unique `(actor_type, actor_id, operation, idempotency_key)`.
+
+M2.5 triển khai subset generic tối thiểu cho operation `REQUEST_ACTIVATION`: request payload được SHA-256 fingerprint, response/status commit cùng activation transaction, và reuse cùng key với payload khác bị reject. Cleanup/retention policy tổng quát vẫn `OPEN`; record hiện expire không muộn hơn absolute expiry của guest actor.
 
 ### Transactional outbox
 

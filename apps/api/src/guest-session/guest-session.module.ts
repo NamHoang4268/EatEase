@@ -17,6 +17,12 @@ import { GuestSessionService } from './guest-session.service.js';
     GuestSessionService,
     OriginPolicyService,
   ],
-  exports: [GuestCookieService, GuestCsrfGuard, GuestSessionGuard, GuestSessionService],
+  exports: [
+    GuestCookieService,
+    GuestCsrfGuard,
+    GuestSessionGuard,
+    GuestSessionService,
+    OriginPolicyService,
+  ],
 })
 export class GuestSessionModule {}

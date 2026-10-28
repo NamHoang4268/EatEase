@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   addDraftItem,
   calculateDraftSubtotal,
@@ -9,7 +9,13 @@ import {
   removeDraftItem,
   type DraftCartLine,
 } from './draft-cart';
-import type { PublicMenu, PublicMenuItem, PublicTableContext } from './public-menu.types';
+import type {
+  ActivationState,
+  GuestSessionData,
+  PublicMenu,
+  PublicMenuItem,
+  PublicTableContext,
+} from './public-menu.types';
 
 type LoadState =
   | { status: 'loading' }
@@ -29,8 +35,23 @@ export function PublicMenuExperience({ publicId }: { publicId: string }) {
   const [view, setView] = useState<'menu' | 'cart'>('menu');
   const [cart, setCart] = useState<DraftCartLine[]>([]);
   const [sessionEstablished, setSessionEstablished] = useState(false);
-  const [, setCsrfToken] = useState<string | null>(null);
+  const [csrfToken, setCsrfToken] = useState<string | null>(null);
+  const [activation, setActivation] = useState<ActivationState>({ status: 'NOT_REQUESTED' });
+  const [activationBusy, setActivationBusy] = useState(false);
+  const [activationError, setActivationError] = useState<string | null>(null);
   const bootstrappedTableRef = useRef<string | null>(null);
+  const activationKeyRef = useRef<string | null>(null);
+
+  const refreshActivation = useCallback(async (signal?: AbortSignal) => {
+    const response = await fetch('/api/v1/activation-requests/current', {
+      credentials: 'include',
+      ...(signal ? { signal } : {}),
+    });
+    if (!response.ok) throw new Error('ACTIVATION_STATUS_UNAVAILABLE');
+    const payload = (await response.json()) as { data: ActivationState };
+    setActivation(payload.data);
+    if (payload.data.status !== 'PENDING') activationKeyRef.current = null;
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -71,19 +92,35 @@ export function PublicMenuExperience({ publicId }: { publicId: string }) {
               void bootstrapResult
                 .then(async (res) => {
                   if (res && res.ok) {
-                    const payload = (await res.json()) as { data?: { csrfToken?: string } };
-                    if (payload?.data?.csrfToken) {
+                    const payload = (await res.json()) as { data?: GuestSessionData };
+                    if (payload.data?.csrfToken) {
                       setCsrfToken(payload.data.csrfToken);
                       setSessionEstablished(true);
+                      setActivation({
+                        status: payload.data.activationState as ActivationState['status'],
+                      });
+                      void refreshActivation(controller.signal).catch(() => {
+                        // Activation status is recoverable independently from public browsing.
+                      });
+                    } else {
+                      setActivationError(
+                        'Chưa thể thiết lập phiên tại bàn. Hãy tải lại trang hoặc nhờ nhân viên hỗ trợ.',
+                      );
                     }
+                  } else {
+                    setActivationError(
+                      'Chưa thể thiết lập phiên tại bàn. Hãy tải lại trang hoặc nhờ nhân viên hỗ trợ.',
+                    );
                   }
                 })
                 .catch(() => {
-                  // Non-blocking: public table/menu browsing remains fully functional even without guest session
+                  setActivationError(
+                    'Chưa thể thiết lập phiên tại bàn. Bạn vẫn có thể xem thực đơn.',
+                  );
                 });
             }
           } catch {
-            // Non-blocking
+            setActivationError('Chưa thể thiết lập phiên tại bàn. Bạn vẫn có thể xem thực đơn.');
           }
         }
       })
@@ -94,10 +131,66 @@ export function PublicMenuExperience({ publicId }: { publicId: string }) {
       });
 
     return () => controller.abort();
-  }, [publicId, reloadToken]);
+  }, [publicId, refreshActivation, reloadToken]);
+
+  useEffect(() => {
+    if (!sessionEstablished || activation.status !== 'PENDING') return;
+    const interval = window.setInterval(() => {
+      void refreshActivation().catch(() => {
+        setActivationError('Chưa thể cập nhật trạng thái. Hệ thống sẽ tự thử lại.');
+      });
+    }, 5_000);
+    return () => window.clearInterval(interval);
+  }, [activation.status, refreshActivation, sessionEstablished]);
 
   const itemCount = useMemo(() => cart.reduce((total, line) => total + line.quantity, 0), [cart]);
   const subtotal = useMemo(() => calculateDraftSubtotal(cart), [cart]);
+
+  const recoverCsrfToken = async (): Promise<string> => {
+    const response = await fetch('/api/v1/guest-sessions/csrf-token', {
+      credentials: 'include',
+    });
+    if (!response.ok) throw new Error('CSRF_RECOVERY_FAILED');
+    const payload = (await response.json()) as { data: { csrfToken: string } };
+    setCsrfToken(payload.data.csrfToken);
+    return payload.data.csrfToken;
+  };
+
+  const submitActivation = async () => {
+    if (activationBusy) return;
+    setActivationBusy(true);
+    setActivationError(null);
+    const idempotencyKey = activationKeyRef.current ?? crypto.randomUUID();
+    activationKeyRef.current = idempotencyKey;
+
+    const send = (token: string) =>
+      fetch('/api/v1/activation-requests', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': idempotencyKey,
+          'X-CSRF-Token': token,
+        },
+        body: JSON.stringify({ tablePublicId: publicId }),
+      });
+
+    try {
+      let token = csrfToken ?? (await recoverCsrfToken());
+      let response = await send(token);
+      if (response.status === 403) {
+        token = await recoverCsrfToken();
+        response = await send(token);
+      }
+      if (!response.ok) throw new Error('ACTIVATION_REQUEST_FAILED');
+      const payload = (await response.json()) as { data: ActivationState };
+      setActivation(payload.data);
+    } catch {
+      setActivationError('Chưa thể gửi yêu cầu. Vui lòng thử lại hoặc nhờ nhân viên hỗ trợ.');
+    } finally {
+      setActivationBusy(false);
+    }
+  };
 
   if (loadState.status === 'loading') {
     return (
@@ -174,13 +267,57 @@ export function PublicMenuExperience({ publicId }: { publicId: string }) {
         </aside>
       </header>
 
+      {loadState.table.availability === 'AVAILABLE' ? (
+        <section className="activation-panel" aria-labelledby="activation-heading">
+          <div>
+            <p className="eyebrow">Xác nhận dùng bàn</p>
+            <h2 id="activation-heading">Kích hoạt bàn để chuẩn bị gọi món</h2>
+            {activation.status === 'PENDING' ? (
+              <p role="status">
+                Nhân viên đang xác nhận yêu cầu tại bàn này. Yêu cầu hết hạn lúc{' '}
+                {activation.expiresAt
+                  ? new Date(activation.expiresAt).toLocaleTimeString('vi-VN')
+                  : 'sau ít phút'}
+                .
+              </p>
+            ) : activation.status === 'EXPIRED' ? (
+              <p role="status">
+                Yêu cầu trước đã hết hạn. Bạn có thể gửi lại khi đã có mặt tại bàn.
+              </p>
+            ) : (
+              <p>Gửi yêu cầu khi bạn đã có mặt. Nhân viên cần xác nhận trước khi có thể đặt món.</p>
+            )}
+            <p className="activation-safety-copy">
+              Kích hoạt bàn không tự gửi các món đang có trong giỏ nháp.
+            </p>
+            {activationError ? <p className="activation-error">{activationError}</p> : null}
+          </div>
+          {activation.status !== 'PENDING' ? (
+            <button
+              className="primary-button"
+              type="button"
+              disabled={!sessionEstablished || activationBusy}
+              onClick={() => void submitActivation()}
+            >
+              {activationBusy
+                ? 'Đang gửi…'
+                : activation.status === 'EXPIRED'
+                  ? 'Gửi lại yêu cầu'
+                  : 'Yêu cầu kích hoạt bàn'}
+            </button>
+          ) : (
+            <span className="activation-waiting-badge">Đang chờ nhân viên</span>
+          )}
+        </section>
+      ) : null}
+
       <div
         className="draft-notice"
         role="note"
         data-session-established={sessionEstablished ? 'true' : 'false'}
       >
         <strong>Đây là giỏ nháp trên thiết bị.</strong>
-        <span>Chức năng kích hoạt bàn và gửi món chưa khả dụng ở bước này.</span>
+        <span>Kích hoạt bàn không cấp quyền gọi món hoặc tự gửi nội dung giỏ nháp.</span>
       </div>
 
       <nav className="view-switcher" aria-label="Thực đơn và giỏ nháp">

@@ -109,7 +109,7 @@ Dependency: M1 complete/owner-approved; [Phase 1 plan](phase-01.md) approved. M2
 | DONE   | M2.2     | Implement public static-QR table context, menu API và customer browse/cart       |
 | DONE   | M2.3     | Implement staff auth, memberships, multi-role permissions và login               |
 | DONE   | M2.4     | Implement browse-only guest session, cookie/origin boundary và CSRF              |
-| TODO   | M2.5     | Implement activation request, generic waiting state và staff queue               |
+| DONE   | M2.5     | Implement activation request, generic waiting state và staff queue               |
 | TODO   | M2.6     | Implement atomic approval/rejection và approved credential-claim contract        |
 | TODO   | M2.7     | Implement join-code issue/rotate/rate-limit/recovery                             |
 | TODO   | M2.8     | Implement ordering/billing/idempotency/outbox persistence                        |
@@ -125,6 +125,8 @@ M2.2 evidence: read-only public table/menu endpoints enforce active scope and sa
 M2.3 evidence: versioned staff/RBAC/session migration deploys cleanly on isolated PostgreSQL; opaque hash-only 8-hour sessions, salted `scrypt`, revocation, CSRF rotation/origin enforcement, explicit CORS/cookie policy and in-memory login throttling are covered by unit/integration tests. Authorization guard tests cover allowed, denied và wrong-location access; inactive/expired/revoked session paths use current database state. Local owner bootstrap is explicit and refuses managed database targets.
 
 M2.4 evidence: versioned `guest_session` migration deploys cleanly on isolated PostgreSQL; opaque hash-only tokens, 30-minute idle and 8-hour absolute timeouts, synchronizer CSRF tokens, origin enforcement, safe session reuse on the same table, device/table isolation and separation between staff and guest cookies are covered by unit and PostgreSQL integration tests. Web client `/t/[publicId]` seamlessly integrates non-blocking guest bootstrap while preserving independent public menu and draft-cart functionality. TableSession foreign key is intentionally deferred to avoid premature placeholder tables.
+
+M2.5 evidence: Prisma schema validates/client generates; API and customer UI implement guest request/current polling, generic other-device waiting, 5-minute configurable TTL, minimal idempotency and location-scoped staff queue. Component tests cover explicit activation, CSRF recovery with stable idempotency key và draft-cart preservation. Migration deploy và 5 PostgreSQL integration tests pass trên isolated local `eatease_m2_test`, bao phủ concurrent requests, partial unique enforcement, idempotency/payload conflict, read-only expiry projection + write-side transition, other-device privacy và staff session/permission/location isolation.
 
 ## M3 — Fulfillment, cancellation and serving
 
