@@ -8,6 +8,8 @@ export type ActivationGuestResponse = {
   status: ActivationGuestState;
   expiresAt?: string;
   activationRequestId?: string;
+  version?: number;
+  claimAvailable?: boolean;
 };
 
 export type ActivationCommandResult = {
@@ -91,4 +93,26 @@ export type RejectActivationResponse = {
     handledAt: string;
     rejectionReason: string;
   };
+};
+
+export type ClaimActivationInput = {
+  expectedVersion: number;
+  idempotencyKey: string;
+  rawSessionToken: string;
+  rawCsrfToken: string;
+};
+
+export type ClaimActivationData = {
+  session: {
+    accessLevel: 'ORDER_ENABLED';
+    tableSessionId: string;
+    version: number;
+  };
+};
+
+export type ClaimActivationResult = {
+  data: ClaimActivationData;
+  sessionToken: string;
+  csrfToken: string;
+  absoluteExpiresAt: Date;
 };

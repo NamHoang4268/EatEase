@@ -18,6 +18,7 @@ describe('loadEnvironment', () => {
       GUEST_IDLE_TIMEOUT_MINUTES: 30,
       GUEST_ABSOLUTE_TIMEOUT_HOURS: 8,
       ACTIVATION_REQUEST_TTL_MINUTES: 5,
+      GUEST_CLAIM_RECOVERY_TTL_SECONDS: 120,
       TRUSTED_WEB_ORIGINS: ['http://localhost:3000'],
       TRUST_PROXY_HOPS: 0,
     });
@@ -30,12 +31,29 @@ describe('loadEnvironment', () => {
         GUEST_IDLE_TIMEOUT_MINUTES: '45',
         GUEST_ABSOLUTE_TIMEOUT_HOURS: '12',
         ACTIVATION_REQUEST_TTL_MINUTES: '10',
+        GUEST_CLAIM_RECOVERY_TTL_SECONDS: '180',
       }),
     ).toMatchObject({
       GUEST_IDLE_TIMEOUT_MINUTES: 45,
       GUEST_ABSOLUTE_TIMEOUT_HOURS: 12,
       ACTIVATION_REQUEST_TTL_MINUTES: 10,
+      GUEST_CLAIM_RECOVERY_TTL_SECONDS: 180,
     });
+  });
+
+  it('rejects claim recovery TTL values outside the approved range', () => {
+    expect(() =>
+      loadEnvironment({
+        DATABASE_URL: 'postgresql://user:password@localhost:5432/eatease',
+        GUEST_CLAIM_RECOVERY_TTL_SECONDS: '29',
+      }),
+    ).toThrow('Invalid API environment');
+    expect(() =>
+      loadEnvironment({
+        DATABASE_URL: 'postgresql://user:password@localhost:5432/eatease',
+        GUEST_CLAIM_RECOVERY_TTL_SECONDS: '301',
+      }),
+    ).toThrow('Invalid API environment');
   });
 
   it('uses the platform PORT when provided', () => {
