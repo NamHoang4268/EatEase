@@ -68,6 +68,7 @@ function guestBootstrapResponse(csrfToken = 'test-csrf-token') {
 describe('PublicMenuExperience', () => {
   afterEach(() => {
     cleanup();
+    window.sessionStorage.clear();
     vi.unstubAllGlobals();
   });
 
@@ -311,5 +312,178 @@ describe('PublicMenuExperience', () => {
       (call: unknown[]) => call[0] === '/api/v1/activation-requests/current',
     );
     expect(pollCall?.[1]).toMatchObject({ credentials: 'include' });
+  });
+
+  it.each([
+    ['REJECTED', 'Yêu cầu chưa được chấp nhận'],
+    ['EXPIRED', 'Yêu cầu trước đã hết hạn'],
+    ['CANCELLED', 'Yêu cầu kích hoạt đã được hủy'],
+  ] as const)(
+    'renders the %s activation state without claiming automatically',
+    async (status, copy) => {
+      const fetchMock = vi.fn().mockImplementation((url: string) => {
+        if (url.includes('/api/v1/public/tables/'))
+          return Promise.resolve(mockResponse(tableResponse));
+        if (url.includes('/api/v1/public/menu')) return Promise.resolve(mockResponse(menuResponse));
+        if (url === '/api/v1/guest-sessions') return Promise.resolve(guestBootstrapResponse());
+        if (url === '/api/v1/activation-requests/current') {
+          return Promise.resolve(mockResponse({ data: { status } }));
+        }
+        return Promise.reject(new Error(`Unhandled url: ${url}`));
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      render(<PublicMenuExperience publicId={tableResponse.data.publicId} />);
+      expect(await screen.findByText(new RegExp(copy))).toBeDefined();
+      expect(
+        fetchMock.mock.calls.some(
+          (call: unknown[]) => call[0] === '/api/v1/activation-requests/current/claim',
+        ),
+      ).toBe(false);
+    },
+  );
+
+  it('claims only after explicit action, refreshes the session, and preserves the draft cart', async () => {
+    vi.stubGlobal('crypto', { randomUUID: () => 'claim-key-1' });
+    let activationReadCount = 0;
+    const approvedState = {
+      status: 'APPROVED',
+      activationRequestId: 'activation-request-1',
+      version: 1,
+      claimAvailable: true,
+      expiresAt: new Date(Date.now() + 300_000).toISOString(),
+    };
+    const fetchMock = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (url.includes('/api/v1/public/tables/'))
+        return Promise.resolve(mockResponse(tableResponse));
+      if (url.includes('/api/v1/public/menu')) return Promise.resolve(mockResponse(menuResponse));
+      if (url === '/api/v1/guest-sessions') return Promise.resolve(guestBootstrapResponse());
+      if (url === '/api/v1/activation-requests/current') {
+        activationReadCount += 1;
+        return Promise.resolve(
+          mockResponse({
+            data:
+              activationReadCount === 1
+                ? approvedState
+                : { ...approvedState, claimAvailable: undefined },
+          }),
+        );
+      }
+      if (url === '/api/v1/activation-requests/current/claim' && init?.method === 'POST') {
+        return Promise.resolve(
+          mockResponse({
+            data: {
+              session: {
+                accessLevel: 'ORDER_ENABLED',
+                tableSessionId: 'table-session-1',
+                version: 1,
+              },
+              csrfToken: 'rotated-csrf',
+            },
+          }),
+        );
+      }
+      if (url === '/api/v1/guest-sessions/current') {
+        return Promise.resolve(
+          mockResponse({ data: { session: { accessLevel: 'ORDER_ENABLED' } } }),
+        );
+      }
+      return Promise.reject(new Error(`Unhandled url: ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<PublicMenuExperience publicId={tableResponse.data.publicId} />);
+    await screen.findByText('Bếp Mây Demo');
+    fireEvent.click(screen.getByRole('button', { name: 'Thêm Cơm gà lá chanh vào giỏ nháp' }));
+    const claimButton = await screen.findByRole('button', {
+      name: 'Tiếp tục với bàn đã kích hoạt',
+    });
+    expect(
+      fetchMock.mock.calls.some(
+        (call: unknown[]) => call[0] === '/api/v1/activation-requests/current/claim',
+      ),
+    ).toBe(false);
+    fireEvent.click(claimButton);
+
+    expect(await screen.findByText('Đã cấp quyền tại bàn')).toBeDefined();
+    const claimCall = fetchMock.mock.calls.find(
+      (call: unknown[]) => call[0] === '/api/v1/activation-requests/current/claim',
+    );
+    expect(claimCall?.[1]).toMatchObject({
+      credentials: 'include',
+      headers: {
+        'Idempotency-Key': 'claim-key-1',
+        'X-CSRF-Token': 'test-csrf-token',
+      },
+      body: JSON.stringify({ expectedVersion: 1 }),
+    });
+    expect(window.sessionStorage.length).toBe(0);
+    fireEvent.click(screen.getByRole('button', { name: /Giỏ nháp/ }));
+    expect(screen.getByLabelText('Số lượng hiện tại: 1')).toBeDefined();
+    expect(screen.getByText('Chưa thể gửi món trong giai đoạn này')).toBeDefined();
+  });
+
+  it('reuses the bounded claim idempotency key after an uncertain response', async () => {
+    vi.stubGlobal('crypto', { randomUUID: () => 'claim-recovery-key' });
+    let claimCount = 0;
+    const approvedState = {
+      status: 'APPROVED',
+      activationRequestId: 'activation-request-recovery',
+      version: 1,
+      claimAvailable: true,
+    };
+    const fetchMock = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (url.includes('/api/v1/public/tables/'))
+        return Promise.resolve(mockResponse(tableResponse));
+      if (url.includes('/api/v1/public/menu')) return Promise.resolve(mockResponse(menuResponse));
+      if (url === '/api/v1/guest-sessions') return Promise.resolve(guestBootstrapResponse());
+      if (url === '/api/v1/activation-requests/current')
+        return Promise.resolve(mockResponse({ data: approvedState }));
+      if (url === '/api/v1/activation-requests/current/claim' && init?.method === 'POST') {
+        claimCount += 1;
+        return claimCount === 1
+          ? Promise.reject(new Error('response lost'))
+          : Promise.resolve(
+              mockResponse({
+                data: {
+                  session: {
+                    accessLevel: 'ORDER_ENABLED',
+                    tableSessionId: 'table-session-1',
+                    version: 1,
+                  },
+                  csrfToken: 'recovered-csrf',
+                },
+              }),
+            );
+      }
+      if (url === '/api/v1/guest-sessions/current')
+        return Promise.resolve(
+          mockResponse({ data: { session: { accessLevel: 'ORDER_ENABLED' } } }),
+        );
+      return Promise.reject(new Error(`Unhandled url: ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    render(<PublicMenuExperience publicId={tableResponse.data.publicId} />);
+
+    const claimButton = await screen.findByRole('button', {
+      name: 'Tiếp tục với bàn đã kích hoạt',
+    });
+    fireEvent.click(claimButton);
+    expect(await screen.findByText(/Phản hồi bị gián đoạn/)).toBeDefined();
+    expect(window.sessionStorage.length).toBe(1);
+    fireEvent.click(claimButton);
+    expect(await screen.findByText('Đã cấp quyền tại bàn')).toBeDefined();
+
+    const claimCalls = fetchMock.mock.calls.filter(
+      (call: unknown[]) => call[0] === '/api/v1/activation-requests/current/claim',
+    );
+    expect(claimCalls).toHaveLength(2);
+    expect((claimCalls[0]?.[1] as RequestInit).headers).toMatchObject({
+      'Idempotency-Key': 'claim-recovery-key',
+    });
+    expect((claimCalls[1]?.[1] as RequestInit).headers).toMatchObject({
+      'Idempotency-Key': 'claim-recovery-key',
+    });
+    expect(window.sessionStorage.length).toBe(0);
   });
 });
