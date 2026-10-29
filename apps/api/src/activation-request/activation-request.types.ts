@@ -38,3 +38,57 @@ export type StaffActivationQueueInput = {
   status: 'PENDING';
   principal: StaffPrincipal;
 };
+
+type StaffActivationDecisionBase = {
+  activationRequestId: string;
+  expectedVersion: number;
+  idempotencyKey: string;
+  principal: StaffPrincipal;
+};
+
+export type ApproveActivationInput = StaffActivationDecisionBase & {
+  physicalPresenceConfirmed: true;
+};
+
+export type RejectActivationInput = StaffActivationDecisionBase & {
+  reason: string;
+};
+
+export type ApproveActivationResponse = {
+  activationRequest: {
+    id: string;
+    status: 'APPROVED';
+    version: number;
+    handledAt: string;
+  };
+  table: {
+    publicId: string;
+    physicalStatus: 'OCCUPIED';
+    version: number;
+  };
+  tableSession: {
+    id: string;
+    status: 'ACTIVE';
+    version: number;
+  };
+  bill: {
+    id: string;
+    status: 'OPEN';
+    subtotalAmount: string;
+    adjustmentAmount: string;
+    totalAmount: string;
+    paidAmount: string;
+    balanceAmount: string;
+    version: number;
+  };
+};
+
+export type RejectActivationResponse = {
+  activationRequest: {
+    id: string;
+    status: 'REJECTED';
+    version: number;
+    handledAt: string;
+    rejectionReason: string;
+  };
+};
