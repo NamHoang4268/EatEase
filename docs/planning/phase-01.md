@@ -1,6 +1,6 @@
 # Phase 1 — First business vertical slice
 
-Status: **APPROVED planning target**, implementation `TODO`.
+Status: **APPROVED planning target**, implementation `IN_PROGRESS` (`M2.0–M2.6 DONE`; M2.7+ chưa bắt đầu).
 
 Trong roadmap repository, business Phase 1 được thực hiện tại Milestone M2 sau foundation M1.
 

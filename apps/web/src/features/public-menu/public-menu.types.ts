@@ -43,4 +43,17 @@ export type ActivationState = {
   status: 'NOT_REQUESTED' | 'PENDING' | 'APPROVED' | 'REJECTED' | 'EXPIRED' | 'CANCELLED';
   expiresAt?: string;
   activationRequestId?: string;
+  version?: number;
+  claimAvailable?: boolean;
+};
+
+export type GuestAccessLevel = 'BROWSE_ONLY' | 'ORDER_ENABLED';
+
+export type ClaimActivationResponse = {
+  session: {
+    accessLevel: 'ORDER_ENABLED';
+    tableSessionId: string;
+    version: number;
+  };
+  csrfToken: string;
 };

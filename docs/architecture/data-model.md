@@ -1,6 +1,6 @@
 # Relational data model
 
-Status: **APPROVED logical baseline**. M2.1 đã triển khai physical Prisma schema/migration cho restaurant/location/table/menu catalog; M2.3 đã triển khai staff identity, membership, roles/permissions và staff session; M2.4 đã triển khai guest browse session; M2.5 đã thêm activation request và minimal idempotency persistence. M2.6 persistence contract dưới đây đã được owner approve nhưng chưa được implement; các domain tables còn lại tiếp tục là logical baseline cho task tương ứng.
+Status: **APPROVED implemented baseline through M2.6**. Physical schema/migrations hiện gồm restaurant/location/table/menu, staff identity/RBAC/session, guest session, activation request, TableSession, Bill, claim recovery hashes, idempotency, outbox và audit persistence. Các domain tables từ M2.7 trở đi tiếp tục là logical baseline cho task tương ứng.
 
 ## ERD
 

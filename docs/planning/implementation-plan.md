@@ -110,7 +110,7 @@ Dependency: M1 complete/owner-approved; [Phase 1 plan](phase-01.md) approved. M2
 | DONE   | M2.3     | Implement staff auth, memberships, multi-role permissions và login               |
 | DONE   | M2.4     | Implement browse-only guest session, cookie/origin boundary và CSRF              |
 | DONE   | M2.5     | Implement activation request, generic waiting state và staff queue               |
-| TODO   | M2.6     | Implement atomic approval/rejection và approved credential-claim contract        |
+| DONE   | M2.6     | Implement atomic approval/rejection và approved credential-claim contract        |
 | TODO   | M2.7     | Implement join-code issue/rotate/rate-limit/recovery                             |
 | TODO   | M2.8     | Implement ordering/billing/idempotency/outbox persistence                        |
 | TODO   | M2.9     | Implement shared guest/Waiter `SubmitOrder` and consolidated bill preview        |
@@ -130,16 +130,18 @@ M2.5 evidence: Prisma schema validates/client generates; API and customer UI imp
 
 ### M2.6 — Staff activation approval
 
-**Status:** `TODO`; contract clarification is approved, implementation has not started.
+**Status:** `DONE`; database, API, staff/guest UI và verification đã hoàn tất. M2.7 vẫn cần task-specific owner authorization.
 
-- [ ] Add reviewed schema/migration for linked TableSession, one-to-one OPEN Bill, guest claim recovery hashes, scoped outbox and audit records.
-- [ ] Implement staff approve/reject commands with session + CSRF, `table.activation.approve`, location/resource isolation, `expectedVersion`, physical-presence attestation and command idempotency.
-- [ ] Enforce deterministic lock order, partial unique active-session guard, atomic request/session/bill/table/reliability writes, and race-safe `409` behavior.
-- [ ] Implement requester-only explicit claim with guest + CSRF rotation, fixed 120-second previous-token recovery window and no credential material in persistence/logging.
-- [ ] Add minimal `/staff/login` UI and location-scoped activation queue. Queue shows table code/capacity, request age/expiry/status/version; approval requires an explicit physical-presence checkbox, rejection requires a reason, actions keep one stable idempotency key and stale conflicts trigger refetch.
-- [ ] Add requester UI action **“Continue with activated table”**. Do not auto-claim while polling; preserve local draft cart, retain one request-scoped claim idempotency key in `sessionStorage` only for bounded recovery, avoid parallel claim calls, and never auto-submit cart.
-- [ ] Add unit, PostgreSQL integration, authorization/concurrency and UI tests for approval/rejection/claim, duplicate replay, stale versions, expiry, approve-vs-reject races, wrong location, other-device denial, token recovery before/after TTL, outbox/audit atomicity and absence of Order/BillLine/join-code side effects.
-- [ ] Update implementation evidence only after schema/API/UI checks and isolated PostgreSQL tests actually pass; do not mark M2.6 `DONE` from contract documentation alone.
+- [x] Add reviewed schema/migration for linked TableSession, one-to-one OPEN Bill, guest claim recovery hashes, scoped outbox and audit records.
+- [x] Implement staff approve/reject commands with session + CSRF, `table.activation.approve`, location/resource isolation, `expectedVersion`, physical-presence attestation and command idempotency.
+- [x] Enforce deterministic lock order, partial unique active-session guard, atomic request/session/bill/table/reliability writes, and race-safe `409` behavior.
+- [x] Implement requester-only explicit claim with guest + CSRF rotation, fixed 120-second previous-token recovery window and no credential material in persistence/logging.
+- [x] Add minimal `/staff/login` UI and location-scoped activation queue. Queue shows table code/capacity, request age/expiry/status/version; approval requires an explicit physical-presence checkbox, rejection requires a reason, actions keep one stable idempotency key and stale conflicts trigger refetch.
+- [x] Add requester UI action **“Continue with activated table”**. Do not auto-claim while polling; preserve local draft cart, retain one request-scoped claim idempotency key in `sessionStorage` only for bounded recovery, avoid parallel claim calls, and never auto-submit cart.
+- [x] Add unit, PostgreSQL integration, authorization/concurrency and UI tests for approval/rejection/claim, duplicate replay, stale versions, expiry, approve-vs-reject races, wrong location, other-device denial, token recovery before/after TTL, outbox/audit atomicity and absence of Order/BillLine/join-code side effects.
+- [x] Update implementation evidence only after schema/API/UI checks and isolated PostgreSQL tests actually pass; do not mark M2.6 `DONE` from contract documentation alone.
+
+M2.6 evidence: reviewed forward-only migrations enforce scoped TableSession/Bill/guest-session invariants; approve/reject/claim commands use deterministic locks, version checks, idempotency, atomic audit/outbox persistence and requester-only credential rotation. `/staff/login` restores staff sessions, exposes only the authorized location queue and requires physical-presence confirmation/rejection reason. `/t/[publicId]` renders activation terminal states and performs claim only after explicit guest action, preserving the draft cart and a bounded request-scoped recovery key without persisting credentials. Final verification on isolated PostgreSQL `eatease_m2_test`: 25 web component tests, 36 API unit tests and 51 API integration tests pass, cùng lint, typecheck, format, production builds và diff checks.
 
 Out of scope: join-code lifecycle (M2.7), order/cart submission and billing lines (M2.8–M2.9), kitchen workflows, outbox worker/realtime delivery (M2.11), settlement and later milestones.
 

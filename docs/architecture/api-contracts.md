@@ -1,6 +1,6 @@
 # API contracts — first vertical slice
 
-Status: **APPROVED planning baseline**. M2.2 public table/menu reads, M2.3 staff authentication, M2.4 guest browse session và M2.5 activation request/read-only queue đã được implement. M2.6 approval, rejection và requester claim contracts đã được owner approve và được đặc tả tại đây; implementation vẫn chưa hoàn thành.
+Status: **APPROVED implemented baseline through M2.6**. Public table/menu, staff authentication, guest browse session, activation request/queue, staff approval/rejection và requester-only claim đã được implement và verified. Join codes, ordering và later contracts vẫn thuộc task tương ứng.
 
 Base path: `/api/v1`. REST là authoritative; Socket.IO event chỉ báo client refetch state.
 

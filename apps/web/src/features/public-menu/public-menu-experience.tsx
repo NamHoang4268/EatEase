@@ -11,6 +11,8 @@ import {
 } from './draft-cart';
 import type {
   ActivationState,
+  ClaimActivationResponse,
+  GuestAccessLevel,
   GuestSessionData,
   PublicMenu,
   PublicMenuItem,
@@ -29,24 +31,82 @@ const availabilityCopy = {
   UNAVAILABLE: 'Bàn hiện chưa sẵn sàng · Chỉ xem thực đơn',
 } as const;
 
+const CLAIM_RECOVERY_TTL_MS = 120_000;
+
+type StoredClaimAttempt = {
+  idempotencyKey: string;
+  createdAt: number;
+  scopeKey: string;
+};
+
+function claimStorageKey(publicId: string, activation: ActivationState): string | null {
+  if (!activation.activationRequestId || activation.version === undefined) return null;
+  return `eatease:claim:${publicId}:${activation.activationRequestId}:${activation.version}`;
+}
+
+function readClaimAttempt(key: string): StoredClaimAttempt | null {
+  try {
+    const raw = window.sessionStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<StoredClaimAttempt>;
+    if (
+      typeof parsed.idempotencyKey !== 'string' ||
+      typeof parsed.createdAt !== 'number' ||
+      parsed.scopeKey !== key ||
+      Date.now() - parsed.createdAt >= CLAIM_RECOVERY_TTL_MS
+    ) {
+      window.sessionStorage.removeItem(key);
+      return null;
+    }
+    return { idempotencyKey: parsed.idempotencyKey, createdAt: parsed.createdAt, scopeKey: key };
+  } catch {
+    return null;
+  }
+}
+
+function writeClaimAttempt(key: string, attempt: StoredClaimAttempt): void {
+  try {
+    window.sessionStorage.setItem(key, JSON.stringify(attempt));
+  } catch {
+    // sessionStorage can be unavailable in restrictive browser modes; in-memory retry still works.
+  }
+}
+
+function clearClaimAttempt(key: string | null): void {
+  if (!key) return;
+  try {
+    window.sessionStorage.removeItem(key);
+  } catch {
+    // Nothing sensitive is stored and failure to clear expires naturally after the bounded TTL.
+  }
+}
+
 export function PublicMenuExperience({ publicId }: { publicId: string }) {
   const [loadState, setLoadState] = useState<LoadState>({ status: 'loading' });
   const [reloadToken, setReloadToken] = useState(0);
   const [view, setView] = useState<'menu' | 'cart'>('menu');
   const [cart, setCart] = useState<DraftCartLine[]>([]);
   const [sessionEstablished, setSessionEstablished] = useState(false);
+  const [guestAccess, setGuestAccess] = useState<GuestAccessLevel>('BROWSE_ONLY');
   const [csrfToken, setCsrfToken] = useState<string | null>(null);
   const [activation, setActivation] = useState<ActivationState>({ status: 'NOT_REQUESTED' });
   const [activationBusy, setActivationBusy] = useState(false);
   const [activationError, setActivationError] = useState<string | null>(null);
+  const [claimBusy, setClaimBusy] = useState(false);
+  const [claimError, setClaimError] = useState<string | null>(null);
   const bootstrappedTableRef = useRef<string | null>(null);
   const activationKeyRef = useRef<string | null>(null);
+  const claimAttemptRef = useRef<StoredClaimAttempt | null>(null);
 
   const refreshActivation = useCallback(async (signal?: AbortSignal) => {
     const response = await fetch('/api/v1/activation-requests/current', {
       credentials: 'include',
       ...(signal ? { signal } : {}),
     });
+    if (response.status === 401) {
+      setSessionEstablished(false);
+      throw new Error('GUEST_SESSION_INVALID');
+    }
     if (!response.ok) throw new Error('ACTIVATION_STATUS_UNAVAILABLE');
     const payload = (await response.json()) as { data: ActivationState };
     setActivation(payload.data);
@@ -96,6 +156,7 @@ export function PublicMenuExperience({ publicId }: { publicId: string }) {
                     if (payload.data?.csrfToken) {
                       setCsrfToken(payload.data.csrfToken);
                       setSessionEstablished(true);
+                      setGuestAccess(payload.data.session.accessLevel);
                       setActivation({
                         status: payload.data.activationState as ActivationState['status'],
                       });
@@ -156,6 +217,18 @@ export function PublicMenuExperience({ publicId }: { publicId: string }) {
     return payload.data.csrfToken;
   };
 
+  const refreshGuestSession = async (): Promise<void> => {
+    const response = await fetch('/api/v1/guest-sessions/current', {
+      credentials: 'include',
+    });
+    if (!response.ok) throw new Error('GUEST_SESSION_REFRESH_FAILED');
+    const payload = (await response.json()) as {
+      data: { session: { accessLevel: GuestAccessLevel } };
+    };
+    setGuestAccess(payload.data.session.accessLevel);
+    setSessionEstablished(true);
+  };
+
   const submitActivation = async () => {
     if (activationBusy) return;
     setActivationBusy(true);
@@ -189,6 +262,84 @@ export function PublicMenuExperience({ publicId }: { publicId: string }) {
       setActivationError('Chưa thể gửi yêu cầu. Vui lòng thử lại hoặc nhờ nhân viên hỗ trợ.');
     } finally {
       setActivationBusy(false);
+    }
+  };
+
+  const claimActivation = async () => {
+    if (claimBusy || !activation.claimAvailable || activation.version === undefined) return;
+    const storageKey = claimStorageKey(publicId, activation);
+    if (!storageKey) {
+      setClaimError('Thiếu thông tin phiên kích hoạt. Hãy cập nhật trạng thái rồi thử lại.');
+      return;
+    }
+
+    const storedAttempt = readClaimAttempt(storageKey);
+    const attempt =
+      claimAttemptRef.current &&
+      claimAttemptRef.current.scopeKey === storageKey &&
+      Date.now() - claimAttemptRef.current.createdAt < CLAIM_RECOVERY_TTL_MS
+        ? claimAttemptRef.current
+        : (storedAttempt ?? {
+            idempotencyKey: crypto.randomUUID(),
+            createdAt: Date.now(),
+            scopeKey: storageKey,
+          });
+    claimAttemptRef.current = attempt;
+    writeClaimAttempt(storageKey, attempt);
+    setClaimBusy(true);
+    setClaimError(null);
+
+    const send = (token: string) =>
+      fetch('/api/v1/activation-requests/current/claim', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': attempt.idempotencyKey,
+          'X-CSRF-Token': token,
+        },
+        body: JSON.stringify({ expectedVersion: activation.version }),
+      });
+
+    try {
+      let token = csrfToken ?? (await recoverCsrfToken());
+      let response = await send(token);
+      if (response.status === 403) {
+        token = await recoverCsrfToken();
+        response = await send(token);
+      }
+      if (!response.ok) {
+        clearClaimAttempt(storageKey);
+        claimAttemptRef.current = null;
+        if (response.status === 401 || response.status === 403) {
+          setSessionEstablished(false);
+          setClaimError(
+            'Phiên xác nhận không còn hợp lệ hoặc thời gian khôi phục đã hết. Hãy nhờ nhân viên hỗ trợ.',
+          );
+        } else if (response.status === 409) {
+          setClaimError(
+            'Trạng thái kích hoạt đã thay đổi. Hãy cập nhật và thử lại nếu còn khả dụng.',
+          );
+          await refreshActivation();
+        } else {
+          setClaimError('Chưa thể tiếp tục với bàn đã kích hoạt. Vui lòng thử lại.');
+        }
+        return;
+      }
+
+      const payload = (await response.json()) as { data: ClaimActivationResponse };
+      setCsrfToken(payload.data.csrfToken);
+      setGuestAccess(payload.data.session.accessLevel);
+      setSessionEstablished(true);
+      clearClaimAttempt(storageKey);
+      claimAttemptRef.current = null;
+      await Promise.allSettled([refreshGuestSession(), refreshActivation()]);
+    } catch {
+      setClaimError(
+        'Phản hồi bị gián đoạn. Hãy thử lại trong 2 phút; hệ thống sẽ dùng đúng mã yêu cầu cũ.',
+      );
+    } finally {
+      setClaimBusy(false);
     }
   };
 
@@ -267,12 +418,23 @@ export function PublicMenuExperience({ publicId }: { publicId: string }) {
         </aside>
       </header>
 
-      {loadState.table.availability === 'AVAILABLE' ? (
+      {loadState.table.availability === 'AVAILABLE' ||
+      activation.status !== 'NOT_REQUESTED' ||
+      guestAccess === 'ORDER_ENABLED' ? (
         <section className="activation-panel" aria-labelledby="activation-heading">
           <div>
             <p className="eyebrow">Xác nhận dùng bàn</p>
-            <h2 id="activation-heading">Kích hoạt bàn để chuẩn bị gọi món</h2>
-            {activation.status === 'PENDING' ? (
+            <h2 id="activation-heading">
+              {guestAccess === 'ORDER_ENABLED'
+                ? 'Bàn đã sẵn sàng cho phiên của bạn'
+                : 'Kích hoạt bàn để chuẩn bị gọi món'}
+            </h2>
+            {guestAccess === 'ORDER_ENABLED' ? (
+              <p role="status">
+                Phiên trên thiết bị này đã được cấp quyền tại bàn. Tính năng gửi món sẽ được triển
+                khai ở bước tiếp theo.
+              </p>
+            ) : activation.status === 'PENDING' ? (
               <p role="status">
                 Nhân viên đang xác nhận yêu cầu tại bàn này. Yêu cầu hết hạn lúc{' '}
                 {activation.expiresAt
@@ -280,9 +442,24 @@ export function PublicMenuExperience({ publicId }: { publicId: string }) {
                   : 'sau ít phút'}
                 .
               </p>
+            ) : activation.status === 'APPROVED' ? (
+              <p role="status">
+                Nhân viên đã xác nhận bàn. Bạn cần chủ động tiếp tục để bảo vệ quyền truy cập trên
+                đúng thiết bị đã gửi yêu cầu.
+              </p>
+            ) : activation.status === 'REJECTED' ? (
+              <p role="status">
+                Yêu cầu chưa được chấp nhận. Hãy kiểm tra đúng bàn hoặc trao đổi trực tiếp với nhân
+                viên.
+              </p>
             ) : activation.status === 'EXPIRED' ? (
               <p role="status">
                 Yêu cầu trước đã hết hạn. Bạn có thể gửi lại khi đã có mặt tại bàn.
+              </p>
+            ) : activation.status === 'CANCELLED' ? (
+              <p role="status">
+                Yêu cầu kích hoạt đã được hủy. Bạn có thể gửi yêu cầu mới khi vẫn đang có mặt tại
+                bàn.
               </p>
             ) : (
               <p>Gửi yêu cầu khi bạn đã có mặt. Nhân viên cần xác nhận trước khi có thể đặt món.</p>
@@ -291,8 +468,22 @@ export function PublicMenuExperience({ publicId }: { publicId: string }) {
               Kích hoạt bàn không tự gửi các món đang có trong giỏ nháp.
             </p>
             {activationError ? <p className="activation-error">{activationError}</p> : null}
+            {claimError ? <p className="activation-error">{claimError}</p> : null}
           </div>
-          {activation.status !== 'PENDING' ? (
+          {guestAccess === 'ORDER_ENABLED' ? (
+            <span className="activation-success-badge">Đã cấp quyền tại bàn</span>
+          ) : activation.status === 'PENDING' ? (
+            <span className="activation-waiting-badge">Đang chờ nhân viên</span>
+          ) : activation.status === 'APPROVED' && activation.claimAvailable ? (
+            <button
+              className="primary-button"
+              type="button"
+              disabled={claimBusy}
+              onClick={() => void claimActivation()}
+            >
+              {claimBusy ? 'Đang tiếp tục…' : 'Tiếp tục với bàn đã kích hoạt'}
+            </button>
+          ) : loadState.table.availability === 'AVAILABLE' && activation.status !== 'APPROVED' ? (
             <button
               className="primary-button"
               type="button"
@@ -306,7 +497,7 @@ export function PublicMenuExperience({ publicId }: { publicId: string }) {
                   : 'Yêu cầu kích hoạt bàn'}
             </button>
           ) : (
-            <span className="activation-waiting-badge">Đang chờ nhân viên</span>
+            <span className="activation-waiting-badge">Cần hỗ trợ từ nhân viên</span>
           )}
         </section>
       ) : null}
@@ -317,7 +508,11 @@ export function PublicMenuExperience({ publicId }: { publicId: string }) {
         data-session-established={sessionEstablished ? 'true' : 'false'}
       >
         <strong>Đây là giỏ nháp trên thiết bị.</strong>
-        <span>Kích hoạt bàn không cấp quyền gọi món hoặc tự gửi nội dung giỏ nháp.</span>
+        <span>
+          {guestAccess === 'ORDER_ENABLED'
+            ? 'Giỏ nháp vẫn chưa được gửi. Bạn sẽ chủ động xác nhận khi tính năng đặt món khả dụng.'
+            : 'Kích hoạt bàn không tự gửi nội dung giỏ nháp.'}
+        </span>
       </div>
 
       <nav className="view-switcher" aria-label="Thực đơn và giỏ nháp">
