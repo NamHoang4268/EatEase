@@ -8,6 +8,7 @@ const environmentSchema = z.object({
   GUEST_IDLE_TIMEOUT_MINUTES: z.coerce.number().int().min(1).max(1440).default(30),
   GUEST_ABSOLUTE_TIMEOUT_HOURS: z.coerce.number().int().min(1).max(72).default(8),
   ACTIVATION_REQUEST_TTL_MINUTES: z.coerce.number().int().min(1).max(60).default(5),
+  GUEST_CLAIM_RECOVERY_TTL_SECONDS: z.coerce.number().int().min(30).max(300).default(120),
   TRUSTED_WEB_ORIGINS: z
     .string()
     .default('http://localhost:3000')

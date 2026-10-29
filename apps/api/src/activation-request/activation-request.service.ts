@@ -225,14 +225,14 @@ export class ActivationRequestService {
         expiresAt: { gt: now },
       },
       orderBy: { createdAt: 'desc' },
-      select: { id: true, requesterGuestSessionId: true, expiresAt: true },
+      select: { id: true, requesterGuestSessionId: true, expiresAt: true, version: true },
     });
     if (pending) {
       return {
         status: 'PENDING',
         expiresAt: pending.expiresAt.toISOString(),
         ...(pending.requesterGuestSessionId === principal.sessionId
-          ? { activationRequestId: pending.id }
+          ? { activationRequestId: pending.id, version: pending.version }
           : {}),
       };
     }
@@ -240,7 +240,7 @@ export class ActivationRequestService {
     const latestOwnRequest = await this.prisma.activationRequest.findFirst({
       where: { requesterGuestSessionId: principal.sessionId, tableId: principal.tableId },
       orderBy: { createdAt: 'desc' },
-      select: { id: true, status: true, expiresAt: true },
+      select: { id: true, status: true, expiresAt: true, version: true },
     });
     if (!latestOwnRequest) return { status: 'NOT_REQUESTED' };
 
@@ -253,6 +253,11 @@ export class ActivationRequestService {
       status,
       activationRequestId: latestOwnRequest.id,
       expiresAt: latestOwnRequest.expiresAt.toISOString(),
+      version: latestOwnRequest.version,
+      ...(status === ActivationRequestStatus.APPROVED &&
+      principal.accessLevel === GuestAccessLevel.BROWSE_ONLY
+        ? { claimAvailable: true }
+        : {}),
     };
   }
 

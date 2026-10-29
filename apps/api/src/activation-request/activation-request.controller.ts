@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  ForbiddenException,
   Get,
   Header,
   Headers,
@@ -15,17 +16,20 @@ import {
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { GuestCsrfGuard } from '../guest-session/guest-csrf.guard.js';
+import { GuestCookieService } from '../guest-session/guest-cookie.service.js';
 import { GuestSessionGuard } from '../guest-session/guest-session.guard.js';
 import type { GuestRequest } from '../guest-session/guest-session.types.js';
+import { OriginPolicyService } from '../staff-auth/origin-policy.service.js';
 import { RequirePermissions } from '../staff-auth/staff-authorization.js';
 import { StaffAuthorizationGuard } from '../staff-auth/staff-authorization.guard.js';
 import type { StaffRequest } from '../staff-auth/staff-auth.types.js';
 import { StaffCsrfGuard } from '../staff-auth/staff-csrf.guard.js';
 import { StaffSessionGuard } from '../staff-auth/staff-session.guard.js';
 import { ActivationDecisionService } from './activation-decision.service.js';
+import { ActivationClaimService } from './activation-claim.service.js';
 import { ActivationRequestService } from './activation-request.service.js';
 
 const requestSchema = z.object({ tablePublicId: z.string().uuid() }).strict();
@@ -43,6 +47,7 @@ const rejectSchema = z
     reason: z.string().trim().min(1).max(500),
   })
   .strict();
+const claimSchema = z.object({ expectedVersion: z.number().int().nonnegative() }).strict();
 
 function guestPrincipal(request: GuestRequest) {
   if (!request.guestPrincipal) {
@@ -133,10 +138,37 @@ function parseRejection(body: unknown) {
   return result.data;
 }
 
+function parseClaim(body: unknown) {
+  const result = claimSchema.safeParse(body);
+  if (!result.success) {
+    throw new BadRequestException({
+      code: 'ACTIVATION_CLAIM_INVALID',
+      message: 'Activation claim request is invalid.',
+      details: {},
+    });
+  }
+  return result.data;
+}
+
+function requiredHeader(
+  value: string | string[] | undefined,
+  code: string,
+  message: string,
+): string {
+  const header = Array.isArray(value) ? undefined : value?.trim();
+  if (!header) {
+    throw new ForbiddenException({ code, message, details: {} });
+  }
+  return header;
+}
+
 @Controller('activation-requests')
 export class GuestActivationRequestController {
   constructor(
     @Inject(ActivationRequestService) private readonly activations: ActivationRequestService,
+    @Inject(ActivationClaimService) private readonly claims: ActivationClaimService,
+    @Inject(GuestCookieService) private readonly cookies: GuestCookieService,
+    @Inject(OriginPolicyService) private readonly origins: OriginPolicyService,
   ) {}
 
   @Post()
@@ -163,6 +195,38 @@ export class GuestActivationRequestController {
   @Header('Cache-Control', 'no-store')
   async current(@Req() request: GuestRequest) {
     return { data: await this.activations.getCurrent(guestPrincipal(request)) };
+  }
+
+  @Post('current/claim')
+  @HttpCode(200)
+  @Header('Cache-Control', 'no-store')
+  async claim(
+    @Body() body: unknown,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    this.origins.assertTrusted(request);
+    const rawSessionToken = this.cookies.read(request);
+    if (!rawSessionToken) {
+      throw new UnauthorizedException({
+        code: 'GUEST_SESSION_INVALID',
+        message: 'Guest session is missing, expired, or revoked.',
+        details: {},
+      });
+    }
+    const result = await this.claims.claim({
+      ...parseClaim(body),
+      idempotencyKey: parseIdempotencyKey(idempotencyKey),
+      rawSessionToken,
+      rawCsrfToken: requiredHeader(
+        request.headers['x-csrf-token'],
+        'GUEST_CSRF_INVALID',
+        'A valid X-CSRF-Token header is required.',
+      ),
+    });
+    this.cookies.set(response, result.sessionToken, result.absoluteExpiresAt);
+    return { data: { ...result.data, csrfToken: result.csrfToken } };
   }
 }
 
