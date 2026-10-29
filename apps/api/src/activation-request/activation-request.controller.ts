@@ -5,7 +5,9 @@ import {
   Get,
   Header,
   Headers,
+  HttpCode,
   Inject,
+  Param,
   Post,
   Query,
   Req,
@@ -21,11 +23,26 @@ import type { GuestRequest } from '../guest-session/guest-session.types.js';
 import { RequirePermissions } from '../staff-auth/staff-authorization.js';
 import { StaffAuthorizationGuard } from '../staff-auth/staff-authorization.guard.js';
 import type { StaffRequest } from '../staff-auth/staff-auth.types.js';
+import { StaffCsrfGuard } from '../staff-auth/staff-csrf.guard.js';
 import { StaffSessionGuard } from '../staff-auth/staff-session.guard.js';
+import { ActivationDecisionService } from './activation-decision.service.js';
 import { ActivationRequestService } from './activation-request.service.js';
 
 const requestSchema = z.object({ tablePublicId: z.string().uuid() }).strict();
 const queueSchema = z.object({ status: z.literal('PENDING') }).strict();
+const activationRequestIdSchema = z.string().uuid();
+const approveSchema = z
+  .object({
+    expectedVersion: z.number().int().nonnegative(),
+    physicalPresenceConfirmed: z.boolean(),
+  })
+  .strict();
+const rejectSchema = z
+  .object({
+    expectedVersion: z.number().int().nonnegative(),
+    reason: z.string().trim().min(1).max(500),
+  })
+  .strict();
 
 function guestPrincipal(request: GuestRequest) {
   if (!request.guestPrincipal) {
@@ -73,6 +90,49 @@ function parseIdempotencyKey(value: string | undefined): string {
   return key;
 }
 
+function parseActivationRequestId(value: string): string {
+  const result = activationRequestIdSchema.safeParse(value);
+  if (!result.success) {
+    throw new BadRequestException({
+      code: 'ACTIVATION_REQUEST_ID_INVALID',
+      message: 'Activation request ID is invalid.',
+      details: {},
+    });
+  }
+  return result.data;
+}
+
+function parseApproval(body: unknown) {
+  const result = approveSchema.safeParse(body);
+  if (!result.success) {
+    throw new BadRequestException({
+      code: 'ACTIVATION_APPROVAL_INVALID',
+      message: 'Activation approval request is invalid.',
+      details: {},
+    });
+  }
+  if (!result.data.physicalPresenceConfirmed) {
+    throw new BadRequestException({
+      code: 'PHYSICAL_PRESENCE_CONFIRMATION_REQUIRED',
+      message: 'Physical presence must be explicitly confirmed.',
+      details: {},
+    });
+  }
+  return { ...result.data, physicalPresenceConfirmed: true as const };
+}
+
+function parseRejection(body: unknown) {
+  const result = rejectSchema.safeParse(body);
+  if (!result.success) {
+    throw new BadRequestException({
+      code: 'ACTIVATION_REJECTION_INVALID',
+      message: 'Activation rejection request is invalid.',
+      details: {},
+    });
+  }
+  return result.data;
+}
+
 @Controller('activation-requests')
 export class GuestActivationRequestController {
   constructor(
@@ -110,6 +170,7 @@ export class GuestActivationRequestController {
 export class StaffActivationRequestController {
   constructor(
     @Inject(ActivationRequestService) private readonly activations: ActivationRequestService,
+    @Inject(ActivationDecisionService) private readonly decisions: ActivationDecisionService,
   ) {}
 
   @Get()
@@ -128,6 +189,50 @@ export class StaffActivationRequestController {
     return {
       data: await this.activations.getStaffQueue({
         status: result.data.status,
+        principal: staffPrincipal(request),
+      }),
+    };
+  }
+
+  @Post(':id/approve')
+  @HttpCode(200)
+  @UseGuards(StaffSessionGuard, StaffCsrfGuard, StaffAuthorizationGuard)
+  @RequirePermissions('table.activation.approve')
+  @Header('Cache-Control', 'no-store')
+  async approve(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Req() request: StaffRequest,
+  ) {
+    const input = parseApproval(body);
+    return {
+      data: await this.decisions.approve({
+        activationRequestId: parseActivationRequestId(id),
+        ...input,
+        idempotencyKey: parseIdempotencyKey(idempotencyKey),
+        principal: staffPrincipal(request),
+      }),
+    };
+  }
+
+  @Post(':id/reject')
+  @HttpCode(200)
+  @UseGuards(StaffSessionGuard, StaffCsrfGuard, StaffAuthorizationGuard)
+  @RequirePermissions('table.activation.approve')
+  @Header('Cache-Control', 'no-store')
+  async reject(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Req() request: StaffRequest,
+  ) {
+    const input = parseRejection(body);
+    return {
+      data: await this.decisions.reject({
+        activationRequestId: parseActivationRequestId(id),
+        ...input,
+        idempotencyKey: parseIdempotencyKey(idempotencyKey),
         principal: staffPrincipal(request),
       }),
     };

@@ -6,11 +6,12 @@ import {
   GuestActivationRequestController,
   StaffActivationRequestController,
 } from './activation-request.controller.js';
+import { ActivationDecisionService } from './activation-decision.service.js';
 import { ActivationRequestService } from './activation-request.service.js';
 
 @Module({
   imports: [DatabaseModule, GuestSessionModule, StaffAuthModule],
   controllers: [GuestActivationRequestController, StaffActivationRequestController],
-  providers: [ActivationRequestService],
+  providers: [ActivationDecisionService, ActivationRequestService],
 })
 export class ActivationRequestModule {}
