@@ -14,6 +14,9 @@ import type {
   ClaimActivationResponse,
   GuestAccessLevel,
   GuestSessionData,
+  IssuedJoinCode,
+  JoinCodeMetadata,
+  JoinTableResponse,
   PublicMenu,
   PublicMenuItem,
   PublicTableContext,
@@ -94,9 +97,18 @@ export function PublicMenuExperience({ publicId }: { publicId: string }) {
   const [activationError, setActivationError] = useState<string | null>(null);
   const [claimBusy, setClaimBusy] = useState(false);
   const [claimError, setClaimError] = useState<string | null>(null);
+  const [joinCodeInput, setJoinCodeInput] = useState('');
+  const [joinBusy, setJoinBusy] = useState(false);
+  const [joinError, setJoinError] = useState<string | null>(null);
+  const [hostInvite, setHostInvite] = useState<JoinCodeMetadata | null>(null);
+  const [visibleJoinCode, setVisibleJoinCode] = useState<string | null>(null);
+  const [hostInviteBusy, setHostInviteBusy] = useState(false);
+  const [hostInviteError, setHostInviteError] = useState<string | null>(null);
   const bootstrappedTableRef = useRef<string | null>(null);
   const activationKeyRef = useRef<string | null>(null);
   const claimAttemptRef = useRef<StoredClaimAttempt | null>(null);
+  const joinAttemptKeyRef = useRef<string | null>(null);
+  const inviteAttemptKeyRef = useRef<string | null>(null);
 
   const refreshActivation = useCallback(async (signal?: AbortSignal) => {
     const response = await fetch('/api/v1/activation-requests/current', {
@@ -105,6 +117,9 @@ export function PublicMenuExperience({ publicId }: { publicId: string }) {
     });
     if (response.status === 401) {
       setSessionEstablished(false);
+      setGuestAccess('BROWSE_ONLY');
+      setHostInvite(null);
+      setVisibleJoinCode(null);
       throw new Error('GUEST_SESSION_INVALID');
     }
     if (!response.ok) throw new Error('ACTIVATION_STATUS_UNAVAILABLE');
@@ -229,6 +244,138 @@ export function PublicMenuExperience({ publicId }: { publicId: string }) {
     setSessionEstablished(true);
   };
 
+  const loadHostInvite = useCallback(async (): Promise<void> => {
+    const response = await fetch('/api/v1/table-sessions/current/join-code', {
+      credentials: 'include',
+    });
+    if (response.status === 403) {
+      setHostInvite(null);
+      return;
+    }
+    if (!response.ok) throw new Error('HOST_INVITE_UNAVAILABLE');
+    const payload = (await response.json()) as { data: JoinCodeMetadata };
+    setHostInvite(payload.data);
+  }, []);
+
+  useEffect(() => {
+    if (guestAccess !== 'ORDER_ENABLED') {
+      const timeout = window.setTimeout(() => {
+        setHostInvite(null);
+        setVisibleJoinCode(null);
+      }, 0);
+      return () => window.clearTimeout(timeout);
+    }
+    const timeout = window.setTimeout(() => {
+      void loadHostInvite().catch(() => {
+        setHostInviteError('Chưa thể tải thông tin lời mời. Hãy thử lại sau.');
+      });
+    }, 0);
+    return () => window.clearTimeout(timeout);
+  }, [guestAccess, loadHostInvite]);
+
+  const joinTable = async () => {
+    if (joinBusy || !/^\d{6}$/.test(joinCodeInput)) return;
+    setJoinBusy(true);
+    setJoinError(null);
+    const key = joinAttemptKeyRef.current ?? crypto.randomUUID();
+    joinAttemptKeyRef.current = key;
+    const send = (token: string) =>
+      fetch('/api/v1/table-sessions/join', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': key,
+          'X-CSRF-Token': token,
+        },
+        body: JSON.stringify({ tablePublicId: publicId, joinCode: joinCodeInput }),
+      });
+    try {
+      const token = csrfToken ?? (await recoverCsrfToken());
+      let response = await send(token);
+      let payload = (await response.json().catch(() => ({}))) as {
+        data?: JoinTableResponse;
+        error?: { code?: string };
+      };
+      if (response.status === 403 && payload.error?.code === 'GUEST_CSRF_INVALID') {
+        const recoveredToken = await recoverCsrfToken();
+        response = await send(recoveredToken);
+        payload = (await response.json().catch(() => ({}))) as {
+          data?: JoinTableResponse;
+          error?: { code?: string };
+        };
+      }
+      if (!response.ok) {
+        if (response.status < 500) joinAttemptKeyRef.current = null;
+        if (response.status === 429) {
+          setJoinError('Bạn đã thử quá nhiều lần. Vui lòng chờ 10 phút rồi thử lại.');
+        } else if (response.status === 403) {
+          setJoinError('Mã tham gia không đúng, đã hết hạn hoặc đã được thay thế.');
+        } else if (response.status === 409) {
+          setJoinError('Phiên dùng bàn không còn sẵn sàng để tham gia.');
+        } else if (payload.error?.code === 'GUEST_SESSION_INVALID') {
+          setJoinError('Phiên xem thực đơn đã hết hạn. Hãy tải lại trang rồi thử lại.');
+        } else {
+          setJoinError('Chưa thể tham gia bàn. Vui lòng thử lại.');
+        }
+        return;
+      }
+      if (!payload.data) throw new Error('JOIN_RESPONSE_INVALID');
+      setCsrfToken(payload.data.csrfToken);
+      setGuestAccess('ORDER_ENABLED');
+      setJoinCodeInput('');
+      joinAttemptKeyRef.current = null;
+      await refreshGuestSession();
+    } catch {
+      setJoinError('Kết nối bị gián đoạn. Hãy thử lại trong 2 phút để khôi phục an toàn.');
+    } finally {
+      setJoinBusy(false);
+    }
+  };
+
+  const issueJoinCode = async () => {
+    if (!hostInvite || hostInviteBusy) return;
+    if (
+      hostInvite.hasActiveCode &&
+      !window.confirm('Tạo mã mới sẽ làm mã hiện tại mất hiệu lực. Bạn có muốn tiếp tục?')
+    )
+      return;
+    setHostInviteBusy(true);
+    setHostInviteError(null);
+    const key = inviteAttemptKeyRef.current ?? crypto.randomUUID();
+    inviteAttemptKeyRef.current = key;
+    try {
+      const token = csrfToken ?? (await recoverCsrfToken());
+      const response = await fetch('/api/v1/table-sessions/current/join-code', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': key,
+          'X-CSRF-Token': token,
+        },
+        body: JSON.stringify({
+          expectedVersion: hostInvite.tableSessionVersion,
+          replaceExisting: hostInvite.hasActiveCode,
+        }),
+      });
+      if (!response.ok) {
+        inviteAttemptKeyRef.current = null;
+        if (response.status === 409) await loadHostInvite();
+        setHostInviteError('Trạng thái mã đã thay đổi. Hãy kiểm tra và thử lại.');
+        return;
+      }
+      const payload = (await response.json()) as { data: IssuedJoinCode };
+      setHostInvite(payload.data);
+      setVisibleJoinCode(payload.data.code);
+      inviteAttemptKeyRef.current = null;
+    } catch {
+      setHostInviteError('Chưa thể tạo mã. Hãy thử lại; hệ thống sẽ không tạo trùng tác vụ.');
+    } finally {
+      setHostInviteBusy(false);
+    }
+  };
+
   const submitActivation = async () => {
     if (activationBusy) return;
     setActivationBusy(true);
@@ -313,6 +460,9 @@ export function PublicMenuExperience({ publicId }: { publicId: string }) {
         claimAttemptRef.current = null;
         if (response.status === 401 || response.status === 403) {
           setSessionEstablished(false);
+          setGuestAccess('BROWSE_ONLY');
+          setHostInvite(null);
+          setVisibleJoinCode(null);
           setClaimError(
             'Phiên xác nhận không còn hợp lệ hoặc thời gian khôi phục đã hết. Hãy nhờ nhân viên hỗ trợ.',
           );
@@ -499,6 +649,96 @@ export function PublicMenuExperience({ publicId }: { publicId: string }) {
           ) : (
             <span className="activation-waiting-badge">Cần hỗ trợ từ nhân viên</span>
           )}
+        </section>
+      ) : null}
+
+      {guestAccess === 'BROWSE_ONLY' && loadState.table.availability === 'BROWSE_ONLY' ? (
+        <section className="join-panel" aria-labelledby="join-table-heading">
+          <div>
+            <p className="eyebrow">Bàn đang hoạt động</p>
+            <h2 id="join-table-heading">Tham gia bàn bằng mã mời</h2>
+            <p>
+              Nhập mã 6 chữ số từ người cùng bàn. Bạn vẫn có thể xem thực đơn và giỏ nháp sẽ được
+              giữ nguyên.
+            </p>
+          </div>
+          <div className="join-form">
+            <label htmlFor="join-code-input">Join Code</label>
+            <input
+              id="join-code-input"
+              autoComplete="one-time-code"
+              inputMode="numeric"
+              maxLength={6}
+              pattern="[0-9]{6}"
+              value={joinCodeInput}
+              onChange={(event) => {
+                const nextCode = event.target.value.replace(/\D/g, '').slice(0, 6);
+                if (nextCode !== joinCodeInput) joinAttemptKeyRef.current = null;
+                setJoinCodeInput(nextCode);
+              }}
+            />
+            <button
+              className="primary-button"
+              disabled={joinBusy || !/^\d{6}$/.test(joinCodeInput)}
+              type="button"
+              onClick={() => void joinTable()}
+            >
+              {joinBusy ? 'Đang tham gia…' : 'Tham gia bàn'}
+            </button>
+            {joinError ? <p className="activation-error">{joinError}</p> : null}
+          </div>
+        </section>
+      ) : null}
+
+      {hostInvite ? (
+        <section className="join-panel host-invite" aria-labelledby="host-invite-heading">
+          <div>
+            <p className="eyebrow">Mời người cùng bàn</p>
+            <h2 id="host-invite-heading">Chia sẻ Join Code</h2>
+            <p>
+              Mã chỉ dùng để tham gia đúng phiên bàn này. Tạo mã thay thế sẽ làm mã trước mất hiệu
+              lực nhưng không đăng xuất các thành viên đã tham gia.
+            </p>
+            {hostInvite.expiresAt ? (
+              <p>
+                Mã hiện tại hết hạn lúc {new Date(hostInvite.expiresAt).toLocaleTimeString('vi-VN')}
+                .
+              </p>
+            ) : null}
+          </div>
+          <div className="host-code-actions">
+            {visibleJoinCode ? (
+              <>
+                <output className="join-code-display" aria-label="Join Code hiện tại">
+                  {visibleJoinCode}
+                </output>
+                <button
+                  className="secondary-button"
+                  type="button"
+                  onClick={() => void navigator.clipboard.writeText(visibleJoinCode)}
+                >
+                  Sao chép mã
+                </button>
+              </>
+            ) : (
+              <p className="permission-note">
+                Vì lý do bảo mật, mã cũ không được lưu để hiển thị lại sau khi tải trang.
+              </p>
+            )}
+            <button
+              className="primary-button"
+              disabled={hostInviteBusy}
+              type="button"
+              onClick={() => void issueJoinCode()}
+            >
+              {hostInviteBusy
+                ? 'Đang tạo…'
+                : hostInvite.hasActiveCode
+                  ? 'Tạo Join Code mới'
+                  : 'Tạo Join Code'}
+            </button>
+            {hostInviteError ? <p className="activation-error">{hostInviteError}</p> : null}
+          </div>
         </section>
       ) : null}
 

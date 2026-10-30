@@ -1,6 +1,6 @@
 # Decision log
 
-Last baseline update: 2026-10-28.
+Last baseline update: 2026-10-30.
 
 ## APPROVED
 
@@ -63,10 +63,15 @@ Last baseline update: 2026-10-28.
 - Claim atomically binds the requester GuestSession to the approved TableSession, changes `BROWSE_ONLY → ORDER_ENABLED`, rotates guest + CSRF credentials and writes audit/idempotency. Previous credential recovery is restricted to this claim endpoint for 120 seconds, requires previous CSRF + same idempotency operation/key, never extends the original deadline, and persists hashes only.
 - M2.6 persists `activation.updated`/`table.session.updated` transactional outbox records but does not add publisher, worker or realtime delivery. Approve, reject and claim each create atomic audit records; no raw credential/CSRF data is stored.
 - M2.6 includes minimal staff login/session UI, location-scoped activation queue, approval attestation/rejection actions and an explicit guest “Continue with activated table” claim action. Ordering, cart submission, kitchen processing, BillLines and settlement remain out of scope.
+- M2.7 Host is the original activation requester only after successful claim; Host may explicitly issue/replace a Join Code but gains no staff/session/billing administration privileges. Members authenticate independently.
+- M2.7 Join Code is CSPRNG six-digit numeric, HMAC-SHA-256-only at rest using a dedicated deployment secret, and valid 30 minutes. Plaintext is returned once, may remain only in volatile UI memory, and reload never rotates automatically. Expiry blocks new joins without revoking existing members.
+- Staff with `table.join_code.manage` may rotate/revoke within location scope. Host/staff replacement is explicit, revokes the previous code atomically and increments TableSession version.
+- PostgreSQL-backed failed-join limits are 5/10 minutes per browse GuestSession+table, 20/10 minutes per source-IP fingerprint+table, and aggregate 100/10 minutes per TableSession, each with a fixed 10-minute cooldown after threshold. Counters are concurrency-safe and store neither raw code nor raw IP.
+- M2.7 join rotates only the joining device credentials and supports a separate 120-second previous-credential recovery path bound to `JOIN_TABLE_SESSION` plus the original idempotency key; the fixed deadline is never extended.
+- M2.7 source-IP limiting on Vercel → Render uses a signed internal client-IP proof with a separate shared secret and 60-second freshness window. The API ignores arbitrary forwarded headers, does not guess proxy hops, and fails closed for unsigned production join requests. Join Code TTL (30 minutes) and join recovery TTL (120 seconds) are fixed code constants, not deployment configuration.
 
 ## PROPOSED
 
-- Join-code TTL: 30 phút.
 - Same-origin deployment direction (web/API/Socket.IO sau một public origin), dùng host-only `HttpOnly; Secure; SameSite=Lax` cookies.
 - Outbox publisher chạy cùng API process trong MVP với safe locking.
   Các proposal phải được validated/chốt ở milestone implementation liên quan, không được hardcode ngầm.

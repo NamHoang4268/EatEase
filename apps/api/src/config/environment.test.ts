@@ -20,7 +20,6 @@ describe('loadEnvironment', () => {
       ACTIVATION_REQUEST_TTL_MINUTES: 5,
       GUEST_CLAIM_RECOVERY_TTL_SECONDS: 120,
       TRUSTED_WEB_ORIGINS: ['http://localhost:3000'],
-      TRUST_PROXY_HOPS: 0,
     });
   });
 
@@ -68,6 +67,51 @@ describe('loadEnvironment', () => {
 
   it('fails fast when required settings are invalid', () => {
     expect(() => loadEnvironment({ API_PORT: 'invalid' })).toThrow('Invalid API environment');
+  });
+
+  it('requires a dedicated Join Code hash secret in production', () => {
+    expect(() =>
+      loadEnvironment({
+        NODE_ENV: 'production',
+        DATABASE_URL: 'postgresql://user:password@localhost:5432/eatease',
+      }),
+    ).toThrow('Invalid API environment');
+    expect(
+      loadEnvironment({
+        NODE_ENV: 'production',
+        DATABASE_URL: 'postgresql://user:password@localhost:5432/eatease',
+        JOIN_CODE_HASH_SECRET: 'production-join-code-secret-at-least-32-characters',
+        API_PROXY_SHARED_SECRET: 'production-api-proxy-secret-at-least-32-characters',
+      }).JOIN_CODE_HASH_SECRET,
+    ).toBe('production-join-code-secret-at-least-32-characters');
+  });
+
+  it('rejects known secret placeholders and missing proxy trust in production', () => {
+    const production = {
+      NODE_ENV: 'production',
+      DATABASE_URL: 'postgresql://user:password@localhost:5432/eatease',
+      JOIN_CODE_HASH_SECRET: 'production-join-code-secret-at-least-32-characters',
+      API_PROXY_SHARED_SECRET: 'production-api-proxy-secret-at-least-32-characters',
+    } as const;
+    expect(() =>
+      loadEnvironment({
+        ...production,
+        JOIN_CODE_HASH_SECRET: 'replace-with-at-least-32-random-characters',
+      }),
+    ).toThrow('Invalid API environment');
+    expect(() =>
+      loadEnvironment({
+        ...production,
+        API_PROXY_SHARED_SECRET: 'local-only-api-proxy-shared-secret-change-me',
+      }),
+    ).toThrow('Invalid API environment');
+    expect(() =>
+      loadEnvironment({
+        NODE_ENV: 'production',
+        DATABASE_URL: production.DATABASE_URL,
+        JOIN_CODE_HASH_SECRET: production.JOIN_CODE_HASH_SECRET,
+      }),
+    ).toThrow('Invalid API environment');
   });
 
   it('parses an explicit origin allowlist and rejects wildcard origins', () => {

@@ -25,7 +25,6 @@ if (!isLocalHost || (databaseName !== 'eatease_m2_test' && process.env.CI !== 't
 
 process.env.NODE_ENV = 'test';
 process.env.TRUSTED_WEB_ORIGINS = 'http://localhost:3000';
-process.env.TRUST_PROXY_HOPS = '0';
 
 const ids = {
   restaurantA: '71000000-0000-4000-8000-000000000001',

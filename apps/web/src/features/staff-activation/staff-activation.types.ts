@@ -21,6 +21,14 @@ export type StaffActivationRequest = {
   };
 };
 
+export type StaffActiveTableSession = {
+  id: string;
+  version: number;
+  activatedAt: string;
+  table: { publicId: string; code: string; capacity: number };
+  joinCode: { hasActiveCode: boolean; expiresAt: string | null };
+};
+
 export type ApiErrorPayload = {
   error?: {
     code?: string;

@@ -41,6 +41,23 @@ Sau approval, original requester phải explicit claim để chuyển chính Gue
 | `CHECKOUT_LOCKED`          | Close                | `CLOSED`          | Bill settled               |
 | `ACTIVE`/`CHECKOUT_LOCKED` | Force close          | `CLOSED`          | Manager + correction/audit |
 
+## Guest access and Session Join Code
+
+`BROWSE_ONLY → ORDER_ENABLED` happens only through explicit requester claim after activation approval or successful Join Code verification. Join rotates only that device's guest + CSRF credentials; Host/member credentials remain independent.
+
+```text
+NONE ── explicit Host/staff issue ──> ACTIVE
+ACTIVE ── explicit rotate ──────────> REVOKED + new ACTIVE
+ACTIVE ── explicit staff revoke ────> REVOKED
+ACTIVE ── expires_at reached ───────> EXPIRED (effective)
+ACTIVE ── TableSession not ACTIVE ──> unusable
+```
+
+- Plaintext exists only in the issue/rotate response and volatile issuer UI memory.
+- Reload/reopen never rotates automatically; metadata tells Host/staff whether a current code exists.
+- Expiration/revocation affects new joins only and never terminates member sessions already bound to the TableSession.
+- Successful join does not consume the code; multiple guests may use it until expiry, rotation, revocation or TableSession closure.
+
 ## OrderItem
 
 | From        | Command              | To          | Actor                        |

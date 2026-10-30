@@ -12,12 +12,6 @@ application.enableCors({
   credentials: true,
   allowedHeaders: ['Content-Type', 'X-CSRF-Token'],
 });
-if (environment.TRUST_PROXY_HOPS > 0) {
-  const express = application.getHttpAdapter().getInstance() as {
-    set(name: string, value: number): void;
-  };
-  express.set('trust proxy', environment.TRUST_PROXY_HOPS);
-}
 application.setGlobalPrefix('api/v1');
 application.useGlobalFilters(new FoundationExceptionFilter());
 application.enableShutdownHooks();

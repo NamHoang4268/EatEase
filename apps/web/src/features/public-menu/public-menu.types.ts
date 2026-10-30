@@ -57,3 +57,16 @@ export type ClaimActivationResponse = {
   };
   csrfToken: string;
 };
+
+export type JoinTableResponse = ClaimActivationResponse;
+
+export type JoinCodeMetadata = {
+  hasActiveCode: boolean;
+  expiresAt: string | null;
+  tableSessionVersion: number;
+};
+
+export type IssuedJoinCode = JoinCodeMetadata & {
+  code: string | null;
+  plaintextAvailable: boolean;
+};

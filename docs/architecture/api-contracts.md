@@ -1,6 +1,6 @@
 # API contracts — first vertical slice
 
-Status: **APPROVED implemented baseline through M2.6**. Public table/menu, staff authentication, guest browse session, activation request/queue, staff approval/rejection và requester-only claim đã được implement và verified. Join codes, ordering và later contracts vẫn thuộc task tương ứng.
+Status: **APPROVED implemented baseline through M2.7**. Public table/menu, staff authentication, guest browse session, activation request/queue, staff approval/rejection, requester-only claim và secure Join Code lifecycle đã được implement và locally verified. Ordering and later contracts remain in their tasks.
 
 Base path: `/api/v1`. REST là authoritative; Socket.IO event chỉ báo client refetch state.
 
@@ -329,7 +329,7 @@ Invalid/expired guest credentials trả `401`; non-requester dùng generic `403 
 
 ### `POST /table-sessions/join`
 
-Headers: `Idempotency-Key`, CSRF token.
+Requires a valid `BROWSE_ONLY` guest session for the submitted public table, trusted `Origin`, `X-CSRF-Token` and `Idempotency-Key`.
 
 ```json
 {
@@ -338,11 +338,59 @@ Headers: `Idempotency-Key`, CSRF token.
 }
 ```
 
-Valid code issues an independent order-enabled guest credential. Endpoint is rate-limited by table, guest browser session và source signals.
+Valid code issues an independent order-enabled guest credential. The server resolves the current `ACTIVE` TableSession from the authenticated guest's table; client scope is not trusted. Success atomically binds that GuestSession to the existing TableSession, changes `BROWSE_ONLY → ORDER_ENABLED`, rotates guest and CSRF credentials, increments the guest version, writes sanitized idempotency/audit data, and returns `200` with `Cache-Control: no-store`:
+
+```json
+{
+  "data": {
+    "session": {
+      "accessLevel": "ORDER_ENABLED",
+      "tableSessionId": "uuid",
+      "version": 1
+    },
+    "csrfToken": "opaque-token"
+  }
+}
+```
+
+It never creates or changes a TableSession, Bill, Order or BillLine and never modifies another guest credential. Same actor/operation/key and identical fingerprint replays the logical success; a different fingerprint returns `409 IDEMPOTENCY_KEY_REUSED`. A lost-response retry may use the previous guest cookie + previous CSRF token only for this endpoint, with the same `JOIN_TABLE_SESSION` key, for a fixed 120-second recovery window that is never extended.
+
+Invalid, expired, revoked, superseded or cross-table codes return the same generic `403 JOIN_CODE_INVALID`. A non-active session returns `409 TABLE_SESSION_NOT_JOINABLE`. The three PostgreSQL-backed failed-attempt limits are checked before verification and incremented atomically after a failed verification:
+
+- 5 failures / 10 minutes per browse GuestSession + table;
+- 20 failures / 10 minutes per source-IP fingerprint + table;
+- 100 failures / 10 minutes per TableSession, independent of browser/IP.
+
+Reaching a limit creates a fixed 10-minute cooldown for that bucket and returns generic `429 JOIN_ATTEMPT_RATE_LIMITED`. Parallel requests serialize bucket updates; successful joins do not extend/reset aggregate abuse history. Rate-limit records contain no raw IP or code.
+
+### `GET /table-sessions/current/join-code`
+
+Host-only metadata query. Requires an `ORDER_ENABLED` current guest whose server-side identity matches the activation request's original requester and whose TableSession is `ACTIVE`. Returns `{ hasActiveCode, expiresAt, tableSessionVersion }` without plaintext. After reload the Host must explicitly generate a replacement to see plaintext again.
 
 ### `POST /table-sessions/current/join-code`
 
-Authorized guest/Waiter/Manager rotates code and receives plaintext once. Previous code is revoked in same transaction.
+Host-only issue/rotate command. Requires trusted `Origin`, guest CSRF, `Idempotency-Key` and `{ "expectedVersion": 0, "replaceExisting": true|false }`. First issue uses `replaceExisting: false`; replacing an unexpired code requires `true`, so reload never rotates implicitly. The server derives Host eligibility from the claimed original requester relationship. It locks TableSession → current JoinCode → GuestSession, revalidates Host/session/version, revokes any current code, creates one CSPRNG six-digit code with a 30-minute TTL, increments TableSession version, and atomically persists audit + sanitized idempotency result. Plaintext appears only in the successful response and is never replayed from idempotency storage; a replay returns metadata with `code: null` and `plaintextAvailable: false`.
+
+```json
+{
+  "data": {
+    "code": "482193",
+    "plaintextAvailable": true,
+    "expiresAt": "ISO-8601",
+    "tableSessionVersion": 1
+  }
+}
+```
+
+Expired codes prevent new joins but do not affect already joined guests. Same key/different payload returns `409`; stale version returns `409 TABLE_SESSION_VERSION_CONFLICT`.
+
+### Staff Join Code operations
+
+- `GET /staff/table-sessions?status=ACTIVE` requires `table.session.read` and returns only active sessions in the authenticated membership location, including table label, session version and non-secret Join Code metadata.
+- `POST /staff/table-sessions/{id}/join-code` requires `table.join_code.manage`, Origin/CSRF/idempotency and the same `{ expectedVersion, replaceExisting }` contract. It rotates within authorized location scope and returns plaintext once.
+- `DELETE /staff/table-sessions/{id}/join-code` requires `table.join_code.manage`, Origin/CSRF/idempotency and body `{ expectedVersion }`. It revokes the current code, increments TableSession version and returns metadata only.
+
+Staff commands use lock order TableSession → current JoinCode → StaffSession authorization revalidation. Host and staff code commands share operations scoped by actor type and actor ID; neither response, idempotency record, audit record nor outbox contains plaintext/hash-derived code material.
 
 ## Explicit order submission
 

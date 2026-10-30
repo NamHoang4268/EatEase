@@ -18,7 +18,7 @@ Status: **APPROVED baseline**
 | Request activation             |      ✓      |          |                  |           |               |
 | Approve/reject activation      |             |    ✓     |                  |           |       ✓       |
 | Join bằng code                 |      ✓      |          |                  |           |               |
-| Generate/share join code       | Authorized  |    ✓     |                  |           |       ✓       |
+| Generate/share join code       |  Host only  |    ✓     |                  |           |       ✓       |
 | Rotate/revoke join code        |             |    ✓     |                  |           |       ✓       |
 | View own session/orders        |      ✓      | Location | Operational only | Bill only |       ✓       |
 | Submit QR order                |      ✓      |          |                  |           |               |

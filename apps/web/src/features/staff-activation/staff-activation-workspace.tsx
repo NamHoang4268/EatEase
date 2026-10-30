@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import type {
   ApiErrorPayload,
   StaffActivationRequest,
+  StaffActiveTableSession,
   StaffIdentity,
 } from './staff-activation.types';
 
@@ -18,6 +19,11 @@ type QueueState =
   | { status: 'error'; message: string };
 type LoginFields = { email: string; password: string; locationId: string };
 type DecisionKind = 'approve' | 'reject';
+type ActiveSessionsState =
+  | { status: 'idle' }
+  | { status: 'loading' }
+  | { status: 'ready'; sessions: StaffActiveTableSession[] }
+  | { status: 'error'; message: string };
 
 const SESSION_INVALID_CODES = new Set(['STAFF_SESSION_INVALID', 'STAFF_AUTHENTICATION_FAILED']);
 
@@ -58,12 +64,17 @@ export function StaffActivationWorkspace() {
   const [confirmedPresence, setConfirmedPresence] = useState<Record<string, boolean>>({});
   const [rejectionReasons, setRejectionReasons] = useState<Record<string, string>>({});
   const [busyDecision, setBusyDecision] = useState<string | null>(null);
+  const [activeSessions, setActiveSessions] = useState<ActiveSessionsState>({ status: 'idle' });
+  const [visibleStaffCodes, setVisibleStaffCodes] = useState<Record<string, string>>({});
+  const [busyJoinCode, setBusyJoinCode] = useState<string | null>(null);
   const idempotencyKeys = useRef(new Map<string, string>());
 
   const expireSession = useCallback((message: string) => {
     setAuth({ status: 'anonymous', message });
     setCsrfToken(null);
     setQueue({ status: 'idle' });
+    setActiveSessions({ status: 'idle' });
+    setVisibleStaffCodes({});
     idempotencyKeys.current.clear();
   }, []);
 
@@ -130,6 +141,33 @@ export function StaffActivationWorkspace() {
       });
     }
   }, [expireSession]);
+
+  const loadActiveSessions = useCallback(async () => {
+    setActiveSessions({ status: 'loading' });
+    try {
+      const response = await fetch('/api/v1/staff/table-sessions?status=ACTIVE', {
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        setActiveSessions({
+          status: 'error',
+          message: 'Chưa thể tải các phiên bàn đang hoạt động.',
+        });
+        return;
+      }
+      const payload = (await response.json()) as { data: StaffActiveTableSession[] };
+      setActiveSessions({ status: 'ready', sessions: payload.data });
+    } catch {
+      setActiveSessions({ status: 'error', message: 'Kết nối bị gián đoạn.' });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (auth.status !== 'authenticated' || !auth.staff.permissions.includes('table.session.read'))
+      return;
+    const timeout = window.setTimeout(() => void loadActiveSessions(), 0);
+    return () => window.clearTimeout(timeout);
+  }, [auth, loadActiveSessions]);
 
   useEffect(() => {
     if (auth.status !== 'authenticated') return;
@@ -260,6 +298,75 @@ export function StaffActivationWorkspace() {
     }
   };
 
+  const manageJoinCode = async (action: 'issue' | 'revoke', session: StaffActiveTableSession) => {
+    if (busyJoinCode) return;
+    if (
+      action === 'issue' &&
+      session.joinCode.hasActiveCode &&
+      !window.confirm('Tạo mã mới sẽ làm mã hiện tại mất hiệu lực. Tiếp tục?')
+    )
+      return;
+    const operation = `join-code:${action}:${session.id}:${session.version}`;
+    const key = idempotencyKeys.current.get(operation) ?? crypto.randomUUID();
+    idempotencyKeys.current.set(operation, key);
+    setBusyJoinCode(operation);
+    setQueueNotice(null);
+    const send = (token: string) =>
+      fetch(`/api/v1/staff/table-sessions/${encodeURIComponent(session.id)}/join-code`, {
+        method: action === 'issue' ? 'POST' : 'DELETE',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': key,
+          'X-CSRF-Token': token,
+        },
+        body: JSON.stringify(
+          action === 'issue'
+            ? {
+                expectedVersion: session.version,
+                replaceExisting: session.joinCode.hasActiveCode,
+              }
+            : { expectedVersion: session.version },
+        ),
+      });
+    try {
+      let token = csrfToken ?? (await recoverCsrf());
+      let response = await send(token);
+      let payload = response.ok ? null : await readError(response);
+      if (response.status === 403 && errorCode(payload) === 'STAFF_CSRF_INVALID') {
+        token = await recoverCsrf();
+        response = await send(token);
+        payload = response.ok ? null : await readError(response);
+      }
+      if (!response.ok) {
+        idempotencyKeys.current.delete(operation);
+        setQueueNotice(
+          response.status === 409
+            ? 'Trạng thái Join Code đã thay đổi. Danh sách đã được cập nhật.'
+            : 'Không thể quản lý Join Code cho phiên bàn này.',
+        );
+        await loadActiveSessions();
+        return;
+      }
+      const result = (await response.json()) as { data: { code?: string | null } };
+      idempotencyKeys.current.delete(operation);
+      setVisibleStaffCodes((current) => ({
+        ...current,
+        [session.id]: action === 'issue' ? (result.data.code ?? '') : '',
+      }));
+      setQueueNotice(
+        action === 'issue'
+          ? `Đã tạo Join Code cho bàn ${session.table.code}.`
+          : `Đã thu hồi Join Code của bàn ${session.table.code}.`,
+      );
+      await loadActiveSessions();
+    } catch {
+      setQueueNotice('Kết nối bị gián đoạn. Thử lại sẽ dùng cùng Idempotency-Key.');
+    } finally {
+      setBusyJoinCode(null);
+    }
+  };
+
   if (auth.status === 'checking') {
     return (
       <main className="staff-auth-shell" aria-busy="true">
@@ -329,6 +436,8 @@ export function StaffActivationWorkspace() {
   }
 
   const canApprove = auth.staff.permissions.includes('table.activation.approve');
+  const canManageJoinCodes = auth.staff.permissions.includes('table.join_code.manage');
+  const canReadSessions = auth.staff.permissions.includes('table.session.read');
 
   return (
     <main className="staff-shell">
@@ -471,6 +580,79 @@ export function StaffActivationWorkspace() {
           </ul>
         )}
       </section>
+
+      {canReadSessions ? (
+        <section className="activation-queue" aria-labelledby="active-sessions-heading">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Host & Join</p>
+              <h2 id="active-sessions-heading">Phiên bàn đang hoạt động</h2>
+            </div>
+          </div>
+          {activeSessions.status === 'idle' || activeSessions.status === 'loading' ? (
+            <div className="operational-state">
+              <p>Đang tải phiên bàn…</p>
+            </div>
+          ) : activeSessions.status === 'error' ? (
+            <div className="operational-state operational-error">
+              <p>{activeSessions.message}</p>
+            </div>
+          ) : activeSessions.sessions.length === 0 ? (
+            <div className="operational-state">
+              <p>Không có phiên bàn đang hoạt động.</p>
+            </div>
+          ) : (
+            <ul className="activation-queue-list">
+              {activeSessions.sessions.map((session) => (
+                <li key={session.id}>
+                  <div className="request-summary">
+                    <div>
+                      <p className="eyebrow">TableSession active</p>
+                      <h2>Bàn {session.table.code}</h2>
+                    </div>
+                    <span className="request-age">v{session.version}</span>
+                  </div>
+                  <div className="decision-panel">
+                    {visibleStaffCodes[session.id] ? (
+                      <output className="join-code-display">{visibleStaffCodes[session.id]}</output>
+                    ) : (
+                      <p className="permission-note">
+                        {session.joinCode.hasActiveCode
+                          ? `Có mã hiệu lực đến ${new Date(session.joinCode.expiresAt!).toLocaleTimeString('vi-VN')}. Plaintext không được lưu.`
+                          : 'Chưa có Join Code còn hiệu lực.'}
+                      </p>
+                    )}
+                    {canManageJoinCodes ? (
+                      <div className="staff-header-actions">
+                        <button
+                          className="primary-button"
+                          disabled={Boolean(busyJoinCode)}
+                          type="button"
+                          onClick={() => void manageJoinCode('issue', session)}
+                        >
+                          {session.joinCode.hasActiveCode ? 'Tạo mã thay thế' : 'Tạo Join Code'}
+                        </button>
+                        {session.joinCode.hasActiveCode ? (
+                          <button
+                            className="danger-button"
+                            disabled={Boolean(busyJoinCode)}
+                            type="button"
+                            onClick={() => void manageJoinCode('revoke', session)}
+                          >
+                            Thu hồi mã
+                          </button>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <p className="permission-note">Bạn không có quyền quản lý Join Code.</p>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      ) : null}
     </main>
   );
 }
