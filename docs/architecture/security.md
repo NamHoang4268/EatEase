@@ -182,4 +182,6 @@ Lock order for M2.7 is TableSession → current SessionJoinCode → GuestSession
 
 ## Staff bootstrap
 
-Privileged staff account chỉ được tạo bằng explicit owner-invoked `pnpm db:bootstrap:staff`. Command nhận identity, password và location qua process-scoped inputs, từ chối managed database, validate active target scope và không overwrite existing identity. Migration/application startup không tự tạo privileged account; password/session secret không được print.
+Privileged staff account chỉ được tạo bằng explicit owner-invoked bootstrap operation. `pnpm db:bootstrap:staff` giữ local-only hostname guard. One-time portfolio provisioning dùng riêng `pnpm db:bootstrap:staff:managed -- --allow-managed`, requires direct non-pooler URL, exact independently confirmed host/database và deterministic synthetic restaurant/location scope. Cả hai wrappers reuse cùng transactional provisioning logic và Node.js `scrypt`; migration/application startup không tự tạo account.
+
+Managed exact retry chỉ trả safe already-provisioned result khi active user, password hash verification, single active membership, system `MANAGER` role và complete approved permission grants đều khớp. Mismatch fails closed; bootstrap không reset password, không tạo duplicate membership và không print password/hash/connection string. Credentials chỉ đi qua process-scoped inputs và phải được cleanup sau operation.
