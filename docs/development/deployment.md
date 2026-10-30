@@ -109,7 +109,54 @@ $env:DIRECT_DATABASE_URL='<NEON_DIRECT_URL>'
 pnpm db:migrate:deploy
 ```
 
-Foundation hiện chưa có domain migration nên command hợp lệ sẽ báo không có pending migration.
+Command chỉ apply committed pending migrations; luôn review `pnpm db:migrate:status` trước và sau khi chạy.
+
+### One-time managed demo Manager provisioning
+
+Chỉ thực hiện sau khi migrations đã up to date và deterministic synthetic catalog đã được seed. Managed provisioning dùng command riêng; `pnpm db:bootstrap:staff` vẫn local-only và không được dùng cho Neon.
+
+Xác minh synthetic scope bằng read-only query trong Neon SQL Editor:
+
+```sql
+SELECT l.id, l.restaurant_id, l.code, l.is_active, r.status
+FROM location AS l
+JOIN restaurant AS r ON r.id = l.restaurant_id
+WHERE l.id = '20000000-0000-4000-8000-000000000001';
+```
+
+Expected: location code `HCM-DEMO`, active location, active restaurant `10000000-0000-4000-8000-000000000001`. Nếu không khớp, dừng; không thay location UUID hoặc target checks để tiếp tục.
+
+Từ trusted PowerShell tại repository root, nhập direct URL và password bằng secure prompt. `STAFF_BOOTSTRAP_EXPECTED_HOST` phải được copy riêng từ exact Neon direct endpoint trong dashboard, không lấy tự động từ URL đang được kiểm tra:
+
+```powershell
+$neonDirectSecure = Read-Host 'Neon DIRECT connection string' -AsSecureString
+$managerPasswordSecure = Read-Host 'Demo Manager password (12-256 characters)' -AsSecureString
+
+$env:DIRECT_DATABASE_URL = [Net.NetworkCredential]::new('', $neonDirectSecure).Password
+$env:STAFF_BOOTSTRAP_PASSWORD = [Net.NetworkCredential]::new('', $managerPasswordSecure).Password
+$env:STAFF_BOOTSTRAP_EXPECTED_HOST = '<exact-neon-direct-hostname>'
+$env:STAFF_BOOTSTRAP_EXPECTED_DATABASE = 'neondb'
+$env:STAFF_BOOTSTRAP_LOCATION_ID = '20000000-0000-4000-8000-000000000001'
+$env:STAFF_BOOTSTRAP_EMAIL = 'manager@demo.eatease.invalid'
+$env:STAFF_BOOTSTRAP_NAME = 'EatEase Demo Manager'
+
+try {
+    pnpm db:bootstrap:staff:managed -- --allow-managed
+    if ($LASTEXITCODE -ne 0) { throw 'Managed staff provisioning failed.' }
+} finally {
+    Remove-Item Env:DIRECT_DATABASE_URL,Env:STAFF_BOOTSTRAP_PASSWORD,Env:STAFF_BOOTSTRAP_EXPECTED_HOST,Env:STAFF_BOOTSTRAP_EXPECTED_DATABASE,Env:STAFF_BOOTSTRAP_LOCATION_ID,Env:STAFF_BOOTSTRAP_EMAIL,Env:STAFF_BOOTSTRAP_NAME -ErrorAction SilentlyContinue
+    Remove-Variable neonDirectSecure,managerPasswordSecure -ErrorAction SilentlyContinue
+}
+```
+
+Safety behavior:
+
+- Requires explicit `--allow-managed`, exact direct hostname, exact `neondb` database and deterministic synthetic location/restaurant scope.
+- Rejects localhost, loopback and hostname containing `pooler`; never falls back to `DATABASE_URL`.
+- Creates an active Manager atomically with the complete approved permission set. Exact retry with the same identity/password/scope is a no-op; any mismatch fails without password reset.
+- Output never includes password, hash or connection string. Do not put these values in `.env`, source, shell scripts, issues or PRs.
+
+Sau provisioning, login through `/staff/login`, confirm the expected synthetic location and confirm effective permissions include `table.activation.read`, `table.activation.approve`, `table.session.read` và `table.join_code.manage`. Không copy cookie/CSRF values vào logs. Sau public testing, revoke active sessions and set the demo user or membership inactive through a separately reviewed owner-authorized operation. Bootstrap không phải password-rotation command; never rerun it with a new password.
 
 ### 2. Render Free API
 
