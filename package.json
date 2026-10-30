@@ -23,6 +23,7 @@
     "db:validate": "pnpm --filter @eatease/api db:validate",
     "db:seed:catalog": "pnpm --filter @eatease/api db:seed:catalog",
     "db:bootstrap:staff": "pnpm --filter @eatease/api db:bootstrap:staff",
+    "db:bootstrap:staff:managed": "pnpm --filter @eatease/api db:bootstrap:staff:managed",
     "db:migrate:status": "pnpm --filter @eatease/api db:migrate:status",
     "db:migrate:deploy": "pnpm --filter @eatease/api db:migrate:deploy"
   },

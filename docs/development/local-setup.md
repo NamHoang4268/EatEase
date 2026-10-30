@@ -73,6 +73,7 @@ pnpm db:validate
 pnpm db:generate
 pnpm db:seed:catalog
 pnpm db:bootstrap:staff
+pnpm db:bootstrap:staff:managed
 pnpm db:migrate:status
 pnpm db:migrate:deploy
 pnpm --filter @eatease/api db:check
@@ -118,6 +119,8 @@ Remove-Item Env:STAFF_BOOTSTRAP_EMAIL,Env:STAFF_BOOTSTRAP_NAME,Env:STAFF_BOOTSTR
 ```
 
 Không đặt bootstrap password trong `.env`, shell script committed hoặc command argument. Managed/public portfolio bootstrap cần owner authorization riêng và không dùng command local-only này.
+
+Managed demo provisioning dùng command tách biệt, fail-closed và được hướng dẫn trong [deployment guide](deployment.md#one-time-managed-demo-manager-provisioning). Command local phía trên vẫn từ chối mọi non-local target.
 
 ## Current compatibility notes
 
