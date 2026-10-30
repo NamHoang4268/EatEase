@@ -31,18 +31,23 @@ Browser chỉ thấy same-origin `/api/...`. `API_INTERNAL_URL` không có prefi
 
 ### Render API
 
-| Variable              | Secret | Value/source                                                                       |
-| --------------------- | :----: | ---------------------------------------------------------------------------------- |
-| `NODE_ENV`            |   No   | `production`                                                                       |
-| `NODE_VERSION`        |   No   | `24.22.1`                                                                          |
-| `DATABASE_POOL_MAX`   |   No   | `5` cho single Free instance                                                       |
-| `TRUSTED_WEB_ORIGINS` |   No   | Comma-separated exact origins; staff deployment dùng `https://eat-ease.vercel.app` |
-| `TRUST_PROXY_HOPS`    |   No   | `0` cho tới khi exact trusted proxy-hop topology được verify                       |
-| `DATABASE_URL`        |  Yes   | Neon pooled URL; hostname thường có `-pooler`                                      |
-| `DIRECT_DATABASE_URL` |  Yes   | Neon direct/unpooled URL cho Prisma migrations                                     |
-| `PORT`                |   No   | Render tự cấp; API ưu tiên `PORT` và fallback về `API_PORT` cho local development  |
+| Variable                    | Secret | Value/source                                                                         |
+| --------------------------- | :----: | ------------------------------------------------------------------------------------ |
+| `NODE_ENV`                  |   No   | `production`                                                                         |
+| `NODE_VERSION`              |   No   | `24.22.1`                                                                            |
+| `DATABASE_POOL_MAX`         |   No   | `5` cho single Free instance                                                         |
+| `TRUSTED_WEB_ORIGINS`       |   No   | Comma-separated exact origins; staff deployment dùng `https://eat-ease.vercel.app`   |
+| `TRUST_PROXY_HOPS`          |   No   | `0` cho tới khi exact trusted proxy-hop topology được verify                         |
+| `JOIN_CODE_TTL_MINUTES`     |   No   | `30`; bounded configuration for newly issued M2.7 codes                              |
+| `JOIN_RECOVERY_TTL_SECONDS` |   No   | `120`; bounded previous-credential recovery window                                   |
+| `JOIN_CODE_HASH_SECRET`     |  Yes   | Stable CSPRNG secret, minimum 32 characters, used only for Join Code/IP fingerprints |
+| `DATABASE_URL`              |  Yes   | Neon pooled URL; hostname thường có `-pooler`                                        |
+| `DIRECT_DATABASE_URL`       |  Yes   | Neon direct/unpooled URL cho Prisma migrations                                       |
+| `PORT`                      |   No   | Render tự cấp; API ưu tiên `PORT` và fallback về `API_PORT` cho local development    |
 
 Không đặt `DATABASE_URL` hoặc `DIRECT_DATABASE_URL` ở Vercel.
+
+`JOIN_CODE_HASH_SECRET` phải được owner tạo và cấu hình trực tiếp trong Render trước khi deploy code M2.7. Không commit, paste vào PR/log hoặc dùng chung với database/session credentials. API production fail fast nếu thiếu biến này; thay đổi secret sẽ làm các Join Code đang còn hạn không thể verify, nên chỉ rotate theo một operational plan có chủ đích.
 
 Staff authenticated browser requests cần credentials và exact Origin allowlist. Production API set host-only `SameSite=None; Secure; HttpOnly` staff cookie; một số browser/privacy modes vẫn có thể block third-party cookies. Không tăng `TRUST_PROXY_HOPS` theo header do client gửi; chỉ thay sau khi verify Render proxy chain. Các biến này phải được owner cấu hình/review riêng trong Render dashboard trước khi coi staff login cloud deployment là verified.
 
@@ -117,9 +122,10 @@ Foundation hiện chưa có domain migration nên command hợp lệ sẽ báo k
 2. Connect GitHub repository và chọn root `render.yaml`.
 3. Xác nhận service `eatease-api` dùng **Free** plan; không upgrade hoặc thêm paid resource.
 4. Nhập `DATABASE_URL` và `DIRECT_DATABASE_URL` khi Blueprint yêu cầu secret values.
-5. Giữ build/start/health settings từ `render.yaml`.
-6. Chỉ deploy commit đã có GitHub Actions checks xanh.
-7. Sau deploy, kiểm tra:
+5. Trước M2.7 deployment, thêm stable `JOIN_CODE_HASH_SECRET` có tối thiểu 32 random characters; không lưu giá trị vào repository hoặc tài liệu.
+6. Giữ build/start/health settings từ `render.yaml`.
+7. Chỉ deploy commit đã có GitHub Actions checks xanh.
+8. Sau deploy, kiểm tra:
 
 ```text
 https://eatease-api-rbgu.onrender.com/api/v1/health
@@ -186,6 +192,7 @@ Free-tier terms và quotas có thể thay đổi. Trước mỗi public demo/rel
 - Nếu GitHub Actions fail: sửa validation failure trên task branch; không bypass check hoặc deploy commit lỗi trực tiếp từ dashboard.
 - Nếu Render build fail: kiểm tra Node/pnpm pins, frozen lockfile, Prisma generation và build logs; không sửa production secret trong source.
 - Nếu Render start fail: xác nhận start command, platform `PORT`, required environment variables và Neon URLs đã được đặt trong dashboard.
+- Nếu Render start fail sau M2.7: xác nhận `JOIN_CODE_HASH_SECRET` tồn tại, dài tối thiểu 32 characters và không bị trim; không print giá trị vào log hoặc support artifact.
 - Nếu migration fail: dừng release, không deploy code phụ thuộc schema mới.
 - Nếu Render liveness pass nhưng readiness fail: kiểm tra Neon state và Render secret values; không log/paste connection strings.
 - Nếu Vercel `/health` pass nhưng proxied `/api` fail: kiểm tra `API_INTERNAL_URL`, Render cold start và public API endpoints.

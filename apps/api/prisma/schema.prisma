@@ -116,6 +116,14 @@ enum AuditActorType {
   @@map("audit_actor_type")
 }
 
+enum JoinRateLimitDimension {
+  GUEST_TABLE
+  IP_TABLE
+  TABLE_SESSION
+
+  @@map("join_rate_limit_dimension")
+}
+
 model Restaurant {
   id                 String              @id @default(uuid()) @db.Uuid
   name               String              @db.VarChar(160)
@@ -130,6 +138,7 @@ model Restaurant {
   bills              Bill[]
   outboxEvents       OutboxEvent[]
   auditLogs          AuditLog[]
+  sessionJoinCodes   SessionJoinCode[]
 
   @@map("restaurant")
 }
@@ -151,6 +160,7 @@ model Location {
   bills              Bill[]
   outboxEvents       OutboxEvent[]
   auditLogs          AuditLog[]
+  sessionJoinCodes   SessionJoinCode[]
 
   @@unique([id, restaurantId], map: "location_id_restaurant_id_key")
   @@unique([restaurantId, code], map: "location_restaurant_id_code_key")
@@ -185,6 +195,7 @@ model StaffMembership {
   handledActivationRequests ActivationRequest[]
   activatedTableSessions    TableSession[]        @relation("TableSessionActivatedBy")
   closedTableSessions       TableSession[]        @relation("TableSessionClosedBy")
+  createdSessionJoinCodes   SessionJoinCode[]
 
   @@unique([staffUserId, locationId], map: "staff_membership_user_location_key")
   @@unique([id, staffUserId], map: "staff_membership_id_user_key")
@@ -270,6 +281,7 @@ model RestaurantTable {
   guestSessions      GuestSession[]
   activationRequests ActivationRequest[]
   tableSessions      TableSession[]
+  sessionJoinCodes   SessionJoinCode[]
 
   @@unique([id, restaurantId, locationId], map: "restaurant_table_id_scope_key")
   @@unique([locationId, code], map: "restaurant_table_location_id_code_key")
@@ -331,6 +343,7 @@ model GuestSession {
   table                   RestaurantTable     @relation(fields: [tableId, restaurantId, locationId], references: [id, restaurantId, locationId], onDelete: Restrict, onUpdate: Cascade)
   tableSession            TableSession?       @relation(fields: [tableSessionId, restaurantId, locationId, tableId], references: [id, restaurantId, locationId, tableId], onDelete: Restrict, onUpdate: Cascade, map: "guest_session_table_session_scope_fkey")
   activationRequests      ActivationRequest[]
+  createdSessionJoinCodes SessionJoinCode[]
 
   @@unique([id, restaurantId, locationId, tableId], map: "guest_session_id_scope_key")
   @@index([tableId, accessLevel], map: "guest_session_table_access_level_idx")
@@ -409,12 +422,58 @@ model TableSession {
   closedByMembership      StaffMembership?   @relation("TableSessionClosedBy", fields: [closedByMembershipId, restaurantId, locationId], references: [id, restaurantId, locationId], onDelete: Restrict, onUpdate: Cascade, map: "table_session_closer_scope_fkey")
   guestSessions           GuestSession[]
   bill                    Bill?
+  joinCodes               SessionJoinCode[]
+  joinAttemptRateLimits   JoinAttemptRateLimit[]
 
   @@unique([id, restaurantId, locationId], map: "table_session_id_location_scope_key")
   @@unique([id, restaurantId, locationId, tableId], map: "table_session_id_table_scope_key")
   @@unique([activationRequestId, restaurantId, locationId, tableId], map: "table_session_activation_scope_key")
   @@index([locationId, status, activatedAt], map: "table_session_location_status_activated_idx")
   @@map("table_session")
+}
+
+model SessionJoinCode {
+  id                          String           @id @default(uuid()) @db.Uuid
+  restaurantId                String           @map("restaurant_id") @db.Uuid
+  locationId                  String           @map("location_id") @db.Uuid
+  tableId                     String           @map("table_id") @db.Uuid
+  tableSessionId              String           @map("table_session_id") @db.Uuid
+  codeHash                    String           @map("code_hash") @db.Char(64)
+  expiresAt                   DateTime         @map("expires_at") @db.Timestamptz(3)
+  revokedAt                   DateTime?        @map("revoked_at") @db.Timestamptz(3)
+  createdByGuestSessionId     String?          @map("created_by_guest_session_id") @db.Uuid
+  createdByMembershipId       String?          @map("created_by_membership_id") @db.Uuid
+  createdAt                   DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  restaurant                  Restaurant       @relation(fields: [restaurantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  location                    Location         @relation(fields: [locationId, restaurantId], references: [id, restaurantId], onDelete: Restrict, onUpdate: Cascade)
+  table                       RestaurantTable  @relation(fields: [tableId, restaurantId, locationId], references: [id, restaurantId, locationId], onDelete: Restrict, onUpdate: Cascade)
+  tableSession                TableSession     @relation(fields: [tableSessionId, restaurantId, locationId, tableId], references: [id, restaurantId, locationId, tableId], onDelete: Restrict, onUpdate: Cascade)
+  createdByGuestSession       GuestSession?    @relation(fields: [createdByGuestSessionId, restaurantId, locationId, tableId], references: [id, restaurantId, locationId, tableId], onDelete: Restrict, onUpdate: Cascade)
+  createdByMembership         StaffMembership? @relation(fields: [createdByMembershipId, restaurantId, locationId], references: [id, restaurantId, locationId], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([tableSessionId, expiresAt], map: "session_join_code_session_expiry_idx")
+  @@index([tableId, expiresAt], map: "session_join_code_table_expiry_idx")
+  @@map("session_join_code")
+}
+
+model JoinAttemptRateLimit {
+  id               String                 @id @default(uuid()) @db.Uuid
+  restaurantId     String                 @map("restaurant_id") @db.Uuid
+  locationId       String                 @map("location_id") @db.Uuid
+  tableId          String                 @map("table_id") @db.Uuid
+  tableSessionId   String                 @map("table_session_id") @db.Uuid
+  dimension        JoinRateLimitDimension
+  subjectHash      String                 @map("subject_hash") @db.Char(64)
+  windowStartedAt  DateTime               @map("window_started_at") @db.Timestamptz(3)
+  failedAttempts   Int                    @default(0) @map("failed_attempts")
+  blockedUntil     DateTime?              @map("blocked_until") @db.Timestamptz(3)
+  createdAt        DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  tableSession     TableSession           @relation(fields: [tableSessionId, restaurantId, locationId, tableId], references: [id, restaurantId, locationId, tableId], onDelete: Restrict, onUpdate: Cascade)
+
+  @@unique([tableSessionId, dimension, subjectHash], map: "join_rate_limit_session_dimension_subject_key")
+  @@index([tableSessionId, blockedUntil], map: "join_rate_limit_session_blocked_idx")
+  @@map("join_attempt_rate_limit")
 }
 
 model Bill {

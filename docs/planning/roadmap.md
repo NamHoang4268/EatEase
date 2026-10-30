@@ -38,7 +38,7 @@ Mỗi milestone chỉ bắt đầu khi dependency hoàn tất và có authorizat
 
 **Goal:** static QR đến kitchen queue với hybrid ordering và consolidated bill preview.
 
-**Status:** M2.0–M2.6 hoàn tất và verified; M2 vẫn `IN_PROGRESS`, với join-code lifecycle M2.7 là task kế tiếp và chưa được bắt đầu.
+**Status:** M2.0–M2.7 hoàn tất và locally verified; M2 vẫn `IN_PROGRESS`, với ordering/billing persistence M2.8 là task kế tiếp.
 
 **Dependencies:** M1 completed/owner-approved; schema/permission/API contract review theo task liên quan.
 

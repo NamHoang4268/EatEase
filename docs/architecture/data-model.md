@@ -1,6 +1,6 @@
 # Relational data model
 
-Status: **APPROVED implemented baseline through M2.6**. Physical schema/migrations hiện gồm restaurant/location/table/menu, staff identity/RBAC/session, guest session, activation request, TableSession, Bill, claim recovery hashes, idempotency, outbox và audit persistence. Các domain tables từ M2.7 trở đi tiếp tục là logical baseline cho task tương ứng.
+Status: **APPROVED implemented baseline through M2.7**. Physical schema/migrations hiện gồm restaurant/location/table/menu, staff identity/RBAC/session, guest session, activation request, TableSession, Bill, claim/join recovery hashes, Join Code/rate-limit state, idempotency, outbox và audit persistence. Các domain tables từ M2.8 trở đi tiếp tục là logical baseline cho task tương ứng.
 
 ## ERD
 
@@ -113,11 +113,23 @@ Index này là MVP-only. Không đổi `is_active` hoặc status terminology đ�
 
 ### Session join code
 
-`session_join_code(id, table_session_id, code_hash, expires_at, revoked_at, created_by_guest_session_id, created_by_membership_id)`
+`session_join_code(id, restaurant_id, location_id, table_id, table_session_id, code_hash, expires_at, revoked_at, created_by_guest_session_id, created_by_membership_id, created_at)`
 
 - Exactly one creator.
 - Tối đa một unrevoked code mỗi TableSession.
 - Không dùng predicate dựa vào `now()` trong partial index; expired code phải được revoke/replace trong command transaction.
+- `code_hash` is HMAC-SHA-256 of a CSPRNG six-digit code using deployment secret `JOIN_CODE_HASH_SECRET`; plaintext is never persisted. Scoped foreign keys guarantee the code's restaurant/location/table match its TableSession and optional creator.
+- TTL is 30 minutes. Expiry/revocation/supersession prevents new joins but does not mutate already joined GuestSessions.
+- Issue/rotate/revoke increments `table_session.version`; the partial unique index on `table_session_id WHERE revoked_at IS NULL` serializes the one-current-code invariant.
+
+### Join attempt rate limit
+
+`join_attempt_rate_limit(id, table_session_id, dimension, subject_hash, window_started_at, failed_attempts, blocked_until, created_at, updated_at)`
+
+- Unique `(table_session_id, dimension, subject_hash)`; dimensions are `GUEST_TABLE`, `IP_TABLE`, and `TABLE_SESSION`.
+- Subject values are SHA-256 fingerprints, never raw guest tokens, Join Codes or IP addresses.
+- PostgreSQL row locking/upsert makes failure increments and cooldown activation concurrency-safe.
+- Fixed window is 10 minutes. Limits are 5, 20 and 100 respectively; reaching a limit sets `blocked_until` to 10 minutes from the threshold-crossing attempt.
 
 ### Staff authorization
 

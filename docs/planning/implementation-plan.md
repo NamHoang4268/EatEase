@@ -111,7 +111,7 @@ Dependency: M1 complete/owner-approved; [Phase 1 plan](phase-01.md) approved. M2
 | DONE   | M2.4     | Implement browse-only guest session, cookie/origin boundary và CSRF              |
 | DONE   | M2.5     | Implement activation request, generic waiting state và staff queue               |
 | DONE   | M2.6     | Implement atomic approval/rejection và approved credential-claim contract        |
-| TODO   | M2.7     | Implement join-code issue/rotate/rate-limit/recovery                             |
+| DONE   | M2.7     | Implement secure Host/member join-code lifecycle, staff controls and recovery    |
 | TODO   | M2.8     | Implement ordering/billing/idempotency/outbox persistence                        |
 | TODO   | M2.9     | Implement shared guest/Waiter `SubmitOrder` and consolidated bill preview        |
 | TODO   | M2.10    | Implement read-only unified kitchen queue                                        |
@@ -130,7 +130,7 @@ M2.5 evidence: Prisma schema validates/client generates; API and customer UI imp
 
 ### M2.6 — Staff activation approval
 
-**Status:** `DONE`; database, API, staff/guest UI và verification đã hoàn tất. M2.7 vẫn cần task-specific owner authorization.
+**Status:** `DONE`; database, API, staff/guest UI và verification đã hoàn tất.
 
 - [x] Add reviewed schema/migration for linked TableSession, one-to-one OPEN Bill, guest claim recovery hashes, scoped outbox and audit records.
 - [x] Implement staff approve/reject commands with session + CSRF, `table.activation.approve`, location/resource isolation, `expectedVersion`, physical-presence attestation and command idempotency.
@@ -143,7 +143,20 @@ M2.5 evidence: Prisma schema validates/client generates; API and customer UI imp
 
 M2.6 evidence: reviewed forward-only migrations enforce scoped TableSession/Bill/guest-session invariants; approve/reject/claim commands use deterministic locks, version checks, idempotency, atomic audit/outbox persistence and requester-only credential rotation. `/staff/login` restores staff sessions, exposes only the authorized location queue and requires physical-presence confirmation/rejection reason. `/t/[publicId]` renders activation terminal states and performs claim only after explicit guest action, preserving the draft cart and a bounded request-scoped recovery key without persisting credentials. Final verification on isolated PostgreSQL `eatease_m2_test`: 25 web component tests, 36 API unit tests and 51 API integration tests pass, cùng lint, typecheck, format, production builds và diff checks.
 
-Out of scope: join-code lifecycle (M2.7), order/cart submission and billing lines (M2.8–M2.9), kitchen workflows, outbox worker/realtime delivery (M2.11), settlement and later milestones.
+### M2.7 — Secure Join Code lifecycle
+
+**Status:** `DONE`; database, Host/member/staff API, guest/staff UI và local verification đã hoàn tất. Public Render deployment requires owner-managed `JOIN_CODE_HASH_SECRET` configuration before merge-triggered deployment.
+
+- [x] Persist HMAC-hashed six-digit Join Codes with 30-minute TTL, explicit Host/staff issue/replace/revoke, scoped relationships and one-current-code enforcement.
+- [x] Derive Host eligibility from the original activation requester and successful claim; expose no administrative Host role or plaintext code after the one-time response.
+- [x] Join additional devices with independent credentials, atomic rotation and fixed 120-second previous-credential recovery bound to the same operation and idempotency key.
+- [x] Enforce PostgreSQL-backed failed-attempt limits: 5/10 minutes per browse guest+table, 20/10 minutes per source IP+table and aggregate 100/10 minutes per TableSession, each with fixed 10-minute cooldown.
+- [x] Add location-scoped staff controls and mobile guest UI while preserving in-memory draft carts and requiring explicit confirmation before replacing a code.
+- [x] Verify schema/migration, API/unit/component/integration behavior, concurrency, idempotency, recovery, authorization, secret handling and no ordering/billing side effects.
+
+M2.7 evidence: reviewed forward-only migration adds scoped Join Code/rate-limit persistence and database constraints; API uses deterministic TableSession → JoinCode → GuestSession → sorted rate-bucket locking, HMAC-SHA-256 fingerprints and operation-scoped idempotency. Host/staff UI never persists plaintext and reload never auto-rotates. Final local verification on isolated PostgreSQL `eatease_m2_test`: 40 API unit tests, 28 web component tests and 58 PostgreSQL integration tests pass, together with lint, typecheck, formatting, production builds and diff checks.
+
+Out of scope: order/cart submission and billing lines (M2.8–M2.9), kitchen workflows, outbox worker/realtime delivery (M2.11), settlement and later milestones.
 
 ## M3 — Fulfillment, cancellation and serving
 

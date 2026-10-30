@@ -1,6 +1,6 @@
 # Phase 1 — First business vertical slice
 
-Status: **APPROVED planning target**, implementation `IN_PROGRESS` (`M2.0–M2.6 DONE`; M2.7+ chưa bắt đầu).
+Status: **APPROVED planning target**, implementation `IN_PROGRESS` (`M2.0–M2.7 DONE`; M2.8 là task kế tiếp).
 
 Trong roadmap repository, business Phase 1 được thực hiện tại Milestone M2 sau foundation M1.
 
@@ -53,16 +53,16 @@ Serving, cancellation execution, checkout/payment và table cleaning thuộc mil
 
 ### Activation and guest access
 
-- [ ] Static QR never grants ordering permission.
-- [ ] Guest can browse/build local draft before activation.
-- [ ] Another guest sees safe waiting state when activation is pending.
-- [ ] Approval creates no Order and never submits draft.
-- [ ] Exactly one active session is created under concurrent approval.
-- [ ] Table becomes occupied atomically with session activation.
-- [ ] Approval không tự upgrade guest; requester explicit claim rotates guest + CSRF credentials khi nâng access.
-- [ ] Additional device needs valid join code and gets independent credential.
-- [ ] Expired/revoked code is rejected and attempts are rate-limited.
-- [ ] Expired guest keeps local draft, rejoins, revalidates and explicitly submits.
+- [x] Static QR never grants ordering permission.
+- [x] Guest can browse/build local draft before activation.
+- [x] Another guest sees safe waiting state when activation is pending.
+- [x] Approval creates no Order and never submits draft.
+- [x] Exactly one active session is created under concurrent approval.
+- [x] Table becomes occupied atomically with session activation.
+- [x] Approval không tự upgrade guest; requester explicit claim rotates guest + CSRF credentials khi nâng access.
+- [x] Additional device needs valid join code and gets independent credential.
+- [x] Expired/revoked code is rejected and attempts are rate-limited.
+- [x] Expired guest keeps local draft and can recover through an explicit join without auto-submitting it; order revalidation/submission remains M2.8+.
 
 ### Ordering and billing preview
 

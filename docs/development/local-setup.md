@@ -47,11 +47,13 @@ Các URL mặc định:
 
 ## Environment files
 
-- `apps/api/.env`: `NODE_ENV`, `API_PORT`, `DATABASE_URL`, `DIRECT_DATABASE_URL`, `DATABASE_POOL_MAX`, `TRUSTED_WEB_ORIGINS`, `TRUST_PROXY_HOPS`, `GUEST_IDLE_TIMEOUT_MINUTES`, `GUEST_ABSOLUTE_TIMEOUT_HOURS`.
+- `apps/api/.env`: `NODE_ENV`, `API_PORT`, `DATABASE_URL`, `DIRECT_DATABASE_URL`, `DATABASE_POOL_MAX`, `TRUSTED_WEB_ORIGINS`, `TRUST_PROXY_HOPS`, guest/activation timeout variables, `JOIN_CODE_TTL_MINUTES`, `JOIN_RECOVERY_TTL_SECONDS` và `JOIN_CODE_HASH_SECRET`.
 - `apps/web/.env`: `API_INTERNAL_URL`.
 - `infrastructure/local/.env`: optional override cho PostgreSQL Compose.
 
 Chỉ `.env.example` được commit. `.env` và `.env.*` bị ignore; không đặt production secrets trong repository.
+
+`JOIN_CODE_HASH_SECRET` cần tối thiểu 32 random characters. Local development có thể dùng placeholder chỉ dành cho local từ `.env.example`; production phải dùng stable CSPRNG secret cấu hình trực tiếp trên hosting platform. Thay secret làm các Join Code đang còn hạn không thể verify.
 
 API và web validate environment bằng Zod và fail fast khi giá trị không hợp lệ. Giá trị trong example chỉ dành cho local development.
 

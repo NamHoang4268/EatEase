@@ -90,7 +90,7 @@ Webhook endpoints tương lai không dùng browser CSRF token; chúng dùng prov
 
 ## Session expiration and recovery
 
-Staff origin/proxy và guest/activation lifecycle keys đã được validate trong API configuration; join-code TTL vẫn là planned value cho task tương ứng:
+Staff origin/proxy, guest/activation và Join Code lifecycle keys được validate trong centralized API configuration:
 
 ```text
 TRUSTED_WEB_ORIGINS=http://localhost:3000  # IMPLEMENTED
@@ -99,7 +99,9 @@ GUEST_IDLE_TIMEOUT_MINUTES=30           # IMPLEMENTED
 GUEST_ABSOLUTE_TIMEOUT_HOURS=8           # IMPLEMENTED
 ACTIVATION_REQUEST_TTL_MINUTES=5        # IMPLEMENTED
 GUEST_CLAIM_RECOVERY_TTL_SECONDS=120    # APPROVED FOR M2.6
-JOIN_CODE_TTL_MINUTES=30                # PROPOSED
+JOIN_CODE_TTL_MINUTES=30                # APPROVED FOR M2.7
+JOIN_RECOVERY_TTL_SECONDS=120           # APPROVED FOR M2.7
+JOIN_CODE_HASH_SECRET=<32+ random chars> # REQUIRED in production
 ```
 
 Values phải được đọc từ centralized validated configuration, không hardcode ở nhiều module.
@@ -140,11 +142,18 @@ M2.6 requester claim rotates both the opaque guest cookie token and synchronizer
 
 ## Join-code controls
 
-- Chỉ lưu hash; code random, short-lived và revocable.
-- Rate limit theo table + browse session + source signals.
+- Code gồm đúng sáu chữ số, sinh bằng CSPRNG, TTL 30 phút; database chỉ lưu HMAC-SHA-256 dùng dedicated `JOIN_CODE_HASH_SECRET`. Secret không nằm trong source/database và ngăn offline enumeration của không gian sáu chữ số khi chỉ database bị lộ. Expiration only prevents new joins and does not revoke joined guests.
+- Original requester becomes Host only after successful activation claim. Backend derives this relationship from ActivationRequest → requester GuestSession → active TableSession; Host is not an administrative role.
+- Host may explicitly issue/replace the code. Plaintext is returned once and may live only in volatile page memory. Reload/reopen returns metadata only and never rotates automatically; explicit replacement confirmation revokes the previous code atomically.
+- Staff with `table.join_code.manage` may rotate/revoke within membership location scope.
+- PostgreSQL rate limit: 5 failures/10 minutes per browse GuestSession+table, 20/10 minutes per source-IP fingerprint+table, and aggregate 100/10 minutes per TableSession. Threshold starts a fixed 10-minute cooldown. Counters use locked/upserted database rows so parallel requests cannot bypass limits.
+- Source IP is normalized by the existing trusted-proxy policy and persisted only as an HMAC-SHA-256 fingerprint using `JOIN_CODE_HASH_SECRET`; no raw code or raw IP is stored in rate-limit records.
 - Generic error để tránh enumeration.
 - Successful use không dùng chung cookie; mỗi device nhận credential riêng.
-- Authorized guest/staff có thể rotate; rotation revoke code cũ atomically.
+- Join-only lost-response recovery lasts 120 seconds and accepts previous guest + CSRF credentials only at `POST /table-sessions/join`, with the same actor/operation/idempotency key. It never extends the deadline or makes previous credentials valid for other endpoints.
+- Code invalidation/expiry/session closure blocks new joins only. Existing member credentials remain independent and valid until their normal expiry/revocation/session closure.
+
+Lock order for M2.7 is TableSession → current SessionJoinCode → GuestSession → sorted rate-limit buckets. M2.6 claim already locks ActivationRequest → TableSession → GuestSession, so both paths preserve TableSession-before-GuestSession ordering. Staff approval locks the table/activation before creating a new TableSession and cannot contend on an M2.7 JoinCode row.
 
 ## WebSocket security
 
