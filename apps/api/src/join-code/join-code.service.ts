@@ -20,6 +20,7 @@ import {
 import type { Prisma } from '../generated/prisma/client.js';
 import { generateOpaqueToken, hashToken, tokensMatch } from '../staff-auth/auth.crypto.js';
 import type { GuestPrincipal } from '../guest-session/guest-session.types.js';
+import { JOIN_CODE_TTL_MS, JOIN_RECOVERY_TTL_MS } from './join-code.constants.js';
 import type {
   HostIssueInput,
   IssueJoinCodeData,
@@ -149,27 +150,19 @@ const idempotencyConflict = () =>
 
 @Injectable()
 export class JoinCodeService {
-  private readonly codeTtlMs: number;
-  private readonly recoveryTtlMs: number;
   private readonly idleTimeoutMs: number;
   private readonly hashSecret: string;
 
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {
-    let codeTtlMinutes = 30;
-    let recoveryTtlSeconds = 120;
     let idleMinutes = 30;
     let hashSecret = 'development-only-join-code-secret-32-chars';
     try {
       const environment = loadEnvironment();
-      codeTtlMinutes = environment.JOIN_CODE_TTL_MINUTES;
-      recoveryTtlSeconds = environment.JOIN_RECOVERY_TTL_SECONDS;
       idleMinutes = environment.GUEST_IDLE_TIMEOUT_MINUTES;
       hashSecret = environment.JOIN_CODE_HASH_SECRET ?? hashSecret;
     } catch {
       // Unit tests can construct the service without a complete environment.
     }
-    this.codeTtlMs = codeTtlMinutes * 60_000;
-    this.recoveryTtlMs = recoveryTtlSeconds * 1_000;
     this.idleTimeoutMs = idleMinutes * 60_000;
     this.hashSecret = hashSecret;
   }
@@ -449,7 +442,7 @@ export class JoinCodeService {
           csrfTokenHash: hashToken(csrfToken),
           previousTokenHash: guest.tokenHash,
           previousCsrfTokenHash: guest.csrfTokenHash,
-          previousTokenValidUntil: new Date(now.getTime() + this.recoveryTtlMs),
+          previousTokenValidUntil: new Date(now.getTime() + JOIN_RECOVERY_TTL_MS),
           idleExpiresAt: this.nextIdleExpiry(now, guest.absoluteExpiresAt),
           lastSeenAt: now,
           version: { increment: 1 },
@@ -582,7 +575,7 @@ export class JoinCodeService {
       }
 
       const code = randomInt(0, 1_000_000).toString().padStart(6, '0');
-      const expiresAt = new Date(input.now.getTime() + this.codeTtlMs);
+      const expiresAt = new Date(input.now.getTime() + JOIN_CODE_TTL_MS);
       await transaction.sessionJoinCode.create({
         data: {
           restaurantId: session.restaurantId,

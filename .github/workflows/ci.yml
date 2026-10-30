@@ -38,6 +38,7 @@ jobs:
       DIRECT_DATABASE_URL: postgresql://eatease:eatease_ci@localhost:5432/eatease?schema=public
       DATABASE_POOL_MAX: 5
       API_INTERNAL_URL: http://127.0.0.1:3001
+      API_PROXY_SHARED_SECRET: ci-only-api-proxy-secret-at-least-32-characters
 
     steps:
       - name: Check out repository

@@ -51,6 +51,45 @@ function bootstrap(accessLevel: 'BROWSE_ONLY' | 'ORDER_ENABLED') {
   });
 }
 
+function joinSuccess() {
+  return response({
+    data: {
+      session: { accessLevel: 'ORDER_ENABLED', tableSessionId: 'session-1', version: 1 },
+      csrfToken: 'joined-csrf',
+    },
+  });
+}
+
+function joinScenario(joinReplies: Array<() => Promise<unknown>>) {
+  let joinIndex = 0;
+  return vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+    if (url.includes('/public/tables/')) return Promise.resolve(response({ data: table }));
+    if (url.includes('/public/menu')) return Promise.resolve(response({ data: menu }));
+    if (url === '/api/v1/guest-sessions' && init?.method === 'POST')
+      return Promise.resolve(bootstrap('BROWSE_ONLY'));
+    if (url === '/api/v1/activation-requests/current')
+      return Promise.resolve(response({ data: { status: 'NOT_REQUESTED' } }));
+    if (url === '/api/v1/guest-sessions/csrf-token')
+      return Promise.resolve(response({ data: { csrfToken: 'recovered-csrf' } }));
+    if (url === '/api/v1/table-sessions/join' && init?.method === 'POST') {
+      const reply = joinReplies[Math.min(joinIndex, joinReplies.length - 1)];
+      joinIndex += 1;
+      return reply?.() ?? Promise.reject(new Error('Missing Join response'));
+    }
+    if (url === '/api/v1/guest-sessions/current')
+      return Promise.resolve(response({ data: { session: { accessLevel: 'ORDER_ENABLED' } } }));
+    if (url === '/api/v1/table-sessions/current/join-code')
+      return Promise.resolve(response({ error: { code: 'JOIN_CODE_HOST_ACCESS_DENIED' } }, 403));
+    return Promise.reject(new Error(`Unhandled ${url}`));
+  });
+}
+
+async function submitJoin(): Promise<void> {
+  await screen.findByRole('heading', { name: 'Tham gia bàn bằng mã mời' });
+  fireEvent.change(screen.getByLabelText('Join Code'), { target: { value: '482193' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Tham gia bàn' }));
+}
+
 describe('M2.7 Host and Join experience', () => {
   afterEach(() => {
     cleanup();
@@ -96,6 +135,89 @@ describe('M2.7 Host and Join experience', () => {
       headers: { 'Idempotency-Key': 'join-key', 'X-CSRF-Token': 'guest-csrf' },
       body: JSON.stringify({ tablePublicId: publicId, joinCode: '482193' }),
     });
+  });
+
+  it.each([502, 504])(
+    'reuses the Join operation key after an ambiguous HTTP %s',
+    async (status) => {
+      const randomUUID = vi
+        .fn()
+        .mockReturnValueOnce('join-key-original')
+        .mockReturnValueOnce('join-key-new');
+      vi.stubGlobal('crypto', { randomUUID });
+      const fetchMock = joinScenario([
+        () => Promise.resolve(response({ error: { code: 'UPSTREAM_FAILURE' } }, status)),
+        () => Promise.resolve(joinSuccess()),
+      ]);
+      vi.stubGlobal('fetch', fetchMock);
+      render(<PublicMenuExperience publicId={publicId} />);
+
+      await submitJoin();
+      await screen.findByText('Chưa thể tham gia bàn. Vui lòng thử lại.');
+      fireEvent.click(screen.getByRole('button', { name: 'Tham gia bàn' }));
+      await screen.findByText('Đã cấp quyền tại bàn');
+
+      const joinCalls = fetchMock.mock.calls.filter(
+        ([url, init]) => url === '/api/v1/table-sessions/join' && init?.method === 'POST',
+      );
+      expect(
+        joinCalls.map(([, init]) => (init?.headers as Record<string, string>)['Idempotency-Key']),
+      ).toEqual(['join-key-original', 'join-key-original']);
+      expect(randomUUID).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('reuses the Join operation key after a network failure', async () => {
+    const randomUUID = vi
+      .fn()
+      .mockReturnValueOnce('network-key-original')
+      .mockReturnValueOnce('network-key-new');
+    vi.stubGlobal('crypto', { randomUUID });
+    const fetchMock = joinScenario([
+      () => Promise.reject(new Error('connection reset')),
+      () => Promise.resolve(joinSuccess()),
+    ]);
+    vi.stubGlobal('fetch', fetchMock);
+    render(<PublicMenuExperience publicId={publicId} />);
+
+    await submitJoin();
+    await screen.findByText(/Kết nối bị gián đoạn/);
+    fireEvent.click(screen.getByRole('button', { name: 'Tham gia bàn' }));
+    await screen.findByText('Đã cấp quyền tại bàn');
+
+    const joinCalls = fetchMock.mock.calls.filter(
+      ([url, init]) => url === '/api/v1/table-sessions/join' && init?.method === 'POST',
+    );
+    expect(
+      joinCalls.map(([, init]) => (init?.headers as Record<string, string>)['Idempotency-Key']),
+    ).toEqual(['network-key-original', 'network-key-original']);
+    expect(randomUUID).toHaveBeenCalledTimes(1);
+  });
+
+  it('recovers guest CSRF once without changing the Join operation key', async () => {
+    const randomUUID = vi.fn().mockReturnValue('csrf-join-key');
+    vi.stubGlobal('crypto', { randomUUID });
+    const fetchMock = joinScenario([
+      () => Promise.resolve(response({ error: { code: 'GUEST_CSRF_INVALID' } }, 403)),
+      () => Promise.resolve(joinSuccess()),
+    ]);
+    vi.stubGlobal('fetch', fetchMock);
+    render(<PublicMenuExperience publicId={publicId} />);
+
+    await submitJoin();
+    await screen.findByText('Đã cấp quyền tại bàn');
+
+    const joinCalls = fetchMock.mock.calls.filter(
+      ([url, init]) => url === '/api/v1/table-sessions/join' && init?.method === 'POST',
+    );
+    expect(joinCalls).toHaveLength(2);
+    expect(
+      joinCalls.map(([, init]) => (init?.headers as Record<string, string>)['Idempotency-Key']),
+    ).toEqual(['csrf-join-key', 'csrf-join-key']);
+    expect(
+      joinCalls.map(([, init]) => (init?.headers as Record<string, string>)['X-CSRF-Token']),
+    ).toEqual(['guest-csrf', 'recovered-csrf']);
+    expect(randomUUID).toHaveBeenCalledTimes(1);
   });
 
   it('shows plaintext only after explicit Host generation and confirms replacement', async () => {

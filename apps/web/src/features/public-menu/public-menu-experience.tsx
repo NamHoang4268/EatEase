@@ -292,12 +292,21 @@ export function PublicMenuExperience({ publicId }: { publicId: string }) {
       });
     try {
       const token = csrfToken ?? (await recoverCsrfToken());
-      const response = await send(token);
-      if (!response.ok) {
-        const payload = (await response.json().catch(() => ({}))) as {
+      let response = await send(token);
+      let payload = (await response.json().catch(() => ({}))) as {
+        data?: JoinTableResponse;
+        error?: { code?: string };
+      };
+      if (response.status === 403 && payload.error?.code === 'GUEST_CSRF_INVALID') {
+        const recoveredToken = await recoverCsrfToken();
+        response = await send(recoveredToken);
+        payload = (await response.json().catch(() => ({}))) as {
+          data?: JoinTableResponse;
           error?: { code?: string };
         };
-        if (response.status !== 503) joinAttemptKeyRef.current = null;
+      }
+      if (!response.ok) {
+        if (response.status < 500) joinAttemptKeyRef.current = null;
         if (response.status === 429) {
           setJoinError('Bạn đã thử quá nhiều lần. Vui lòng chờ 10 phút rồi thử lại.');
         } else if (response.status === 403) {
@@ -311,7 +320,7 @@ export function PublicMenuExperience({ publicId }: { publicId: string }) {
         }
         return;
       }
-      const payload = (await response.json()) as { data: JoinTableResponse };
+      if (!payload.data) throw new Error('JOIN_RESPONSE_INVALID');
       setCsrfToken(payload.data.csrfToken);
       setGuestAccess('ORDER_ENABLED');
       setJoinCodeInput('');
@@ -662,9 +671,11 @@ export function PublicMenuExperience({ publicId }: { publicId: string }) {
               maxLength={6}
               pattern="[0-9]{6}"
               value={joinCodeInput}
-              onChange={(event) =>
-                setJoinCodeInput(event.target.value.replace(/\D/g, '').slice(0, 6))
-              }
+              onChange={(event) => {
+                const nextCode = event.target.value.replace(/\D/g, '').slice(0, 6);
+                if (nextCode !== joinCodeInput) joinAttemptKeyRef.current = null;
+                setJoinCodeInput(nextCode);
+              }}
             />
             <button
               className="primary-button"

@@ -30,6 +30,7 @@ import type { StaffRequest } from '../staff-auth/staff-auth.types.js';
 import { StaffCsrfGuard } from '../staff-auth/staff-csrf.guard.js';
 import { StaffSessionGuard } from '../staff-auth/staff-session.guard.js';
 import { JoinCodeService } from './join-code.service.js';
+import { JoinSourceIpService } from './join-source-ip.service.js';
 
 const issueSchema = z
   .object({ expectedVersion: z.number().int().nonnegative(), replaceExisting: z.boolean() })
@@ -91,6 +92,7 @@ export class GuestJoinCodeController {
     @Inject(JoinCodeService) private readonly joinCodes: JoinCodeService,
     @Inject(GuestCookieService) private readonly cookies: GuestCookieService,
     @Inject(OriginPolicyService) private readonly origins: OriginPolicyService,
+    @Inject(JoinSourceIpService) private readonly sourceIps: JoinSourceIpService,
   ) {}
 
   @Post('join')
@@ -112,7 +114,7 @@ export class GuestJoinCodeController {
       idempotencyKey: idempotencyKey(key),
       rawSessionToken,
       rawCsrfToken: requiredHeader(request.headers['x-csrf-token']),
-      sourceIp: request.ip ?? 'unknown',
+      sourceIp: this.sourceIps.resolve(request),
     });
     this.cookies.set(response, result.sessionToken, result.absoluteExpiresAt);
     return { data: { ...result.data, csrfToken: result.csrfToken } };

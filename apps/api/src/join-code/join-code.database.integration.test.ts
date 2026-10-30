@@ -15,6 +15,13 @@ import {
 } from '../generated/prisma/enums.js';
 import { GUEST_SESSION_COOKIE } from '../guest-session/guest-session.constants.js';
 import { hashToken } from '../staff-auth/auth.crypto.js';
+import { JOIN_CODE_TTL_MS, JOIN_RECOVERY_TTL_MS } from './join-code.constants.js';
+import {
+  createProxySignature,
+  TRUSTED_CLIENT_IP_HEADER,
+  TRUSTED_PROXY_SIGNATURE_HEADER,
+  TRUSTED_PROXY_TIMESTAMP_HEADER,
+} from './join-source-ip.service.js';
 import type { JoinTableData } from './join-code.types.js';
 
 const databaseUrlValue = process.env.DATABASE_URL;
@@ -29,9 +36,8 @@ if (
 
 process.env.NODE_ENV = 'test';
 process.env.TRUSTED_WEB_ORIGINS = 'http://localhost:3000';
-process.env.JOIN_CODE_TTL_MINUTES = '30';
-process.env.JOIN_RECOVERY_TTL_SECONDS = '120';
 process.env.JOIN_CODE_HASH_SECRET = 'm2-7-test-join-code-secret-at-least-32-characters';
+process.env.API_PROXY_SHARED_SECRET = 'm2-7-test-api-proxy-secret-at-least-32-characters';
 
 const joinFingerprint = (value: unknown) =>
   createHmac('sha256', process.env.JOIN_CODE_HASH_SECRET!)
@@ -76,15 +82,33 @@ describe('M2.7 Join Code lifecycle database integration', () => {
       .set('Idempotency-Key', key)
       .send({ expectedVersion, replaceExisting });
 
-  const join = (token: string, csrf: string, code: string, key: string, ip = '127.0.0.1') =>
-    request(server)
+  const join = (
+    token: string,
+    csrf: string,
+    code: string,
+    key: string,
+    sourceIp = '127.0.0.1',
+    forwardedFor = sourceIp,
+  ) => {
+    const timestamp = String(Date.now());
+    const signature = createProxySignature(process.env.API_PROXY_SHARED_SECRET!, {
+      clientIp: sourceIp,
+      method: 'POST',
+      pathname: '/api/v1/table-sessions/join',
+      timestamp,
+    });
+    return request(server)
       .post('/api/v1/table-sessions/join')
       .set('Cookie', cookie(token))
       .set('Origin', 'http://localhost:3000')
       .set('X-CSRF-Token', csrf)
       .set('Idempotency-Key', key)
-      .set('X-Forwarded-For', ip)
+      .set('X-Forwarded-For', forwardedFor)
+      .set(TRUSTED_CLIENT_IP_HEADER, sourceIp)
+      .set(TRUSTED_PROXY_TIMESTAMP_HEADER, timestamp)
+      .set(TRUSTED_PROXY_SIGNATURE_HEADER, signature)
       .send({ tablePublicId: ids.tablePublic, joinCode: code });
+  };
 
   async function cleanup(): Promise<void> {
     await prisma.joinAttemptRateLimit.deleteMany({ where: { restaurantId: ids.restaurant } });
@@ -264,11 +288,15 @@ describe('M2.7 Join Code lifecycle database integration', () => {
   });
 
   it('allows only the verified Host to issue plaintext once without persisting it', async () => {
+    const beforeIssue = Date.now();
     const issue = await hostIssue(0, false, 'host-issue').expect(200);
+    const afterIssue = Date.now();
     const code = (issue.body as { data: { code: string } }).data.code;
     expect(code).toMatch(/^\d{6}$/);
     const stored = await prisma.sessionJoinCode.findFirstOrThrow({ where: { tableSessionId } });
     expect(stored.codeHash).toBe(joinFingerprint(code));
+    expect(stored.expiresAt.getTime()).toBeGreaterThanOrEqual(beforeIssue + JOIN_CODE_TTL_MS);
+    expect(stored.expiresAt.getTime()).toBeLessThanOrEqual(afterIssue + JOIN_CODE_TTL_MS);
     expect(
       JSON.stringify(
         await prisma.idempotencyRecord.findMany({ where: { restaurantId: ids.restaurant } }),
@@ -335,7 +363,14 @@ describe('M2.7 Join Code lifecycle database integration', () => {
       where: { tableSessionId, dimension: 'IP_TABLE' },
       data: { failedAttempts: 19 },
     });
-    await join(tokens.member, tokens.memberCsrf, '000000', 'ip-threshold').expect(429);
+    await join(
+      tokens.member,
+      tokens.memberCsrf,
+      '000000',
+      'ip-threshold',
+      '127.0.0.1',
+      '203.0.113.250',
+    ).expect(429);
 
     await prisma.joinAttemptRateLimit.updateMany({
       where: { tableSessionId },
@@ -353,14 +388,36 @@ describe('M2.7 Join Code lifecycle database integration', () => {
     expect(aggregate.blockedUntil).not.toBeNull();
   });
 
+  it('creates distinct IP buckets only from trusted signed client addresses', async () => {
+    await join(tokens.member, tokens.memberCsrf, '000000', 'ip-one', '203.0.113.10').expect(403);
+    await join(tokens.memberTwo, tokens.memberTwoCsrf, '000000', 'ip-two', '203.0.113.11').expect(
+      403,
+    );
+    const ipBuckets = await prisma.joinAttemptRateLimit.findMany({
+      where: { tableSessionId, dimension: 'IP_TABLE' },
+    });
+    expect(ipBuckets).toHaveLength(2);
+    expect(new Set(ipBuckets.map((bucket) => bucket.subjectHash)).size).toBe(2);
+    expect(JSON.stringify(ipBuckets)).not.toContain('203.0.113.');
+  });
+
   it('supports fixed-window lost-response recovery only with the same join operation key', async () => {
     const issued = await hostIssue(0, false, 'recovery-code').expect(200);
     const code = (issued.body as { data: { code: string } }).data.code;
+    const beforeJoin = Date.now();
     const first = await join(tokens.member, tokens.memberCsrf, code, 'recover-join').expect(200);
+    const afterJoin = Date.now();
     const retry = await join(tokens.member, tokens.memberCsrf, code, 'recover-join').expect(200);
     expect(retry.headers['set-cookie']).toBeDefined();
     const firstBody = first.body as { data: JoinTableData };
     expect(retry.body).toMatchObject({ data: { session: firstBody.data.session } });
+    const rotated = await prisma.guestSession.findUniqueOrThrow({ where: { id: ids.member } });
+    expect(rotated.previousTokenValidUntil?.getTime()).toBeGreaterThanOrEqual(
+      beforeJoin + JOIN_RECOVERY_TTL_MS,
+    );
+    expect(rotated.previousTokenValidUntil?.getTime()).toBeLessThanOrEqual(
+      afterJoin + JOIN_RECOVERY_TTL_MS,
+    );
     await expect(
       prisma.auditLog.count({
         where: { actorId: ids.member, action: 'GUEST_JOINED_TABLE_SESSION' },

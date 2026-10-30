@@ -18,3 +18,7 @@ services:
         sync: false
       - key: DIRECT_DATABASE_URL
         sync: false
+      - key: JOIN_CODE_HASH_SECRET
+        sync: false
+      - key: API_PROXY_SHARED_SECRET
+        sync: false

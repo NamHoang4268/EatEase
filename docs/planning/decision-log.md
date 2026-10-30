@@ -68,6 +68,7 @@ Last baseline update: 2026-10-30.
 - Staff with `table.join_code.manage` may rotate/revoke within location scope. Host/staff replacement is explicit, revokes the previous code atomically and increments TableSession version.
 - PostgreSQL-backed failed-join limits are 5/10 minutes per browse GuestSession+table, 20/10 minutes per source-IP fingerprint+table, and aggregate 100/10 minutes per TableSession, each with a fixed 10-minute cooldown after threshold. Counters are concurrency-safe and store neither raw code nor raw IP.
 - M2.7 join rotates only the joining device credentials and supports a separate 120-second previous-credential recovery path bound to `JOIN_TABLE_SESSION` plus the original idempotency key; the fixed deadline is never extended.
+- M2.7 source-IP limiting on Vercel → Render uses a signed internal client-IP proof with a separate shared secret and 60-second freshness window. The API ignores arbitrary forwarded headers, does not guess proxy hops, and fails closed for unsigned production join requests. Join Code TTL (30 minutes) and join recovery TTL (120 seconds) are fixed code constants, not deployment configuration.
 
 ## PROPOSED
 

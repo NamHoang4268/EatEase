@@ -1,11 +1,24 @@
-import { BadRequestException } from '@nestjs/common';
-import { describe, expect, it, vi } from 'vitest';
-import type { GuestCookieService } from '../guest-session/guest-cookie.service.js';
+import { BadRequestException, type INestApplication } from '@nestjs/common';
+import { Test } from '@nestjs/testing';
+import type { Server } from 'node:http';
+import request from 'supertest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { GuestCookieService } from '../guest-session/guest-cookie.service.js';
+import { GuestCsrfGuard } from '../guest-session/guest-csrf.guard.js';
+import { GuestSessionGuard } from '../guest-session/guest-session.guard.js';
+import { GuestSessionService } from '../guest-session/guest-session.service.js';
 import type { GuestRequest } from '../guest-session/guest-session.types.js';
-import type { OriginPolicyService } from '../staff-auth/origin-policy.service.js';
+import { OriginPolicyService } from '../staff-auth/origin-policy.service.js';
 import type { StaffRequest } from '../staff-auth/staff-auth.types.js';
 import { GuestJoinCodeController, StaffJoinCodeController } from './join-code.controller.js';
-import type { JoinCodeService } from './join-code.service.js';
+import { JoinCodeService } from './join-code.service.js';
+import {
+  createProxySignature,
+  JoinSourceIpService,
+  TRUSTED_CLIENT_IP_HEADER,
+  TRUSTED_PROXY_SIGNATURE_HEADER,
+  TRUSTED_PROXY_TIMESTAMP_HEADER,
+} from './join-source-ip.service.js';
 
 const guestPrincipal = {
   sessionId: 'guest-1',
@@ -38,6 +51,7 @@ describe('Join Code controllers', () => {
       service as unknown as JoinCodeService,
       {} as GuestCookieService,
       {} as OriginPolicyService,
+      {} as JoinSourceIpService,
     );
     const result = await controller.issue(
       { expectedVersion: 2, replaceExisting: true },
@@ -58,6 +72,7 @@ describe('Join Code controllers', () => {
       {} as JoinCodeService,
       {} as GuestCookieService,
       { assertTrusted: vi.fn() } as unknown as OriginPolicyService,
+      {} as JoinSourceIpService,
     );
     await expect(
       controller.join(
@@ -85,5 +100,80 @@ describe('Join Code controllers', () => {
       idempotencyKey: 'staff-key',
       principal: staffPrincipal,
     });
+  });
+});
+
+describe('Guest Join Code trusted proxy boundary', () => {
+  let application: INestApplication | undefined;
+
+  afterEach(async () => {
+    await application?.close();
+    application = undefined;
+  });
+
+  it('separates signed client IPs and ignores spoofed forwarded headers', async () => {
+    const sharedSecret = 'request-test-api-proxy-secret-at-least-32-characters';
+    const join = vi.fn().mockResolvedValue({
+      data: { session: { id: 'guest-1', accessLevel: 'ORDER_ENABLED' } },
+      sessionToken: 'rotated-token',
+      csrfToken: 'rotated-csrf',
+      absoluteExpiresAt: new Date(Date.now() + 60_000),
+    });
+    const testingModule = await Test.createTestingModule({
+      controllers: [GuestJoinCodeController],
+      providers: [
+        { provide: JoinCodeService, useValue: { join } },
+        {
+          provide: GuestCookieService,
+          useValue: { read: vi.fn().mockReturnValue('guest-token'), set: vi.fn() },
+        },
+        { provide: OriginPolicyService, useValue: { assertTrusted: vi.fn() } },
+        {
+          provide: JoinSourceIpService,
+          useValue: new JoinSourceIpService({ signatureRequired: true, sharedSecret }),
+        },
+        { provide: GuestSessionGuard, useValue: { canActivate: () => true } },
+        { provide: GuestCsrfGuard, useValue: { canActivate: () => true } },
+        { provide: GuestSessionService, useValue: { authenticate: vi.fn() } },
+      ],
+    }).compile();
+    application = testingModule.createNestApplication();
+    application.setGlobalPrefix('api/v1');
+    await application.init();
+    const server = application.getHttpServer() as Server;
+    const pathname = '/api/v1/table-sessions/join';
+
+    const send = (clientIp: string, key: string, forwardedFor: string) => {
+      const timestamp = String(Date.now());
+      const signature = createProxySignature(sharedSecret, {
+        clientIp,
+        method: 'POST',
+        pathname,
+        timestamp,
+      });
+      return request(server)
+        .post(pathname)
+        .set('Idempotency-Key', key)
+        .set('X-CSRF-Token', 'guest-csrf')
+        .set('X-Forwarded-For', forwardedFor)
+        .set(TRUSTED_CLIENT_IP_HEADER, clientIp)
+        .set(TRUSTED_PROXY_TIMESTAMP_HEADER, timestamp)
+        .set(TRUSTED_PROXY_SIGNATURE_HEADER, signature)
+        .send({ tablePublicId: guestPrincipal.tablePublicId, joinCode: '482193' });
+    };
+
+    await send('203.0.113.10', 'join-one', '198.51.100.250').expect(200);
+    await send('203.0.113.11', 'join-two', '198.51.100.251').expect(200);
+    const sourceIps = join.mock.calls.map(([input]) => (input as { sourceIp: string }).sourceIp);
+    expect(sourceIps).toEqual(['203.0.113.10', '203.0.113.11']);
+
+    await request(server)
+      .post(pathname)
+      .set('Idempotency-Key', 'spoofed')
+      .set('X-CSRF-Token', 'guest-csrf')
+      .set('X-Forwarded-For', '192.0.2.99')
+      .send({ tablePublicId: guestPrincipal.tablePublicId, joinCode: '482193' })
+      .expect(403);
+    expect(join).toHaveBeenCalledTimes(2);
   });
 });

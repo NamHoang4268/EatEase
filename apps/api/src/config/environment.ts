@@ -1,5 +1,8 @@
 import { z } from 'zod';
 
+const JOIN_CODE_HASH_SECRET_PLACEHOLDER = 'replace-with-at-least-32-random-characters';
+const API_PROXY_SHARED_SECRET_PLACEHOLDER = 'local-only-api-proxy-shared-secret-change-me';
+
 const environmentSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -10,9 +13,8 @@ const environmentSchema = z
     GUEST_ABSOLUTE_TIMEOUT_HOURS: z.coerce.number().int().min(1).max(72).default(8),
     ACTIVATION_REQUEST_TTL_MINUTES: z.coerce.number().int().min(1).max(60).default(5),
     GUEST_CLAIM_RECOVERY_TTL_SECONDS: z.coerce.number().int().min(30).max(300).default(120),
-    JOIN_CODE_TTL_MINUTES: z.coerce.number().int().min(5).max(60).default(30),
-    JOIN_RECOVERY_TTL_SECONDS: z.coerce.number().int().min(30).max(300).default(120),
     JOIN_CODE_HASH_SECRET: z.string().min(32).optional(),
+    API_PROXY_SHARED_SECRET: z.string().min(32).optional(),
     TRUSTED_WEB_ORIGINS: z
       .string()
       .default('http://localhost:3000')
@@ -31,7 +33,6 @@ const environmentSchema = z
         }
         return origins;
       }),
-    TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(10).default(0),
   })
   .superRefine((value, context) => {
     if (value.NODE_ENV === 'production' && !value.JOIN_CODE_HASH_SECRET) {
@@ -39,6 +40,33 @@ const environmentSchema = z
         code: 'custom',
         path: ['JOIN_CODE_HASH_SECRET'],
         message: 'Required in production',
+      });
+    }
+    if (
+      value.NODE_ENV === 'production' &&
+      value.JOIN_CODE_HASH_SECRET === JOIN_CODE_HASH_SECRET_PLACEHOLDER
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['JOIN_CODE_HASH_SECRET'],
+        message: 'Placeholder value is not allowed in production',
+      });
+    }
+    if (value.NODE_ENV === 'production' && !value.API_PROXY_SHARED_SECRET) {
+      context.addIssue({
+        code: 'custom',
+        path: ['API_PROXY_SHARED_SECRET'],
+        message: 'Required in production',
+      });
+    }
+    if (
+      value.NODE_ENV === 'production' &&
+      value.API_PROXY_SHARED_SECRET === API_PROXY_SHARED_SECRET_PLACEHOLDER
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['API_PROXY_SHARED_SECRET'],
+        message: 'Placeholder value is not allowed in production',
       });
     }
   });

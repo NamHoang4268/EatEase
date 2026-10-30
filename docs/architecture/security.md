@@ -83,7 +83,7 @@ Staff session dùng synchronizer token riêng cho từng session:
 - Tối đa 5 failed attempts trong 15 phút cho key `normalized email + source IP`; attempt tiếp theo trả `429`.
 - Limiter là in-memory cho MVP single API instance, reset khi process restart và không phối hợp giữa nhiều replicas.
 - Login errors dùng generic message cho unknown user, wrong password, inactive user/membership và ambiguous membership selection.
-- Source IP lấy từ Express request sau cấu hình proxy trust. `TRUST_PROXY_HOPS=0` mặc định không trust client-provided forwarding headers; chỉ set exact hop count sau khi verify deployment topology.
+- Staff login limiter hiện lấy socket peer và không trust client-provided forwarding headers. Join Code uses the separately authenticated Vercel → Render boundary below; generalizing that boundary to other limiters is a later focused hardening task.
 - Không persistent account lockout trong MVP.
 
 Webhook endpoints tương lai không dùng browser CSRF token; chúng dùng provider signature, raw body, event idempotency và endpoint-specific authentication.
@@ -94,17 +94,15 @@ Staff origin/proxy, guest/activation và Join Code lifecycle keys được valid
 
 ```text
 TRUSTED_WEB_ORIGINS=http://localhost:3000  # IMPLEMENTED
-TRUST_PROXY_HOPS=0                        # IMPLEMENTED
 GUEST_IDLE_TIMEOUT_MINUTES=30           # IMPLEMENTED
 GUEST_ABSOLUTE_TIMEOUT_HOURS=8           # IMPLEMENTED
 ACTIVATION_REQUEST_TTL_MINUTES=5        # IMPLEMENTED
 GUEST_CLAIM_RECOVERY_TTL_SECONDS=120    # APPROVED FOR M2.6
-JOIN_CODE_TTL_MINUTES=30                # APPROVED FOR M2.7
-JOIN_RECOVERY_TTL_SECONDS=120           # APPROVED FOR M2.7
 JOIN_CODE_HASH_SECRET=<32+ random chars> # REQUIRED in production
+API_PROXY_SHARED_SECRET=<32+ random>    # REQUIRED on Vercel + Render
 ```
 
-Values phải được đọc từ centralized validated configuration, không hardcode ở nhiều module.
+Runtime-configurable values phải được đọc từ centralized validated configuration. M2.7 Join Code TTL và join credential recovery TTL là fixed contract constants, lần lượt đúng 30 phút và 120 giây; chúng không có environment override.
 
 Recovery flow:
 
@@ -147,7 +145,8 @@ M2.6 requester claim rotates both the opaque guest cookie token and synchronizer
 - Host may explicitly issue/replace the code. Plaintext is returned once and may live only in volatile page memory. Reload/reopen returns metadata only and never rotates automatically; explicit replacement confirmation revokes the previous code atomically.
 - Staff with `table.join_code.manage` may rotate/revoke within membership location scope.
 - PostgreSQL rate limit: 5 failures/10 minutes per browse GuestSession+table, 20/10 minutes per source-IP fingerprint+table, and aggregate 100/10 minutes per TableSession. Threshold starts a fixed 10-minute cooldown. Counters use locked/upserted database rows so parallel requests cannot bypass limits.
-- Source IP is normalized by the existing trusted-proxy policy and persisted only as an HMAC-SHA-256 fingerprint using `JOIN_CODE_HASH_SECRET`; no raw code or raw IP is stored in rate-limit records.
+- Production source IP đi qua authenticated proxy boundary: Vercel overwrites `x-vercel-forwarded-for` with the public client IP, Next.js Proxy removes any caller-supplied internal headers and signs client IP + timestamp + method + path with `API_PROXY_SHARED_SECRET`, and Render verifies that HMAC within 60 seconds. `POST /table-sessions/join` production requests without valid proof fail closed; arbitrary `X-Forwarded-For` is never authoritative and no proxy-hop count is guessed. Vercel and Render must hold the same independent 32+ character secret.
+- Sau verification, source IP chỉ được persist dưới dạng HMAC-SHA-256 fingerprint dùng `JOIN_CODE_HASH_SECRET`; raw code, raw IP và proxy proof không được lưu trong rate-limit records, audit, outbox hoặc idempotency.
 - Generic error để tránh enumeration.
 - Successful use không dùng chung cookie; mỗi device nhận credential riêng.
 - Join-only lost-response recovery lasts 120 seconds and accepts previous guest + CSRF credentials only at `POST /table-sessions/join`, with the same actor/operation/idempotency key. It never extends the deadline or makes previous credentials valid for other endpoints.
