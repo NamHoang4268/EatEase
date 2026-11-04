@@ -1,0 +1,373 @@
+# M2.7 production deployment and smoke-test evidence
+
+Status: **functional production smoke test PASS; production security verification PARTIAL**
+
+## Purpose and evidence boundary
+
+Tài liệu này ghi lại production deployment và browser/database observations do owner thực hiện ngày `2026-10-31` theo giờ Việt Nam (`Asia/Ho_Chi_Minh`). Nó là durable evidence cho functional M2.7 flow, không phải chứng nhận security audit đầy đủ hoặc production SLA.
+
+Các nhãn evidence được dùng nhất quán:
+
+- `PASS — production observation`: owner trực tiếp quan sát trên deployed application hoặc bằng read-only Neon query được ghi lại bên dưới.
+- `PASS — automated tests`: behavior được repository tests/CI bao phủ; task tài liệu này không chạy lại test.
+- `PENDING — production verification`: control đã có implementation/test evidence nhưng chưa được owner kiểm tra trực tiếp trên deployed environment.
+- `NOT IN SCOPE — future milestone`: behavior chưa thuộc M2.7.
+
+Không có production request, database mutation, migration, seed hoặc provisioning nào được Codex thực hiện trong task lập tài liệu này.
+
+## Deployment record
+
+### Version and topology
+
+- Repository: `NamHoang4268/EatEase`.
+- Deployment commit: `bb179bdbcc34a65604d8d5110653f0df8a9bfcaf` (`bb179bd`).
+- Merged PRs:
+  - PR #19: `chore/managed-demo-staff-bootstrap`.
+  - PR #18: `feat(join-code): implement secure table session joining`.
+- Web: `https://eat-ease.vercel.app` on Vercel Hobby.
+- API: `https://eatease-api-rbgu.onrender.com` on Render Free, Singapore.
+- Database: Neon PostgreSQL Free, Singapore, database `neondb`.
+
+Vercel Production reported **Ready** at `bb179bd`. Render reported **Live** at the same commit. Previously observed API responses were:
+
+```text
+GET /api/v1/health
+{"status":"ok","service":"api"}
+
+GET /api/v1/health/ready
+{"status":"ready","database":"reachable"}
+```
+
+Sau khi cập nhật environment, Render được redeploy thành công với trigger `Environment updated`, trạng thái `Deploy succeeded | Live`, commit `bb179bd`, timestamp `2026-10-31 02:31:08 GMT+7` và duration `50.5 seconds`.
+
+### Configuration represented by this verification
+
+- `JOIN_CODE_HASH_SECRET` đã được cấu hình cho Render; giá trị không được ghi lại.
+- Matching `API_PROXY_SHARED_SECRET` đã được cấu hình cho Vercel và Render; giá trị không được ghi lại.
+- `TRUSTED_WEB_ORIGINS=https://eat-ease.vercel.app` được thêm vào Render để cho phép staff browser origin.
+- All seven M2.1–M2.7 migrations đã được apply trước smoke test.
+- Deterministic synthetic catalog đã được seed trước smoke test.
+
+## Managed demo Manager provisioning
+
+### Preconditions and scope preflight
+
+Synthetic data đã tồn tại trước provisioning:
+
+- Restaurant: `Bếp Mây Demo` (`10000000-0000-4000-8000-000000000001`).
+- Location: `Chi nhánh Demo`, code `HCM-DEMO` (`20000000-0000-4000-8000-000000000001`).
+- Tables: A01, A02, B01 và B02.
+- Three menu categories and six menu items.
+
+Owner chạy read-only Neon preflight:
+
+```sql
+SELECT l.id, l.restaurant_id, l.code, l.is_active, r.status
+FROM location AS l
+JOIN restaurant AS r ON r.id = l.restaurant_id
+WHERE l.id = '20000000-0000-4000-8000-000000000001';
+```
+
+Observed result:
+
+| id                                     | restaurant_id                          | code       | is_active | status   |
+| -------------------------------------- | -------------------------------------- | ---------- | :-------: | -------- |
+| `20000000-0000-4000-8000-000000000001` | `10000000-0000-4000-8000-000000000001` | `HCM-DEMO` |  `true`   | `ACTIVE` |
+
+Owner independently checked the Neon direct endpoint hostname, used the direct/unpooled connection string and supplied the Manager password through PowerShell secure prompts.
+
+### Provisioning command and result
+
+```powershell
+pnpm db:bootstrap:staff:managed -- --allow-managed
+```
+
+Observed CLI path and result:
+
+```text
+pnpm --filter @eatease/api db:bootstrap:staff:managed --allow-managed
+tsx scripts/bootstrap-managed-staff.ts --allow-managed
+Managed demo Manager provisioning completed.
+```
+
+A `pg-connection-string` warning noted a future compatibility change to `sslmode=require` semantics. It did not prevent this provisioning run from completing.
+
+Provisioned identity:
+
+| Field        | Value                                  |
+| ------------ | -------------------------------------- |
+| Email        | `manager@demo.eatease.invalid`         |
+| Display name | `EatEase Demo Manager`                 |
+| Role         | Manager                                |
+| Location     | `20000000-0000-4000-8000-000000000001` |
+
+Subsequent production login confirmed that the account worked. This evidence does not claim that its password was rotated, reset or independently audited.
+
+## Resolved deployment configuration issue
+
+The owner opened `https://eat-ease.vercel.app/staff/login`. The UI first displayed `Đang kiểm tra phiên…`, then rendered the login form. The first login attempt failed with the generic UI message `Chưa thể đăng nhập. Vui lòng thử lại.`
+
+The browser Network response was:
+
+```json
+{
+  "error": {
+    "code": "UNTRUSTED_ORIGIN",
+    "message": "Request origin is not allowed.",
+    "details": {},
+    "requestId": "6158ec47-2131-4716-a9c0-a54aa05843bd"
+  }
+}
+```
+
+Investigation found that `TRUSTED_WEB_ORIGINS` was missing from the Render environment. Owner added the exact Vercel origin and redeployed Render successfully. No Vercel environment change, code fix or database change was required.
+
+After redeployment, Manager login succeeded. The Staff UI showed `Activation desk`, `Yêu cầu kích hoạt bàn`, identity `EatEase Demo Manager`, location scope `20000000-0000-4000-8000-000000000001`, no initial pending activation request and no initial active TableSession. The generic login error UI was not changed during this verification.
+
+## Public route and catalog evidence
+
+The production root still displayed the M1 foundation page:
+
+```text
+Restaurant platform foundation
+EatEase
+The web and API workspace is ready for milestone-driven development.
+API: available
+```
+
+This is expected for the current milestone. The Guest UI is served by repository route `apps/web/src/app/t/[publicId]/page.tsx`, exposed as `/t/:publicId`.
+
+### Table discovery
+
+The first investigative query assumed an incorrect table name:
+
+```sql
+SELECT *
+FROM "table"
+LIMIT 5;
+```
+
+Observed error:
+
+```text
+ERROR: relation "table" does not exist (SQLSTATE 42P01)
+```
+
+This was a manual query mistake, not an application failure. Owner then discovered the physical table names:
+
+```sql
+SELECT table_name
+FROM information_schema.tables
+WHERE table_schema = 'public'
+  AND table_type = 'BASE TABLE'
+  AND (
+    table_name ILIKE '%table%'
+    OR table_name ILIKE '%dining%'
+  )
+ORDER BY table_name;
+```
+
+Observed tables:
+
+- `restaurant_table`
+- `table_session`
+
+```sql
+SELECT *
+FROM restaurant_table
+LIMIT 5;
+```
+
+Relevant observed fields:
+
+| code | id                                     | public_id                              | capacity | physical_status | is_active |
+| ---- | -------------------------------------- | -------------------------------------- | -------: | --------------- | :-------: |
+| A01  | `30000000-0000-4000-8000-000000000001` | `31000000-0000-4000-8000-000000000001` |        2 | `AVAILABLE`     |  `true`   |
+| A02  | `30000000-0000-4000-8000-000000000002` | `31000000-0000-4000-8000-000000000002` |        4 | `AVAILABLE`     |  `true`   |
+| B01  | `30000000-0000-4000-8000-000000000003` | `31000000-0000-4000-8000-000000000003` |        4 | `AVAILABLE`     |  `true`   |
+| B02  | `30000000-0000-4000-8000-000000000004` | `31000000-0000-4000-8000-000000000004` |        6 | `AVAILABLE`     |  `true`   |
+
+All four records belonged to restaurant `10000000-0000-4000-8000-000000000001` and location `20000000-0000-4000-8000-000000000001`.
+
+### A01 browser observation
+
+Owner opened the following URL in a separate incognito browser session:
+
+```text
+https://eat-ease.vercel.app/t/31000000-0000-4000-8000-000000000001
+```
+
+The UI displayed restaurant `Bếp Mây Demo`, location `Chi nhánh Demo`, table A01, capacity 2, activation readiness, categories `Món Việt`, `Món nhẹ`, `Đồ uống`, six seeded menu items with descriptions/prices and an activation action. This verifies the public web → API → Neon catalog path for A01.
+
+## Activation and Join Code smoke-test timeline
+
+1. **Guest 1 requested activation.** From A01, Guest 1 selected `Yêu cầu kích hoạt bàn`; the UI changed to `Đang chờ nhân viên`.
+2. **Manager received the request.** After refreshing Activation desk, Manager saw A01 in `Đang chờ xác nhận`, capacity 2, version 0, displayed expiry, and approval/rejection controls.
+3. **Manager approved physical presence.** Manager checked `Tôi đã trực tiếp xác nhận khách đang có mặt tại bàn này.` and selected `Duyệt kích hoạt`.
+4. **Guest 1 explicitly claimed access.** Guest 1 saw the approved message, selected `Tiếp tục với bàn đã kích hoạt`, then saw `Bàn đã sẵn sàng cho phiên của bạn` and `Đã cấp quyền tại bàn`.
+5. **Guest 1 issued a Join Code.** A six-digit Join Code was generated successfully. Its plaintext was not retained in this evidence.
+6. **Guest 2 joined independently.** In another browser session with separate cookies, Guest 2 opened the same A01 URL, entered the code and saw `Bàn đã sẵn sàng cho phiên của bạn` plus `Đã cấp quyền tại bàn`.
+
+The Guest UI stated that sending orders belongs to a later milestone. No order submission was performed or verified.
+
+## Read-only database evidence
+
+### Active TableSession
+
+The initial query used a non-existent `created_at` column:
+
+```sql
+SELECT id, table_id, status, created_at
+FROM table_session
+WHERE table_id = '30000000-0000-4000-8000-000000000001'
+ORDER BY created_at DESC;
+```
+
+Observed error:
+
+```text
+ERROR: column "created_at" does not exist (SQLSTATE 42703)
+```
+
+Owner inspected the schema:
+
+```sql
+SELECT column_name, data_type
+FROM information_schema.columns
+WHERE table_schema = 'public'
+  AND table_name = 'table_session'
+ORDER BY ordinal_position;
+```
+
+Observed columns: `id`, `restaurant_id`, `location_id`, `table_id`, `activation_request_id`, `status`, `activated_by_membership_id`, `activated_at`, `checkout_locked_at`, `closed_by_membership_id`, `closed_at`, `close_reason`, `version`.
+
+The corrected query was:
+
+```sql
+SELECT
+    id,
+    table_id,
+    status,
+    activated_at,
+    closed_at,
+    activation_request_id
+FROM table_session
+WHERE table_id = '30000000-0000-4000-8000-000000000001'
+ORDER BY activated_at DESC;
+```
+
+Observed one row:
+
+| Field                 | Value                                  |
+| --------------------- | -------------------------------------- |
+| id                    | `eafcab5e-e87b-4583-8740-58689cab7e28` |
+| table_id              | `30000000-0000-4000-8000-000000000001` |
+| status                | `ACTIVE`                               |
+| activated_at          | `2026-10-30 19:44:39.772+00`           |
+| closed_at             | `NULL`                                 |
+| activation_request_id | `5e9e9908-6e23-410a-b3b0-c3147aa7a51c` |
+
+This establishes that exactly one TableSession for A01 was returned by this query at verification time. It does not assert the absence of sessions for other tables.
+
+### GuestSession membership
+
+Owner discovered relevant tables:
+
+```sql
+SELECT table_name
+FROM information_schema.tables
+WHERE table_schema = 'public'
+  AND table_type = 'BASE TABLE'
+  AND (
+    table_name ILIKE '%guest%'
+    OR table_name ILIKE '%participant%'
+    OR table_name ILIKE '%session%'
+  )
+ORDER BY table_name;
+```
+
+Observed tables: `guest_session`, `session_join_code`, `staff_session`, `table_session`.
+
+Owner inspected `guest_session` without selecting credential hashes:
+
+```sql
+SELECT column_name, data_type
+FROM information_schema.columns
+WHERE table_schema = 'public'
+  AND table_name = 'guest_session'
+ORDER BY ordinal_position;
+```
+
+Observed columns: `id`, `restaurant_id`, `location_id`, `table_id`, `table_session_id`, `token_hash`, `csrf_token_hash`, `access_level`, `idle_expires_at`, `absolute_expires_at`, `revoked_at`, `last_seen_at`, `created_at`, `version`, `previous_token_hash`, `previous_csrf_token_hash`, `previous_token_valid_until`.
+
+No token or CSRF hash value was selected or shared. Final verification query:
+
+```sql
+SELECT
+    table_session_id,
+    access_level,
+    COUNT(*) AS guest_count,
+    COUNT(*) FILTER (WHERE revoked_at IS NULL) AS not_revoked_count
+FROM guest_session
+WHERE table_session_id = 'eafcab5e-e87b-4583-8740-58689cab7e28'
+GROUP BY table_session_id, access_level
+ORDER BY access_level;
+```
+
+Observed result:
+
+| table_session_id                       | access_level    | guest_count | not_revoked_count |
+| -------------------------------------- | --------------- | ----------: | ----------------: |
+| `eafcab5e-e87b-4583-8740-58689cab7e28` | `ORDER_ENABLED` |           2 |                 2 |
+
+This establishes that two non-revoked GuestSession records were associated with the same active A01 TableSession at verification time. It does not independently prove source-IP separation, expiry enforcement, every authorization boundary or the absence of sessions outside A01.
+
+## Evidence status
+
+### PASS — production observation
+
+- API liveness and database readiness returned the recorded healthy bodies.
+- Managed demo Manager provisioning completed.
+- Manager login succeeded after correcting `TRUSTED_WEB_ORIGINS`.
+- Public A01 table and seeded catalog rendered.
+- Guest activation request reached the Manager queue.
+- Manager approval completed after physical-presence confirmation.
+- Guest 1 explicitly continued and received table-session access.
+- Guest 1 created a six-digit Join Code.
+- Guest 2 accepted that code in an independent browser session.
+- One active A01 TableSession was observed.
+- Two non-revoked `ORDER_ENABLED` GuestSessions were linked to that TableSession.
+
+### PASS — automated tests
+
+Existing repository evidence, not rerun for this documentation task:
+
+- GitHub CI passed for the merged managed-bootstrap and M2.7 PRs.
+- M2.7 implementation evidence records 47 API unit/request tests, 34 web unit/component tests and 8 focused PostgreSQL integration tests passing on isolated local database `eatease_m2_test`, plus formatting, lint, typecheck and production builds.
+- Focused tests cover fixed 30-minute code TTL and 120-second recovery; Host-only issue; explicit replacement; independent member join; expiry; operation-scoped recovery/idempotency; guest/IP/aggregate rate-limit persistence; signed source-IP verification; spoofed-header rejection; distinct trusted-IP buckets; frontend retry-key reuse; CSRF recovery; and explicit Host/staff replacement confirmation.
+
+Automated coverage supports the implementation controls but does not replace live verification of provider header propagation, deployed secrets or production rate-limit behavior.
+
+### PENDING — production verification
+
+1. Confirm a direct unsigned Join Code mutation to Render is rejected with `TRUSTED_PROXY_REQUIRED`.
+2. Exercise deployed Join Code rotation and revocation UI behavior.
+3. Exercise deployed expired/invalid code handling and rate limiting without unsafe load.
+4. Independently confirm live per-client-IP bucket separation and spoofed-header resistance.
+5. Complete the final demo TableSession/staff-account cleanup or revocation under a separately reviewed owner-authorized procedure.
+
+### NOT IN SCOPE — future milestone
+
+- Order submission, immutable Order/BillLine persistence and consolidated bill preview.
+- Kitchen/fulfillment workflows.
+- Settlement, TableSession closure and physical table reset.
+- Outbox publication/realtime delivery.
+
+## Limitations and non-claims
+
+- M2.7 is functionally smoke-tested in production but **not fully production-security-verified**.
+- No Join Code, password, database URL, endpoint hostname secret, cookie, CSRF value or token is recorded here.
+- The successful browser flow does not independently prove every concurrency, authorization, expiry or rate-limit invariant.
+- The read-only queries establish only the rows and scopes they explicitly selected at that moment.
+- The resolved `TRUSTED_WEB_ORIGINS` incident was a deployment configuration issue, not a code or database defect.
+- The two investigative SQL errors were incorrect manual schema assumptions, not application failures.
