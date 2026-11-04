@@ -25,6 +25,8 @@ const ids = {
   foreignLocation: randomUUID(),
   staff: randomUUID(),
   membership: randomUUID(),
+  staffSession: randomUUID(),
+  role: randomUUID(),
   otherMembership: randomUUID(),
   foreignMembership: randomUUID(),
   table: randomUUID(),
@@ -261,6 +263,39 @@ describe('M2.8 ordering persistence on PostgreSQL', () => {
         },
       ],
     });
+    const orderPermission = await prisma.permission.upsert({
+      where: { code: 'order.create_for_table' },
+      create: { code: 'order.create_for_table' },
+      update: {},
+    });
+    await prisma.role.create({
+      data: {
+        id: ids.role,
+        restaurantId: ids.restaurant,
+        code: `M28-${ids.role}`,
+        name: 'M2.8 order writer',
+      },
+    });
+    await prisma.rolePermission.create({
+      data: { roleId: ids.role, permissionId: orderPermission.id },
+    });
+    await prisma.membershipRole.create({
+      data: {
+        membershipId: ids.membership,
+        roleId: ids.role,
+        restaurantId: ids.restaurant,
+      },
+    });
+    await prisma.staffSession.create({
+      data: {
+        id: ids.staffSession,
+        staffUserId: ids.staff,
+        membershipId: ids.membership,
+        tokenHash: createHash('sha256').update(randomUUID()).digest('hex'),
+        csrfTokenHash: createHash('sha256').update(randomUUID()).digest('hex'),
+        expiresAt: new Date(Date.now() + 8 * 60 * 60_000),
+      },
+    });
     await prisma.restaurantTable.createMany({
       data: [
         {
@@ -355,7 +390,13 @@ describe('M2.8 ordering persistence on PostgreSQL', () => {
     const before = await prisma.bill.findUniqueOrThrow({ where: { id: context.billId } });
     const guest = await persistence.persist(command());
     const staff = await persistence.persist(
-      command({ actor: { type: IdempotencyActorType.STAFF_MEMBERSHIP, id: ids.membership } }),
+      command({
+        actor: {
+          type: IdempotencyActorType.STAFF_MEMBERSHIP,
+          id: ids.membership,
+          staffSessionId: ids.staffSession,
+        },
+      }),
     );
     expect(guest.order.id).not.toBe(staff.order.id);
     expect(guest.order.billId).toBe(staff.order.billId);
@@ -468,7 +509,11 @@ describe('M2.8 ordering persistence on PostgreSQL', () => {
 
   it('rejects same-key changed payload or target session with no writes', async () => {
     const input = command({
-      actor: { type: IdempotencyActorType.STAFF_MEMBERSHIP, id: ids.membership },
+      actor: {
+        type: IdempotencyActorType.STAFF_MEMBERSHIP,
+        id: ids.membership,
+        staffSessionId: ids.staffSession,
+      },
     });
     await persistence.persist(input);
     const before = await counts();
@@ -509,7 +554,11 @@ describe('M2.8 ordering persistence on PostgreSQL', () => {
 
   it('handles a same-key race across two sessions without partial loser writes', async () => {
     const input = command({
-      actor: { type: IdempotencyActorType.STAFF_MEMBERSHIP, id: ids.membership },
+      actor: {
+        type: IdempotencyActorType.STAFF_MEMBERSHIP,
+        id: ids.membership,
+        staffSessionId: ids.staffSession,
+      },
     });
     const beforeOrders = await prisma.order.count({ where: { restaurantId: ids.restaurant } });
     const results = await Promise.allSettled([
@@ -606,7 +655,11 @@ describe('M2.8 ordering persistence on PostgreSQL', () => {
     for (const actor of [
       { type: IdempotencyActorType.GUEST_SESSION, id: second.guestId },
       { type: IdempotencyActorType.GUEST_SESSION, id: foreign.guestId },
-      { type: IdempotencyActorType.STAFF_MEMBERSHIP, id: ids.otherMembership },
+      {
+        type: IdempotencyActorType.STAFF_MEMBERSHIP,
+        id: ids.otherMembership,
+        staffSessionId: ids.staffSession,
+      },
     ]) {
       await expect(persistence.persist(command({ actor }))).rejects.toMatchObject({
         response: { code: 'ORDER_SCOPE_DENIED' },

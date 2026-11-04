@@ -5,6 +5,7 @@ import { DatabaseModule } from './database/database.module.js';
 import { GuestSessionModule } from './guest-session/guest-session.module.js';
 import { HealthModule } from './health/health.module.js';
 import { JoinCodeModule } from './join-code/join-code.module.js';
+import { OrderingModule } from './ordering/ordering.module.js';
 import { StaffAuthModule } from './staff-auth/staff-auth.module.js';
 
 @Module({
@@ -14,6 +15,7 @@ import { StaffAuthModule } from './staff-auth/staff-auth.module.js';
     GuestSessionModule,
     HealthModule,
     JoinCodeModule,
+    OrderingModule,
     PublicCatalogModule,
     StaffAuthModule,
   ],

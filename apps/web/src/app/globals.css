@@ -615,6 +615,67 @@ a:focus-visible {
   font-weight: 750;
 }
 
+.bill-preview {
+  margin-top: 32px;
+  padding: 24px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.bill-lines,
+.staff-menu-list {
+  display: grid;
+  gap: 12px;
+  margin: 16px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bill-lines li,
+.staff-menu-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.bill-totals {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.staff-ordering .section-heading label {
+  display: grid;
+  gap: 8px;
+  min-width: min(320px, 100%);
+}
+
+.staff-ordering select {
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.staff-ordering-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 24px;
+  margin-top: 24px;
+}
+
+.staff-ordering-grid > div {
+  min-width: 0;
+}
+
 .staff-auth-shell,
 .staff-shell {
   width: min(1120px, calc(100% - 32px));
@@ -964,6 +1025,12 @@ a:focus-visible {
   }
 
   .request-metadata {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 960px) {
+  .staff-ordering-grid {
     grid-template-columns: 1fr;
   }
 }

@@ -394,7 +394,7 @@ Staff commands use lock order TableSession → current JoinCode → StaffSession
 
 ## Explicit order submission
 
-M2.8 provides internal persistence only; the endpoints and Bill preview below remain M2.9 work. Order is an immutable submission with `status: SUBMITTED` only (owner approval `2026-11-04`); fulfillment states belong to individual OrderItems. Submission responses serialize all VND amounts as decimal strings. Non-empty modifiers remain unsupported pending the approved modifier/pricing contract.
+M2.9 exposes the M2.8 persistence boundary through one shared application service for Guest and Waiter. Order is an immutable submission with `status: SUBMITTED` only (owner approval `2026-11-04`); fulfillment states belong to individual OrderItems. Submission and Bill-read responses serialize all VND amounts as decimal strings. Non-empty modifiers remain unsupported pending the approved modifier/pricing contract.
 
 ### `POST /orders`
 
@@ -415,17 +415,27 @@ Headers: `Idempotency-Key`, CSRF token.
 
 Scope và source được derive từ guest credential. Request không chứa authoritative price/session/restaurant/location. Response trả immutable snapshots và updated bill preview.
 
+Requires a valid `ORDER_ENABLED` GuestSession bound to the current `ACTIVE` TableSession, trusted Origin, synchronizer CSRF and `Idempotency-Key`. Browse-only, expired, revoked or unbound guests cannot submit. The server derives actor/scope/expiry from the authenticated credential and revalidates them within the persistence transaction.
+
 ### `POST /staff/table-sessions/{sessionId}/orders`
 
 Cùng DTO và internal `SubmitOrder` use case; actor/source là staff. Permission `order.create_for_table` và location relationship bắt buộc.
+
+Requires a valid StaffSession, trusted Origin, Staff CSRF and `Idempotency-Key`. The target session ID is only a resource locator; restaurant/location/actor come from the authenticated StaffSession. Persistence transactionally revalidates the exact non-revoked StaffSession, active membership/user and current `order.create_for_table` role assignment after locking the target TableSession and Bill.
 
 ## Reads for active session
 
 ### `GET /table-sessions/current`
 
-Trả session status, orders, item statuses, consolidated bill preview và expiry metadata cần cho recovery UI.
+Requires an order-enabled GuestSession bound to the current active session. Trả session identity/status, immutable Orders/item snapshots and statuses, and the current consolidated Bill preview. The preview is a fresh authoritative read; it is not the historical Bill totals stored in a submission replay.
 
-Khi guest cookie expired: `401 GUEST_SESSION_EXPIRED`; frontend giữ local draft và hiển thị rejoin flow, không retry submit tự động.
+Khi guest cookie missing/expired/revoked: `401 GUEST_SESSION_INVALID`; frontend giữ local draft và hiển thị rejoin flow, không retry submit tự động.
+
+### `GET /staff/table-sessions/{sessionId}/bill`
+
+Requires an active StaffSession, permission `bill.read` and matching authenticated location scope. Returns the same current consolidated session/Bill view for the selected active table. It is read-only and accepts no client-supplied restaurant/location scope.
+
+Bill reads handle an empty OPEN Bill with `orders: []`, `lines: []` and decimal-string zero totals. Historical names, quantities and prices come from OrderItem/BillLine snapshots, not current MenuItem values.
 
 ## Fulfillment queue
 
@@ -471,6 +481,6 @@ Lock activation request, linked TableSession and requester guest session in dete
 
 Claim idempotency; authorize; validate active session/menu; snapshot prices; create Order/Items/BillLines; update Bill; add outbox; persist response; commit atomically.
 
-M2.8 persistence uses the existing `SUBMIT_ORDER` actor/operation/key uniqueness, locks TableSession → Bill → actor → sorted menu rows, and commits completed idempotency with the financial graph. Same-key identical replay returns the original submission result (including historical Bill totals); changed target/payload returns `409 IDEMPOTENCY_KEY_REUSED`. Before wiring endpoints, M2.9 must authenticate, enforce Origin/CSRF, resolve scope/actor expiry and complete transactional staff-session/`order.create_for_table` revalidation. It must refetch authoritative current totals when building a current consolidated Bill preview. See the [persistence invariants](data-model.md#order-and-item-snapshots).
+M2.8/M2.9 persistence uses the existing `SUBMIT_ORDER` actor/operation/key uniqueness, locks TableSession → Bill → actor → sorted menu rows, and commits completed idempotency with the financial graph. Same-key identical replay returns the original submission result (including historical Bill totals); changed target/payload returns `409 IDEMPOTENCY_KEY_REUSED`. M2.9 authenticates before invocation, enforces Origin/CSRF, derives scope/actor expiry server-side, transactionally revalidates the StaffSession/permission for staff submissions, and performs a fresh query for the current consolidated Bill preview. See the [persistence invariants](data-model.md#order-and-item-snapshots).
 
 Chi tiết constraints: [data model](data-model.md). Security headers/cookies: [security](security.md).

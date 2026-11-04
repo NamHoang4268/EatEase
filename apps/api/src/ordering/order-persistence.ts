@@ -30,7 +30,16 @@ const commandSchema = z
     restaurantId: z.uuid(),
     locationId: z.uuid(),
     tableSessionId: z.uuid(),
-    actor: z.object({ type: z.enum(IdempotencyActorType), id: z.uuid() }).strict(),
+    actor: z.discriminatedUnion('type', [
+      z.object({ type: z.literal(IdempotencyActorType.GUEST_SESSION), id: z.uuid() }).strict(),
+      z
+        .object({
+          type: z.literal(IdempotencyActorType.STAFF_MEMBERSHIP),
+          id: z.uuid(),
+          staffSessionId: z.uuid(),
+        })
+        .strict(),
+    ]),
     idempotencyKey: z
       .string()
       .min(1)
@@ -370,13 +379,24 @@ export class OrderPersistence {
       if (!guests[0]) throw denied();
       return guests[0].absoluteExpiresAt.getTime();
     }
-    const members = await tx.$queryRaw<Array<{ id: string }>>`
-      SELECT sm."id" FROM "staff_membership" sm JOIN "staff_user" su ON su."id" = sm."staff_user_id"
-      WHERE sm."id" = ${command.actor.id}::uuid AND sm."restaurant_id" = ${command.restaurantId}::uuid
-        AND sm."location_id" = ${command.locationId}::uuid AND sm."status" = 'ACTIVE' AND su."status" = 'ACTIVE'
-      FOR SHARE OF sm, su
+    const members = await tx.$queryRaw<Array<{ expiresAt: Date }>>`
+      SELECT ss."expires_at" AS "expiresAt"
+      FROM "staff_session" ss
+      JOIN "staff_membership" sm ON sm."id" = ss."membership_id"
+      JOIN "staff_user" su ON su."id" = ss."staff_user_id" AND su."id" = sm."staff_user_id"
+      JOIN "membership_role" mr ON mr."membership_id" = sm."id" AND mr."restaurant_id" = sm."restaurant_id"
+      JOIN "role_permission" rp ON rp."role_id" = mr."role_id"
+      JOIN "permission" p ON p."id" = rp."permission_id"
+      WHERE ss."id" = ${command.actor.staffSessionId}::uuid
+        AND ss."membership_id" = ${command.actor.id}::uuid
+        AND ss."revoked_at" IS NULL AND ss."expires_at" > ${now}
+        AND sm."restaurant_id" = ${command.restaurantId}::uuid
+        AND sm."location_id" = ${command.locationId}::uuid
+        AND sm."status" = 'ACTIVE' AND su."status" = 'ACTIVE'
+        AND p."code" = 'order.create_for_table'
+      FOR SHARE OF ss, sm, su, mr, rp, p
     `;
     if (!members[0]) throw denied();
-    return command.idempotencyExpiresAt.getTime();
+    return members[0].expiresAt.getTime();
   }
 }

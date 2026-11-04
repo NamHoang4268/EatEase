@@ -238,7 +238,7 @@ M2.5 triển khai subset generic tối thiểu cho operation `REQUEST_ACTIVATION
 
 M2.8 reuses this table/key for `SUBMIT_ORDER` with `response_status = 201`, Order resource ID và a JSON-safe submission result. Fingerprint includes restaurant/location/TableSession and ordered selections (menu ID, quantity, normalized note and empty modifiers); it excludes mutable menu prices and authentication expiry. Identical retries replay original snapshots and the Bill totals as observed at submission, not a fresh Bill preview. Different target/payload returns `409 IDEMPOTENCY_KEY_REUSED`. Distinct keys create separate intentional Orders. Keys are not recycled merely because `expires_at` passed while retention/cleanup remains OPEN.
 
-Internal persistence takes an explicitly supplied authenticated actor expiry; guest records are additionally capped at guest absolute expiry. M2.8 revalidates guest binding/expiry and staff membership/user status, but is not a complete authorization use case. M2.9 must add authentication, Origin/CSRF, server-side scope resolution and transactional staff-session/permission revalidation before wiring endpoints; this provider has no HTTP endpoint in M2.8.
+Internal persistence takes server-derived actor context. Guest records are capped at guest absolute expiry and revalidate order-enabled binding, revocation and idle/absolute expiry. M2.9 staff writes additionally require the exact StaffSession ID; within the same transaction, persistence locks and revalidates its expiry/revocation, active membership/user, restaurant/location scope and current `order.create_for_table` role permission. HTTP guards still enforce authentication, Origin and CSRF before entering this boundary.
 
 ### Transactional outbox
 
