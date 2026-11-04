@@ -102,21 +102,21 @@ Mỗi assigned delivery bắt đầu từ updated `main`, giữ scope rõ và d�
 
 Dependency: M1 complete/owner-approved; [Phase 1 plan](phase-01.md) approved. M2 readiness review đã hoàn tất; các decision còn pending chỉ block task phụ thuộc trực tiếp, không block M2.1 catalog schema.
 
-| Status      | Sequence | Task                                                                             |
-| ----------- | -------- | -------------------------------------------------------------------------------- |
-| DONE        | M2.0     | Clarify catalog/table baseline, approved constraints và remaining decision gates |
-| DONE        | M2.1     | Implement scoped restaurant/location/table/menu schema + synthetic fixtures      |
-| DONE        | M2.2     | Implement public static-QR table context, menu API và customer browse/cart       |
-| DONE        | M2.3     | Implement staff auth, memberships, multi-role permissions và login               |
-| DONE        | M2.4     | Implement browse-only guest session, cookie/origin boundary và CSRF              |
-| DONE        | M2.5     | Implement activation request, generic waiting state và staff queue               |
-| DONE        | M2.6     | Implement atomic approval/rejection và approved credential-claim contract        |
-| DONE        | M2.7     | Implement secure Host/member join-code lifecycle, staff controls and recovery    |
-| DONE        | M2.8     | Implement ordering/billing/idempotency/outbox persistence                        |
-| DONE        | M2.9     | Implement shared guest/Waiter `SubmitOrder` and consolidated bill preview        |
-| TODO        | M2.10    | Implement read-only unified kitchen queue                                        |
-| TODO        | M2.11    | Implement approved outbox publisher/realtime topology                            |
-| TODO        | M2.12    | Complete unit/integration/authorization/concurrency/E2E evidence                 |
+| Status | Sequence | Task                                                                             |
+| ------ | -------- | -------------------------------------------------------------------------------- |
+| DONE   | M2.0     | Clarify catalog/table baseline, approved constraints và remaining decision gates |
+| DONE   | M2.1     | Implement scoped restaurant/location/table/menu schema + synthetic fixtures      |
+| DONE   | M2.2     | Implement public static-QR table context, menu API và customer browse/cart       |
+| DONE   | M2.3     | Implement staff auth, memberships, multi-role permissions và login               |
+| DONE   | M2.4     | Implement browse-only guest session, cookie/origin boundary và CSRF              |
+| DONE   | M2.5     | Implement activation request, generic waiting state và staff queue               |
+| DONE   | M2.6     | Implement atomic approval/rejection và approved credential-claim contract        |
+| DONE   | M2.7     | Implement secure Host/member join-code lifecycle, staff controls and recovery    |
+| DONE   | M2.8     | Implement ordering/billing/idempotency/outbox persistence                        |
+| DONE   | M2.9     | Implement shared guest/Waiter `SubmitOrder` and consolidated bill preview        |
+| TODO   | M2.10    | Implement read-only unified kitchen queue                                        |
+| TODO   | M2.11    | Implement approved outbox publisher/realtime topology                            |
+| TODO   | M2.12    | Complete unit/integration/authorization/concurrency/E2E evidence                 |
 
 M2.1 evidence: versioned Prisma migration deploys cleanly on isolated PostgreSQL; integration tests cover scoped relationships, documented uniqueness/check constraints, MVP one-active-location partial index và idempotent synthetic fixtures. Public menu/API behavior remains M2.2 scope.
 
