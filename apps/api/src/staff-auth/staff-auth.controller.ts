@@ -100,7 +100,8 @@ export class StaffAuthController {
     };
   }
 
-  @Get('csrf-token')
+  @Post('csrf-token')
+  @HttpCode(200)
   @UseGuards(StaffSessionGuard)
   @Header('Cache-Control', 'no-store')
   async replaceCsrfToken(@Req() request: StaffRequest) {

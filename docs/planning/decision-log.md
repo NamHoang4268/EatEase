@@ -70,6 +70,8 @@ Last baseline update: 2026-10-30.
 - M2.7 join rotates only the joining device credentials and supports a separate 120-second previous-credential recovery path bound to `JOIN_TABLE_SESSION` plus the original idempotency key; the fixed deadline is never extended.
 - M2.7 source-IP limiting on Vercel → Render uses a signed internal client-IP proof with a separate shared secret and 60-second freshness window. The API ignores arbitrary forwarded headers, does not guess proxy hops, and fails closed for unsigned production join requests. Join Code TTL (30 minutes) and join recovery TTL (120 seconds) are fixed code constants, not deployment configuration.
 
+- Staff session restoration fix (owner-approved task): `POST /staff/auth/csrf-token` supersedes GET so same-origin browser recovery supplies Origin. Valid staff session, strict Origin, atomic rotation and no-store remain required; no old CSRF token is needed. Recovery failures offer retry with protected actions unavailable; `401` returns to Login.
+
 ## PROPOSED
 
 - Same-origin deployment direction (web/API/Socket.IO sau một public origin), dùng host-only `HttpOnly; Secure; SameSite=Lax` cookies.

@@ -76,7 +76,7 @@ Staff session dùng synchronizer token riêng cho từng session:
 - Client giữ token trong memory và gửi `X-CSRF-Token` cho authenticated mutation; không dùng localStorage hoặc persistent browser storage.
 - Mutation kiểm tra cả exact trusted `Origin` và token bằng constant-time comparison.
 - `GET /staff/auth/me` chỉ đọc và không cần CSRF header.
-- Sau browser refresh, `GET /staff/auth/csrf-token` yêu cầu valid staff session + trusted Origin, atomically thay hash cũ bằng hash của replacement token và trả token mới với `Cache-Control: no-store`. Endpoint không tạo session mới và token cũ hết hiệu lực ngay.
+- Sau browser refresh, `POST /staff/auth/csrf-token` yêu cầu valid staff session + strict trusted Origin, không yêu cầu CSRF token cũ; atomically thay hash cũ bằng hash của replacement token và trả `200` với token mới, `Cache-Control: no-store`. POST tránh phụ thuộc Origin có thể bị thiếu ở same-origin GET. Endpoint không tạo session mới và token cũ hết hiệu lực ngay. Recovery failure giữ frontend trong retry state, chặn protected mutations; chỉ invalid/expired session (`401`) mới chuyển sang Login.
 
 ## Staff login abuse protection
 

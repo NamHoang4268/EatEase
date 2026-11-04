@@ -26,11 +26,14 @@ function mockResponse(body: unknown, status = 200) {
 }
 
 function restoredSessionFetch(queue = [pendingRequest]) {
-  return vi.fn().mockImplementation((url: string) => {
+  return vi.fn().mockImplementation((url: string, init?: RequestInit) => {
     if (url === '/api/v1/staff/auth/me') {
       return Promise.resolve(mockResponse({ data: { staff } }));
     }
     if (url === '/api/v1/staff/auth/csrf-token') {
+      if (init?.method !== 'POST' || init.credentials !== 'include') {
+        return Promise.reject(new Error('CSRF recovery must use credentialed POST'));
+      }
       return Promise.resolve(mockResponse({ data: { csrfToken: 'staff-csrf' } }));
     }
     if (url === '/api/v1/staff/activation-requests?status=PENDING') {
@@ -47,13 +50,64 @@ describe('StaffActivationWorkspace', () => {
   });
 
   it('restores a staff session and renders its location-scoped pending queue', async () => {
-    vi.stubGlobal('fetch', restoredSessionFetch());
+    const fetchMock = restoredSessionFetch();
+    vi.stubGlobal('fetch', fetchMock);
     render(<StaffActivationWorkspace />);
 
     expect(screen.getByText('Đang kiểm tra phiên…')).toBeDefined();
     expect(await screen.findByRole('heading', { name: 'Yêu cầu kích hoạt bàn' })).toBeDefined();
     expect(await screen.findByRole('heading', { name: 'Bàn A01' })).toBeDefined();
     expect(screen.getByText(/phạm vi địa điểm location-1/)).toBeDefined();
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/staff/auth/csrf-token', {
+      method: 'POST',
+      credentials: 'include',
+    });
+  });
+
+  it.each([403, 500, 503, 'network'])(
+    'blocks protected actions and retries restoration after CSRF recovery failure %s',
+    async (failure) => {
+      const restoredFetch = restoredSessionFetch();
+      let recoveryAttempts = 0;
+      const fetchMock = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+        if (url === '/api/v1/staff/auth/csrf-token' && recoveryAttempts++ === 0) {
+          if (failure === 'network') return Promise.reject(new Error('Connection lost'));
+          return Promise.resolve(
+            mockResponse({ error: { code: 'RECOVERY_FAILED' } }, Number(failure)),
+          );
+        }
+        return restoredFetch(url, init);
+      });
+      vi.stubGlobal('fetch', fetchMock);
+      render(<StaffActivationWorkspace />);
+
+      expect(
+        await screen.findByRole('heading', { name: 'Chưa thể khôi phục phiên' }),
+      ).toBeDefined();
+      expect(screen.queryByRole('button', { name: 'Đăng nhập' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Duyệt kích hoạt' })).toBeNull();
+      expect(fetchMock.mock.calls.some(([url]) => url.includes('/staff/activation-requests'))).toBe(
+        false,
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'Thử lại' }));
+      expect(await screen.findByRole('heading', { name: 'Bàn A01' })).toBeDefined();
+      expect(recoveryAttempts).toBe(2);
+    },
+  );
+
+  it('shows Login if the session expires between identity read and CSRF recovery', async () => {
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url === '/api/v1/staff/auth/me')
+        return Promise.resolve(mockResponse({ data: { staff } }));
+      if (url === '/api/v1/staff/auth/csrf-token') {
+        return Promise.resolve(mockResponse({ error: { code: 'STAFF_SESSION_INVALID' } }, 401));
+      }
+      return Promise.reject(new Error(`Unexpected request: ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    render(<StaffActivationWorkspace />);
+    expect(await screen.findByRole('heading', { name: 'Đăng nhập vận hành' })).toBeDefined();
+    expect(screen.queryByRole('button', { name: 'Thử lại' })).toBeNull();
   });
 
   it('shows login for a missing session and authenticates without storing credentials', async () => {

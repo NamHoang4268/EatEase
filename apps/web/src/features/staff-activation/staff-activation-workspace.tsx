@@ -10,6 +10,7 @@ import type {
 
 type AuthState =
   | { status: 'checking' }
+  | { status: 'error'; message: string }
   | { status: 'anonymous'; message?: string }
   | { status: 'authenticated'; staff: StaffIdentity };
 type QueueState =
@@ -80,8 +81,10 @@ export function StaffActivationWorkspace() {
 
   const recoverCsrf = useCallback(async (): Promise<string> => {
     const response = await fetch('/api/v1/staff/auth/csrf-token', {
+      method: 'POST',
       credentials: 'include',
     });
+    if (response.status === 401) throw new Error('STAFF_SESSION_INVALID');
     if (!response.ok) throw new Error('STAFF_CSRF_RECOVERY_FAILED');
     const payload = (await response.json()) as { data: { csrfToken: string } };
     setCsrfToken(payload.data.csrfToken);
@@ -90,6 +93,7 @@ export function StaffActivationWorkspace() {
 
   const restoreSession = useCallback(async () => {
     setAuth({ status: 'checking' });
+    setCsrfToken(null);
     try {
       const response = await fetch('/api/v1/staff/auth/me', { credentials: 'include' });
       if (response.status === 401) {
@@ -100,9 +104,13 @@ export function StaffActivationWorkspace() {
       const payload = (await response.json()) as { data: { staff: StaffIdentity } };
       await recoverCsrf();
       setAuth({ status: 'authenticated', staff: payload.data.staff });
-    } catch {
+    } catch (error) {
+      if (error instanceof Error && error.message === 'STAFF_SESSION_INVALID') {
+        setAuth({ status: 'anonymous' });
+        return;
+      }
       setAuth({
-        status: 'anonymous',
+        status: 'error',
         message: 'Chưa thể kiểm tra phiên nhân viên. Hãy thử lại.',
       });
     }
@@ -374,6 +382,21 @@ export function StaffActivationWorkspace() {
           <p className="eyebrow">EatEase Staff</p>
           <h1>Đang kiểm tra phiên…</h1>
           <p>Vui lòng chờ trong giây lát.</p>
+        </section>
+      </main>
+    );
+  }
+
+  if (auth.status === 'error') {
+    return (
+      <main className="staff-auth-shell">
+        <section className="staff-auth-card" aria-labelledby="staff-recovery-heading">
+          <p className="eyebrow">EatEase Staff</p>
+          <h1 id="staff-recovery-heading">Chưa thể khôi phục phiên</h1>
+          <p role="alert">{auth.message}</p>
+          <button className="primary-button" type="button" onClick={() => void restoreSession()}>
+            Thử lại
+          </button>
         </section>
       </main>
     );
