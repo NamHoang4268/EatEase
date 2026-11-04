@@ -145,7 +145,7 @@ M2.6 evidence: reviewed forward-only migrations enforce scoped TableSession/Bill
 
 ### M2.7 — Secure Join Code lifecycle
 
-**Status:** `DONE`; database, Host/member/staff API, guest/staff UI và local verification đã hoàn tất. Public rollout requires owner-managed `JOIN_CODE_HASH_SECRET`, matching Vercel/Render `API_PROXY_SHARED_SECRET`, and end-to-end signed-header verification before deployment is considered verified.
+**Status:** `DONE`; database, Host/member/staff API, guest/staff UI và local verification đã hoàn tất. Production rollout at `bb179bd` has a successful functional smoke test; production security verification remains partial pending the explicitly listed live checks.
 
 - [x] Persist HMAC-hashed six-digit Join Codes with 30-minute TTL, explicit Host/staff issue/replace/revoke, scoped relationships and one-current-code enforcement.
 - [x] Derive Host eligibility from the original activation requester and successful claim; expose no administrative Host role or plaintext code after the one-time response.
@@ -154,7 +154,7 @@ M2.6 evidence: reviewed forward-only migrations enforce scoped TableSession/Bill
 - [x] Add location-scoped staff controls and mobile guest UI while preserving in-memory draft carts and requiring explicit confirmation before replacing a code.
 - [x] Verify schema/migration, API/unit/component/integration behavior, concurrency, idempotency, recovery, authorization, secret handling and no ordering/billing side effects.
 
-M2.7 evidence: reviewed forward-only migration adds scoped Join Code/rate-limit persistence and database constraints; API uses deterministic TableSession → JoinCode → GuestSession → sorted rate-bucket locking, HMAC-SHA-256 fingerprints and operation-scoped idempotency. Host/staff UI never persists plaintext and reload never auto-rotates. Security-review remediation fixes retry-key handling, fixed contract TTLs and signed Vercel → Render source-IP proof. Post-fix local verification: 47 API unit/request tests, 34 web unit/component tests and 8 focused PostgreSQL M2.7 integration tests pass on isolated `eatease_m2_test`, together with formatting, lint, typecheck and production builds.
+M2.7 evidence: reviewed forward-only migration adds scoped Join Code/rate-limit persistence and database constraints; API uses deterministic TableSession → JoinCode → GuestSession → sorted rate-bucket locking, HMAC-SHA-256 fingerprints and operation-scoped idempotency. Host/staff UI never persists plaintext and reload never auto-rotates. Security-review remediation fixes retry-key handling, fixed contract TTLs and signed Vercel → Render source-IP proof. Post-fix local verification: 47 API unit/request tests, 34 web unit/component tests and 8 focused PostgreSQL M2.7 integration tests pass on isolated `eatease_m2_test`, together with formatting, lint, typecheck and production builds. Owner-observed production evidence confirms Manager provisioning/login, A01 activation/claim, Join Code creation and an independent second guest joining the same active TableSession; [the detailed record](../development/m2-7-production-verification.md) keeps the remaining live security checks explicitly pending.
 
 Out of scope: order/cart submission and billing lines (M2.8–M2.9), kitchen workflows, outbox worker/realtime delivery (M2.11), settlement and later milestones.
 
