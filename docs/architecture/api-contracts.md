@@ -394,6 +394,8 @@ Staff commands use lock order TableSession → current JoinCode → StaffSession
 
 ## Explicit order submission
 
+M2.8 provides internal persistence only; the endpoints and Bill preview below remain M2.9 work. Order is an immutable submission with `status: SUBMITTED` only (owner approval `2026-11-04`); fulfillment states belong to individual OrderItems. Submission responses serialize all VND amounts as decimal strings. Non-empty modifiers remain unsupported pending the approved modifier/pricing contract.
+
 ### `POST /orders`
 
 Headers: `Idempotency-Key`, CSRF token.
@@ -468,5 +470,7 @@ Lock activation request, linked TableSession and requester guest session in dete
 ### Submit order
 
 Claim idempotency; authorize; validate active session/menu; snapshot prices; create Order/Items/BillLines; update Bill; add outbox; persist response; commit atomically.
+
+M2.8 persistence uses the existing `SUBMIT_ORDER` actor/operation/key uniqueness, locks TableSession → Bill → actor → sorted menu rows, and commits completed idempotency with the financial graph. Same-key identical replay returns the original submission result (including historical Bill totals); changed target/payload returns `409 IDEMPOTENCY_KEY_REUSED`. Before wiring endpoints, M2.9 must authenticate, enforce Origin/CSRF, resolve scope/actor expiry and complete transactional staff-session/`order.create_for_table` revalidation. It must refetch authoritative current totals when building a current consolidated Bill preview. See the [persistence invariants](data-model.md#order-and-item-snapshots).
 
 Chi tiết constraints: [data model](data-model.md). Security headers/cookies: [security](security.md).

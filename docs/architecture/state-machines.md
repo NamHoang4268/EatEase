@@ -58,6 +58,10 @@ ACTIVE ── TableSession not ACTIVE ──> unusable
 - Expiration/revocation affects new joins only and never terminates member sessions already bound to the TableSession.
 - Successful join does not consume the code; multiple guests may use it until expiry, rotation, revocation or TableSession closure.
 
+## Order
+
+Owner-approved M2.8 contract (`2026-11-04`): `OrderStatus = SUBMITTED` only. Order is an immutable submission record; it has no aggregate `PREPARING` or `COMPLETED` state. Fulfillment transitions belong to individual OrderItems.
+
 ## OrderItem
 
 | From        | Command              | To          | Actor                        |

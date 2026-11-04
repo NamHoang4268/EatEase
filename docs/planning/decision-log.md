@@ -4,6 +4,8 @@ Last baseline update: 2026-10-30.
 
 ## APPROVED
 
+- 2026-11-04 — M2.8 owner approval: `OrderStatus` contains only `SUBMITTED`. Order is an immutable submission record; fulfillment transitions belong exclusively to OrderItems. No aggregate `PREPARING` or `COMPLETED` Order state is introduced.
+
 ### Product and workflow
 
 - Official name là **EatEase**; “V2” không phải product name.
