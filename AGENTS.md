@@ -54,6 +54,18 @@ Không tạo tài liệu trùng lặp. Mỗi quyết định lớn phải có m�
 - Internal steps có thể được gộp thành một outcome-oriented delivery khi task authorization bao phủ chúng; không tự mở rộng sang milestone hoặc unrelated scope khác.
 - Fast-track không hạ quality bar, không biến assumption thành approved decision và không thay đổi Git authorization hoặc milestone approval gates.
 
+## Token-efficient execution and validation
+
+- Implement scoped changes normally; during development, run only quick, targeted checks that help catch the current error early.
+- Keep repository inspection focused. Avoid broad exploration, verbose command output and rerunning unchanged checks without a relevant code change.
+- Khi owner xác nhận rõ PR đã merge và local `main` đã pull/synchronized, xem đó là authoritative cho task hiện tại; không chạy `status`, branch/log inspection, fetch hoặc pull chỉ để xác nhận lại. Chỉ dùng read-only Git khi thật sự cần cho implementation/debug/review; nếu thông tin thiếu hoặc mâu thuẫn, hỏi lại thay vì tự suy đoán.
+- Sau implementation, dừng trước expensive final validation như full workspace/test suite, Docker build, integration test hoặc E2E test; không tự chạy các command này.
+- Cung cấp exact validation commands theo thứ tự recommended, kèm prerequisite, mục đích và điều kiện `PASS` cho từng command. Không claim command chưa chạy là đã pass.
+- Chờ owner gửi validation results trước khi tuyên bố task fully verified hoặc hoàn tất final handoff.
+- Nếu validation fail, chỉ điều tra output liên quan, thực hiện targeted fix và đề xuất rerun tối thiểu cần thiết.
+- Sau khi required validation pass, cung cấp final report cùng suggested branch name, Conventional Commit message và optional PR title.
+- Codex không thực hiện Git write operations; owner chịu trách nhiệm branch, stage, commit, push, PR và merge.
+
 ## Decision statuses
 
 - `APPROVED`: đã được người dùng phê duyệt; không thay đổi ngầm.
@@ -82,10 +94,10 @@ Dùng các status: `TODO`, `IN_PROGRESS`, `BLOCKED`, `DONE`.
 
 - Tuân thủ [Git workflow](docs/development/git-workflow.md) về Conventional Commits, task branches và Pull Requests.
 - Với mỗi task, đề xuất branch name và commit message phù hợp.
-- Không tự động tạo branch, commit, push, Pull Request hoặc merge; mỗi operation cần explicit authorization riêng từ người dùng.
+- Không tạo/switch/delete branch, stage, commit, push, mở/chỉnh sửa Pull Request hoặc merge; owner thực hiện mọi Git write operation.
 - Không force-push hoặc rewrite shared history nếu chưa có explicit authorization.
 - PR approval không thay thế milestone approval gate.
-- Cuối mỗi task, cung cấp exact scoped `git add`, `git commit -m "..."`, lệnh push đúng branch, suggested PR title và PR body; chỉ cung cấp để owner thực hiện, không tự chạy nếu chưa được cấp quyền riêng.
+- Chỉ sau khi required validation pass, cung cấp exact scoped `git add`, `git commit -m "..."`, lệnh push đúng branch, suggested PR title và PR body để owner thực hiện.
 
 ## Business consistency rules
 
@@ -113,7 +125,7 @@ Dùng các status: `TODO`, `IN_PROGRESS`, `BLOCKED`, `DONE`.
 - Không mock database cho constraint/transaction/concurrency tests quan trọng.
 - Mọi protected endpoint phải có allowed, denied, wrong-scope và revoked-session cases.
 - Mutation quan trọng phải kiểm tra retry/idempotency.
-- Không báo hoàn thành nếu chưa chạy verification phù hợp; nếu không thể chạy, nêu rõ phần chưa xác minh.
+- Không báo fully verified nếu owner chưa chạy required final validation; phân biệt rõ targeted checks đã chạy với commands đang chờ owner chạy.
 - Không bỏ qua lỗi lint/type/test để đạt trạng thái xanh giả tạo.
 
 ## Environment files and secrets
