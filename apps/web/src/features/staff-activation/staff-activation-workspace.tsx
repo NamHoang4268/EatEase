@@ -7,6 +7,7 @@ import type {
   StaffActiveTableSession,
   StaffIdentity,
 } from './staff-activation.types';
+import { StaffOrderingPanel } from './staff-ordering-panel';
 
 type AuthState =
   | { status: 'checking' }
@@ -461,6 +462,8 @@ export function StaffActivationWorkspace() {
   const canApprove = auth.staff.permissions.includes('table.activation.approve');
   const canManageJoinCodes = auth.staff.permissions.includes('table.join_code.manage');
   const canReadSessions = auth.staff.permissions.includes('table.session.read');
+  const canSubmitOrders = auth.staff.permissions.includes('order.create_for_table');
+  const canReadBills = auth.staff.permissions.includes('bill.read');
 
   return (
     <main className="staff-shell">
@@ -675,6 +678,19 @@ export function StaffActivationWorkspace() {
             </ul>
           )}
         </section>
+      ) : null}
+
+      {canReadSessions && (canSubmitOrders || canReadBills) ? (
+        <StaffOrderingPanel
+          canReadBill={canReadBills}
+          canSubmit={canSubmitOrders}
+          csrfToken={csrfToken}
+          recoverCsrf={recoverCsrf}
+          sessions={activeSessions.status === 'ready' ? activeSessions.sessions : []}
+          onSessionInvalid={() =>
+            expireSession('Phiên nhân viên đã hết hạn hoặc bị thu hồi. Vui lòng đăng nhập lại.')
+          }
+        />
       ) : null}
     </main>
   );

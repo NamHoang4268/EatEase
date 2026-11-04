@@ -37,7 +37,13 @@ const menuResponse = {
 };
 
 function mockResponse(body: unknown, status = 200) {
-  return { ok: status >= 200 && status < 300, status, json: vi.fn().mockResolvedValue(body) };
+  const json = vi.fn().mockResolvedValue(body);
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    json,
+    clone: vi.fn().mockReturnValue({ json }),
+  };
 }
 
 function mockSuccessfulLoad() {
@@ -420,7 +426,7 @@ describe('PublicMenuExperience', () => {
     expect(window.sessionStorage.length).toBe(0);
     fireEvent.click(screen.getByRole('button', { name: /Giỏ nháp/ }));
     expect(screen.getByLabelText('Số lượng hiện tại: 1')).toBeDefined();
-    expect(screen.getByText('Chưa thể gửi món trong giai đoạn này')).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Gửi món' })).toBeDefined();
   });
 
   it('reuses the bounded claim idempotency key after an uncertain response', async () => {
@@ -485,5 +491,106 @@ describe('PublicMenuExperience', () => {
       'Idempotency-Key': 'claim-recovery-key',
     });
     expect(window.sessionStorage.length).toBe(0);
+  });
+
+  it('keeps the draft and idempotency key after a network failure, then clears only confirmed items', async () => {
+    vi.stubGlobal('crypto', { randomUUID: () => 'order-retry-key' });
+    let submitCount = 0;
+    let billReadCount = 0;
+    const sessionView = (withLine: boolean) => ({
+      data: {
+        session: {
+          id: 'table-session-1',
+          status: 'ACTIVE',
+          table: { publicId: tableResponse.data.publicId, code: 'A01' },
+        },
+        orders: [],
+        bill: {
+          id: 'bill-1',
+          status: 'OPEN',
+          subtotalAmount: withLine ? '79000' : '0',
+          adjustmentAmount: '0',
+          totalAmount: withLine ? '79000' : '0',
+          paidAmount: '0',
+          balanceAmount: withLine ? '79000' : '0',
+          version: withLine ? 1 : 0,
+          lines: withLine
+            ? [
+                {
+                  id: 'line-1',
+                  orderItemId: 'order-item-1',
+                  descriptionSnapshot: 'Cơm gà lá chanh',
+                  quantity: 1,
+                  unitAmount: '79000',
+                  lineAmount: '79000',
+                },
+              ]
+            : [],
+        },
+      },
+    });
+    const fetchMock = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (url.includes('/api/v1/public/tables/'))
+        return Promise.resolve(mockResponse(tableResponse));
+      if (url.includes('/api/v1/public/menu')) return Promise.resolve(mockResponse(menuResponse));
+      if (url === '/api/v1/guest-sessions') {
+        return Promise.resolve(
+          mockResponse({
+            data: {
+              table: tableResponse.data,
+              activationState: 'NOT_REQUESTED',
+              session: {
+                accessLevel: 'ORDER_ENABLED',
+                idleExpiresAt: new Date(Date.now() + 1_800_000).toISOString(),
+                absoluteExpiresAt: new Date(Date.now() + 28_800_000).toISOString(),
+              },
+              csrfToken: 'order-csrf',
+            },
+          }),
+        );
+      }
+      if (url === '/api/v1/activation-requests/current') {
+        return Promise.resolve(mockResponse({ data: { status: 'NOT_REQUESTED' } }));
+      }
+      if (url === '/api/v1/table-sessions/current/join-code') {
+        return Promise.resolve(mockResponse({ error: { code: 'HOST_REQUIRED' } }, 403));
+      }
+      if (url === '/api/v1/table-sessions/current') {
+        billReadCount += 1;
+        return Promise.resolve(mockResponse(sessionView(billReadCount > 1)));
+      }
+      if (url === '/api/v1/orders' && init?.method === 'POST') {
+        submitCount += 1;
+        return submitCount === 1
+          ? Promise.reject(new Error('response lost'))
+          : Promise.resolve(mockResponse({ data: { order: { id: 'order-1' } } }, 201));
+      }
+      return Promise.reject(new Error(`Unhandled url: ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    render(<PublicMenuExperience publicId={tableResponse.data.publicId} />);
+
+    expect(await screen.findByText('Bếp Mây Demo')).toBeDefined();
+    await screen.findByText('Hóa đơn hiện tại');
+    fireEvent.click(screen.getByRole('button', { name: 'Thêm Cơm gà lá chanh vào giỏ nháp' }));
+    fireEvent.click(screen.getByRole('button', { name: /Giỏ nháp/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Gửi món' }));
+    expect(await screen.findByText(/Kết nối bị gián đoạn/)).toBeDefined();
+    expect(screen.getByLabelText('Số lượng hiện tại: 1')).toBeDefined();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Gửi món' }));
+    expect(await screen.findByText('Giỏ nháp đang trống')).toBeDefined();
+    expect(await screen.findByText('Cơm gà lá chanh × 1')).toBeDefined();
+
+    const submitCalls = fetchMock.mock.calls.filter(
+      (call: unknown[]) => call[0] === '/api/v1/orders',
+    );
+    expect(submitCalls).toHaveLength(2);
+    for (const call of submitCalls) {
+      expect((call[1] as RequestInit).headers).toMatchObject({
+        'Idempotency-Key': 'order-retry-key',
+        'X-CSRF-Token': 'order-csrf',
+      });
+    }
   });
 });

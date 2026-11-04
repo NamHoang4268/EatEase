@@ -70,3 +70,40 @@ export type IssuedJoinCode = JoinCodeMetadata & {
   code: string | null;
   plaintextAvailable: boolean;
 };
+
+export type ConsolidatedSessionView = {
+  session: { id: string; status: 'ACTIVE'; table: { publicId: string; code: string } };
+  orders: Array<{
+    id: string;
+    orderNumber: string;
+    source: 'QR_GUEST' | 'STAFF_WAITER';
+    status: 'SUBMITTED';
+    submittedAt: string;
+    items: Array<{
+      id: string;
+      nameSnapshot: string;
+      quantity: number;
+      unitPriceAmount: string;
+      lineAmount: string;
+      status: string;
+    }>;
+  }>;
+  bill: {
+    id: string;
+    status: string;
+    subtotalAmount: string;
+    adjustmentAmount: string;
+    totalAmount: string;
+    paidAmount: string;
+    balanceAmount: string;
+    version: number;
+    lines: Array<{
+      id: string;
+      orderItemId: string;
+      descriptionSnapshot: string;
+      quantity: number;
+      unitAmount: string;
+      lineAmount: string;
+    }>;
+  };
+};

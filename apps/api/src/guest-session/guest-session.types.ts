@@ -8,6 +8,7 @@ export type GuestPrincipal = {
   locationId: string;
   tableId: string;
   tablePublicId: string;
+  tableSessionId?: string | null;
   accessLevel: GuestAccessLevel;
   idleExpiresAt: Date;
   absoluteExpiresAt: Date;

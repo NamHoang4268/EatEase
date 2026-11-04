@@ -12,6 +12,7 @@ import {
 import type {
   ActivationState,
   ClaimActivationResponse,
+  ConsolidatedSessionView,
   GuestAccessLevel,
   GuestSessionData,
   IssuedJoinCode,
@@ -104,11 +105,17 @@ export function PublicMenuExperience({ publicId }: { publicId: string }) {
   const [visibleJoinCode, setVisibleJoinCode] = useState<string | null>(null);
   const [hostInviteBusy, setHostInviteBusy] = useState(false);
   const [hostInviteError, setHostInviteError] = useState<string | null>(null);
+  const [sessionView, setSessionView] = useState<ConsolidatedSessionView | null>(null);
+  const [billBusy, setBillBusy] = useState(false);
+  const [billError, setBillError] = useState<string | null>(null);
+  const [submitBusy, setSubmitBusy] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const bootstrappedTableRef = useRef<string | null>(null);
   const activationKeyRef = useRef<string | null>(null);
   const claimAttemptRef = useRef<StoredClaimAttempt | null>(null);
   const joinAttemptKeyRef = useRef<string | null>(null);
   const inviteAttemptKeyRef = useRef<string | null>(null);
+  const orderAttemptRef = useRef<{ key: string; payload: string } | null>(null);
 
   const refreshActivation = useCallback(async (signal?: AbortSignal) => {
     const response = await fetch('/api/v1/activation-requests/current', {
@@ -244,6 +251,29 @@ export function PublicMenuExperience({ publicId }: { publicId: string }) {
     setSessionEstablished(true);
   };
 
+  const loadSessionView = useCallback(async (): Promise<void> => {
+    setBillBusy(true);
+    setBillError(null);
+    try {
+      const response = await fetch('/api/v1/table-sessions/current', {
+        credentials: 'include',
+      });
+      if (response.status === 401) {
+        setSessionEstablished(false);
+        setGuestAccess('BROWSE_ONLY');
+        setSessionView(null);
+        throw new Error('GUEST_SESSION_INVALID');
+      }
+      if (!response.ok) throw new Error('BILL_PREVIEW_UNAVAILABLE');
+      const payload = (await response.json()) as { data: ConsolidatedSessionView };
+      setSessionView(payload.data);
+    } catch {
+      setBillError('Chưa thể tải hóa đơn hiện tại. Giỏ nháp của bạn không bị thay đổi.');
+    } finally {
+      setBillBusy(false);
+    }
+  }, []);
+
   const loadHostInvite = useCallback(async (): Promise<void> => {
     const response = await fetch('/api/v1/table-sessions/current/join-code', {
       credentials: 'include',
@@ -272,6 +302,86 @@ export function PublicMenuExperience({ publicId }: { publicId: string }) {
     }, 0);
     return () => window.clearTimeout(timeout);
   }, [guestAccess, loadHostInvite]);
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      if (guestAccess !== 'ORDER_ENABLED') setSessionView(null);
+      else void loadSessionView();
+    }, 0);
+    return () => window.clearTimeout(timeout);
+  }, [guestAccess, loadSessionView]);
+
+  const submitOrder = async () => {
+    if (submitBusy || cart.length === 0 || guestAccess !== 'ORDER_ENABLED') return;
+    const payload = JSON.stringify({
+      items: cart.map((line) => ({
+        menuItemId: line.menuItemId,
+        quantity: line.quantity,
+        modifierSelections: [],
+        note: null,
+      })),
+    });
+    const attempt =
+      orderAttemptRef.current?.payload === payload
+        ? orderAttemptRef.current
+        : { key: crypto.randomUUID(), payload };
+    orderAttemptRef.current = attempt;
+    setSubmitBusy(true);
+    setSubmitError(null);
+    const send = (token: string) =>
+      fetch('/api/v1/orders', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': attempt.key,
+          'X-CSRF-Token': token,
+        },
+        body: payload,
+      });
+    try {
+      let token = csrfToken ?? (await recoverCsrfToken());
+      let response = await send(token);
+      let error = (await response
+        .clone()
+        .json()
+        .catch(() => ({}))) as {
+        error?: { code?: string };
+      };
+      if (response.status === 403 && error.error?.code === 'GUEST_CSRF_INVALID') {
+        token = await recoverCsrfToken();
+        response = await send(token);
+        error = (await response
+          .clone()
+          .json()
+          .catch(() => ({}))) as {
+          error?: { code?: string };
+        };
+      }
+      if (!response.ok) {
+        if (response.status < 500) orderAttemptRef.current = null;
+        if (response.status === 401) {
+          setSessionEstablished(false);
+          setGuestAccess('BROWSE_ONLY');
+          setSubmitError('Phiên gọi món đã hết hạn. Giỏ nháp được giữ lại để bạn tham gia lại.');
+        } else if (response.status === 409) {
+          setSubmitError('Trạng thái bàn hoặc lần gửi đã thay đổi. Hãy kiểm tra rồi gửi lại.');
+        } else if (error.error?.code === 'ORDER_MENU_ITEM_UNAVAILABLE') {
+          setSubmitError('Một món trong giỏ hiện không còn khả dụng. Hãy cập nhật thực đơn.');
+        } else {
+          setSubmitError('Chưa thể gửi món. Giỏ nháp vẫn được giữ nguyên.');
+        }
+        return;
+      }
+      orderAttemptRef.current = null;
+      setCart([]);
+      await loadSessionView();
+    } catch {
+      setSubmitError('Kết nối bị gián đoạn. Thử lại sẽ dùng cùng mã yêu cầu để tránh gửi trùng.');
+    } finally {
+      setSubmitBusy(false);
+    }
+  };
 
   const joinTable = async () => {
     if (joinBusy || !/^\d{6}$/.test(joinCodeInput)) return;
@@ -581,8 +691,8 @@ export function PublicMenuExperience({ publicId }: { publicId: string }) {
             </h2>
             {guestAccess === 'ORDER_ENABLED' ? (
               <p role="status">
-                Phiên trên thiết bị này đã được cấp quyền tại bàn. Tính năng gửi món sẽ được triển
-                khai ở bước tiếp theo.
+                Phiên trên thiết bị này đã được cấp quyền. Bạn có thể chủ động gửi giỏ nháp khi đã
+                kiểm tra xong.
               </p>
             ) : activation.status === 'PENDING' ? (
               <p role="status">
@@ -750,7 +860,7 @@ export function PublicMenuExperience({ publicId }: { publicId: string }) {
         <strong>Đây là giỏ nháp trên thiết bị.</strong>
         <span>
           {guestAccess === 'ORDER_ENABLED'
-            ? 'Giỏ nháp vẫn chưa được gửi. Bạn sẽ chủ động xác nhận khi tính năng đặt món khả dụng.'
+            ? 'Giỏ nháp vẫn chưa được gửi cho đến khi bạn bấm Gửi món.'
             : 'Kích hoạt bàn không tự gửi nội dung giỏ nháp.'}
         </span>
       </div>
@@ -901,12 +1011,70 @@ export function PublicMenuExperience({ publicId }: { publicId: string }) {
                 <p>
                   Giá hiển thị chỉ dùng cho giỏ nháp và sẽ được máy chủ kiểm tra lại khi đặt món.
                 </p>
-                <span className="disabled-order-note">Chưa thể gửi món trong giai đoạn này</span>
+                <button
+                  className="primary-button"
+                  disabled={submitBusy || guestAccess !== 'ORDER_ENABLED'}
+                  type="button"
+                  onClick={() => void submitOrder()}
+                >
+                  {submitBusy ? 'Đang gửi món…' : 'Gửi món'}
+                </button>
+                {guestAccess !== 'ORDER_ENABLED' ? (
+                  <span className="disabled-order-note">Cần kích hoạt hoặc tham gia bàn trước</span>
+                ) : null}
+                {submitError ? <p className="activation-error">{submitError}</p> : null}
               </div>
             </>
           )}
         </section>
       )}
+
+      {guestAccess === 'ORDER_ENABLED' ? (
+        <section className="bill-preview" aria-labelledby="bill-preview-heading">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Tổng hợp theo phiên bàn</p>
+              <h2 id="bill-preview-heading">Hóa đơn hiện tại</h2>
+            </div>
+            <button
+              className="secondary-button"
+              disabled={billBusy}
+              type="button"
+              onClick={() => void loadSessionView()}
+            >
+              {billBusy ? 'Đang cập nhật…' : 'Cập nhật'}
+            </button>
+          </div>
+          {billError ? <p className="activation-error">{billError}</p> : null}
+          {sessionView ? (
+            <>
+              {sessionView.bill.lines.length === 0 ? (
+                <div className="empty-panel">
+                  <h3>Chưa có món đã gửi</h3>
+                  <p>Các món chỉ xuất hiện ở đây sau khi được gửi thành công.</p>
+                </div>
+              ) : (
+                <ul className="bill-lines">
+                  {sessionView.bill.lines.map((line) => (
+                    <li key={line.id}>
+                      <span>
+                        {line.descriptionSnapshot} × {line.quantity}
+                      </span>
+                      <strong>{formatVnd(BigInt(line.lineAmount))}</strong>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <div className="bill-totals">
+                <span>Tổng cộng</span>
+                <strong>{formatVnd(BigInt(sessionView.bill.totalAmount))}</strong>
+                <span>Còn lại</span>
+                <strong>{formatVnd(BigInt(sessionView.bill.balanceAmount))}</strong>
+              </div>
+            </>
+          ) : null}
+        </section>
+      ) : null}
     </main>
   );
 }

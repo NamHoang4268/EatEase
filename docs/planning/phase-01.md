@@ -1,6 +1,6 @@
 # Phase 1 — First business vertical slice
 
-Status: **APPROVED planning target**, implementation `IN_PROGRESS` (`M2.0–M2.7 DONE`; M2.8 là task kế tiếp).
+Status: **APPROVED planning target**, implementation `IN_PROGRESS` (`M2.0–M2.9 DONE`; M2.10 là task kế tiếp và chưa bắt đầu).
 
 Trong roadmap repository, business Phase 1 được thực hiện tại Milestone M2 sau foundation M1.
 
@@ -66,23 +66,23 @@ Serving, cancellation execution, checkout/payment và table cleaning thuộc mil
 
 ### Ordering and billing preview
 
-- [ ] QR and waiter submit separate Orders into the same TableSession.
-- [ ] Both orders contribute immutable lines to one Bill.
-- [ ] Client-supplied/fake price cannot affect persisted price.
-- [ ] Menu price change after submit does not alter snapshots.
-- [ ] Invalid item makes command fail atomically; no partial Order.
-- [ ] Same idempotency key/payload returns one logical result.
-- [ ] Same key with different payload returns conflict.
-- [ ] Two distinct concurrent valid submissions are both preserved.
-- [ ] Non-active/checkout-locked session rejects new orders.
+- [x] QR and waiter submit separate Orders into the same TableSession.
+- [x] Both orders contribute immutable lines to one Bill.
+- [x] Client-supplied/fake price cannot affect persisted price.
+- [x] Menu price change after submit does not alter snapshots.
+- [x] Invalid item makes command fail atomically; no partial Order.
+- [x] Same idempotency key/payload returns one logical result.
+- [x] Same key with different payload returns conflict.
+- [x] Two distinct concurrent valid submissions are both preserved.
+- [x] Non-active/checkout-locked session rejects new orders.
 - [ ] Kitchen sees item only after committed order.
 
 ### Authorization and reliability
 
-- [ ] Guest cannot read/write another TableSession.
-- [ ] Staff cannot cross location scope.
+- [x] Guest cannot read/write another TableSession.
+- [x] Staff cannot cross location scope.
 - [ ] Multi-role staff receives intended permission union.
-- [ ] Disabled/revoked staff/guest session is denied.
+- [x] Disabled/revoked staff/guest session is denied.
 - [ ] HTTP and Socket.IO room access use server-side authorization.
 - [ ] Socket outage does not roll back or lose committed order.
 - [ ] Outbox retry does not duplicate business records.

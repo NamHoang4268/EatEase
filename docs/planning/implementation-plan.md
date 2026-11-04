@@ -112,8 +112,8 @@ Dependency: M1 complete/owner-approved; [Phase 1 plan](phase-01.md) approved. M2
 | DONE        | M2.5     | Implement activation request, generic waiting state và staff queue               |
 | DONE        | M2.6     | Implement atomic approval/rejection và approved credential-claim contract        |
 | DONE        | M2.7     | Implement secure Host/member join-code lifecycle, staff controls and recovery    |
-| IN_PROGRESS | M2.8     | Implement ordering/billing/idempotency/outbox persistence                        |
-| TODO        | M2.9     | Implement shared guest/Waiter `SubmitOrder` and consolidated bill preview        |
+| DONE        | M2.8     | Implement ordering/billing/idempotency/outbox persistence                        |
+| DONE        | M2.9     | Implement shared guest/Waiter `SubmitOrder` and consolidated bill preview        |
 | TODO        | M2.10    | Implement read-only unified kitchen queue                                        |
 | TODO        | M2.11    | Implement approved outbox publisher/realtime topology                            |
 | TODO        | M2.12    | Complete unit/integration/authorization/concurrency/E2E evidence                 |
@@ -160,16 +160,29 @@ Out of scope for M2.7: order/cart submission and billing lines (M2.8–M2.9), ki
 
 ### M2.8 — Ordering persistence
 
-**Status:** `IN_PROGRESS` — implementation written; isolated PostgreSQL migration/integration and final owner validation pending. Do not mark `DONE` until those results pass.
+**Status:** `DONE` — implementation, isolated PostgreSQL verification, final owner validation and merge completed before M2.9 authorization.
 
 - Owner approved `OrderStatus.SUBMITTED` only; Order is immutable and fulfillment stays item-level.
 - Additive migration adds scoped Order/OrderItem/BillLine relationships, exact VND arithmetic, immutable submission guards and deferred graph/Bill consistency checks.
 - Internal `OrderPersistence` reuses generic idempotency/outbox tables and implements atomic financial writes, stable replay, payload conflict and concurrent duplicate protection. No SubmitOrder endpoint/UI, Bill preview or outbox publisher is wired.
-- Focused tests cover money precision/overflow and real PostgreSQL scope, snapshots, Bill consolidation, idempotency, concurrency, rollback, immutability and outbox persistence. Results remain pending until executed; development checks are reported in the task handoff.
-- Development checks executed: Prisma schema format/validation/client generation PASS; 21 schema-derived M2.8 index/FK names matched the reviewed migration; 9 VND unit tests PASS; API typecheck and scoped ESLint PASS. The 16 PostgreSQL integration cases and final regression/build checks have not been executed by Codex.
+- Focused tests cover money precision/overflow and real PostgreSQL scope, snapshots, Bill consolidation, idempotency, concurrency, rollback, immutability and outbox persistence.
+- Owner completed the required isolated PostgreSQL and final validation handoff, then merged M2.8 and synchronized `main` before authorizing M2.9.
 - Validate only against explicitly verified isolated local `eatease_m2_test` or ephemeral localhost CI. Prisma CLI imports dotenv: point `DOTENV_CONFIG_PATH` at a nonexistent path and explicitly pin both database URLs; never use a real environment file or managed database for this validation.
 - Integration fixtures use random IDs and retain submitted synthetic financial history in the isolated test DB, preserving append-only triggers. No reset, history deletion or disabling constraints is required for reruns.
-- Remaining HTTP authentication/permission/Origin/CSRF orchestration and current consolidated Bill read belong to M2.9; no automatic continuation.
+- HTTP authentication/permission/Origin/CSRF orchestration and current consolidated Bill reads are delivered by M2.9; M2.8 remains the single persistence boundary.
+
+### M2.9 — Shared SubmitOrder and consolidated Bill preview
+
+**Status:** `DONE` — implementation and owner-executed focused/final validation completed on `2026-11-05`.
+
+- One `OrderingService` maps authenticated Guest and Waiter requests to the M2.8 `OrderPersistence`; no second financial write path is introduced.
+- Guest `POST /orders` requires order-enabled session binding plus Origin/CSRF/idempotency. Staff `POST /staff/table-sessions/{sessionId}/orders` additionally requires `order.create_for_table`, authenticated location scope and transactional StaffSession/permission revalidation.
+- `GET /table-sessions/current` and `GET /staff/table-sessions/{sessionId}/bill` return fresh authoritative consolidated Bill totals and immutable historical snapshots as decimal strings.
+- Customer UI explicitly submits, retains the draft and stable key on uncertain failures, and clears submitted entries only after confirmed success. Minimal Staff UI selects an active scoped table, uses the same command and displays its Bill preview.
+- Focused unit/component tests cover contract validation, shared mapping, server-derived scope, snapshot serialization, stable retry keys and draft preservation. PostgreSQL coverage verifies route security, Guest/Waiter consolidation, replay/conflict/concurrency, wrong scope and transactional Staff authorization.
+- No schema/migration, kitchen state transition, payment/settlement or outbox publisher is added. Do not start M2.10 automatically.
+
+M2.9 verification: owner-executed final validation passed `99/99` API unit tests, `53/53` Web component tests and `83/83` PostgreSQL integration tests (`235/235` total). API/Web lint, typecheck, production builds, Prettier and `git diff --check` also passed. No M2.9 schema migration was required.
 
 ## M3 — Fulfillment, cancellation and serving
 
