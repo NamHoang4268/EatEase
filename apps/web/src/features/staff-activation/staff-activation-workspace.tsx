@@ -8,6 +8,7 @@ import type {
   StaffIdentity,
 } from './staff-activation.types';
 import { StaffOrderingPanel } from './staff-ordering-panel';
+import { KitchenQueue } from '../fulfillment/kitchen-queue';
 
 type AuthState =
   | { status: 'checking' }
@@ -179,10 +180,14 @@ export function StaffActivationWorkspace() {
   }, [auth, loadActiveSessions]);
 
   useEffect(() => {
-    if (auth.status !== 'authenticated') return;
+    if (
+      auth.status !== 'authenticated' ||
+      !auth.staff.permissions.includes('table.activation.read')
+    )
+      return;
     const timeout = window.setTimeout(() => void loadQueue(), 0);
     return () => window.clearTimeout(timeout);
-  }, [auth.status, loadQueue]);
+  }, [auth, loadQueue]);
 
   const submitLogin = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -464,21 +469,25 @@ export function StaffActivationWorkspace() {
   const canReadSessions = auth.staff.permissions.includes('table.session.read');
   const canSubmitOrders = auth.staff.permissions.includes('order.create_for_table');
   const canReadBills = auth.staff.permissions.includes('bill.read');
+  const canReadActivations = auth.staff.permissions.includes('table.activation.read');
+  const canReadFulfillment = auth.staff.permissions.includes('fulfillment.read');
 
   return (
     <main className="staff-shell">
       <header className="staff-header">
         <div>
-          <p className="eyebrow">Activation desk</p>
-          <h1>Yêu cầu kích hoạt bàn</h1>
+          <p className="eyebrow">{canReadActivations ? 'Activation desk' : 'EatEase Staff'}</p>
+          <h1>{canReadActivations ? 'Yêu cầu kích hoạt bàn' : 'Không gian nhân viên'}</h1>
           <p>
             {auth.staff.name} · phạm vi địa điểm {auth.staff.locationId}
           </p>
         </div>
         <div className="staff-header-actions">
-          <button className="secondary-button" type="button" onClick={() => void loadQueue()}>
-            Làm mới
-          </button>
+          {canReadActivations ? (
+            <button className="secondary-button" type="button" onClick={() => void loadQueue()}>
+              Làm mới
+            </button>
+          ) : null}
           <button className="text-button" type="button" onClick={() => void logout()}>
             Đăng xuất
           </button>
@@ -491,121 +500,132 @@ export function StaffActivationWorkspace() {
         </p>
       ) : null}
 
-      <section
-        className="activation-queue"
-        aria-live="polite"
-        aria-busy={queue.status === 'loading'}
-      >
-        {queue.status === 'idle' || queue.status === 'loading' ? (
-          <div className="operational-state">
-            <h2>Đang tải hàng chờ…</h2>
-            <p>Đang lấy các yêu cầu thuộc phạm vi được cấp quyền.</p>
-          </div>
-        ) : queue.status === 'error' ? (
-          <div className="operational-state operational-error">
-            <h2>Chưa thể tải hàng chờ</h2>
-            <p>{queue.message}</p>
-            <button className="secondary-button" type="button" onClick={() => void loadQueue()}>
-              Thử lại
-            </button>
-          </div>
-        ) : queue.requests.length === 0 ? (
-          <div className="operational-state">
-            <h2>Không có yêu cầu đang chờ</h2>
-            <p>Hàng chờ của địa điểm hiện đã được xử lý.</p>
-          </div>
-        ) : (
-          <ul className="activation-queue-list">
-            {queue.requests.map((item) => {
-              const approvalOperation = decisionKey('approve', item);
-              const rejectionOperation = decisionKey('reject', item);
-              const isBusy =
-                busyDecision === approvalOperation || busyDecision === rejectionOperation;
-              const reason = rejectionReasons[item.id] ?? '';
-              return (
-                <li key={item.id}>
-                  <div className="request-summary">
-                    <div>
-                      <p className="eyebrow">Đang chờ xác nhận</p>
-                      <h2>Bàn {item.table.code}</h2>
-                    </div>
-                    <span className="request-age">{formatAge(item.createdAt)}</span>
-                  </div>
-                  <dl className="request-metadata">
-                    <div>
-                      <dt>Sức chứa</dt>
-                      <dd>{item.table.capacity} khách</dd>
-                    </div>
-                    <div>
-                      <dt>Hết hạn</dt>
-                      <dd>{new Date(item.expiresAt).toLocaleTimeString('vi-VN')}</dd>
-                    </div>
-                    <div>
-                      <dt>Phiên bản</dt>
-                      <dd>{item.version}</dd>
-                    </div>
-                  </dl>
-
-                  {canApprove ? (
-                    <div className="decision-panel">
-                      <label className="presence-check">
-                        <input
-                          checked={confirmedPresence[item.id] ?? false}
-                          type="checkbox"
-                          onChange={(event) =>
-                            setConfirmedPresence((current) => ({
-                              ...current,
-                              [item.id]: event.target.checked,
-                            }))
-                          }
-                        />
-                        Tôi đã trực tiếp xác nhận khách đang có mặt tại bàn này.
-                      </label>
-                      <button
-                        className="primary-button"
-                        disabled={!confirmedPresence[item.id] || isBusy}
-                        type="button"
-                        onClick={() => void decide('approve', item)}
-                      >
-                        {busyDecision === approvalOperation ? 'Đang duyệt…' : 'Duyệt kích hoạt'}
-                      </button>
-
-                      <div className="rejection-form">
-                        <label htmlFor={`rejection-${item.id}`}>Lý do từ chối</label>
-                        <textarea
-                          id={`rejection-${item.id}`}
-                          maxLength={500}
-                          rows={3}
-                          value={reason}
-                          onChange={(event) =>
-                            setRejectionReasons((current) => ({
-                              ...current,
-                              [item.id]: event.target.value,
-                            }))
-                          }
-                        />
-                        <span>{reason.length}/500</span>
-                        <button
-                          className="danger-button"
-                          disabled={reason.trim().length === 0 || isBusy}
-                          type="button"
-                          onClick={() => void decide('reject', item)}
-                        >
-                          {busyDecision === rejectionOperation ? 'Đang từ chối…' : 'Từ chối'}
-                        </button>
+      {canReadActivations ? (
+        <section
+          className="activation-queue"
+          aria-live="polite"
+          aria-busy={queue.status === 'loading'}
+        >
+          {queue.status === 'idle' || queue.status === 'loading' ? (
+            <div className="operational-state">
+              <h2>Đang tải hàng chờ…</h2>
+              <p>Đang lấy các yêu cầu thuộc phạm vi được cấp quyền.</p>
+            </div>
+          ) : queue.status === 'error' ? (
+            <div className="operational-state operational-error">
+              <h2>Chưa thể tải hàng chờ</h2>
+              <p>{queue.message}</p>
+              <button className="secondary-button" type="button" onClick={() => void loadQueue()}>
+                Thử lại
+              </button>
+            </div>
+          ) : queue.requests.length === 0 ? (
+            <div className="operational-state">
+              <h2>Không có yêu cầu đang chờ</h2>
+              <p>Hàng chờ của địa điểm hiện đã được xử lý.</p>
+            </div>
+          ) : (
+            <ul className="activation-queue-list">
+              {queue.requests.map((item) => {
+                const approvalOperation = decisionKey('approve', item);
+                const rejectionOperation = decisionKey('reject', item);
+                const isBusy =
+                  busyDecision === approvalOperation || busyDecision === rejectionOperation;
+                const reason = rejectionReasons[item.id] ?? '';
+                return (
+                  <li key={item.id}>
+                    <div className="request-summary">
+                      <div>
+                        <p className="eyebrow">Đang chờ xác nhận</p>
+                        <h2>Bàn {item.table.code}</h2>
                       </div>
+                      <span className="request-age">{formatAge(item.createdAt)}</span>
                     </div>
-                  ) : (
-                    <p className="permission-note">
-                      Bạn chỉ có quyền xem hàng chờ tại địa điểm này.
-                    </p>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
+                    <dl className="request-metadata">
+                      <div>
+                        <dt>Sức chứa</dt>
+                        <dd>{item.table.capacity} khách</dd>
+                      </div>
+                      <div>
+                        <dt>Hết hạn</dt>
+                        <dd>{new Date(item.expiresAt).toLocaleTimeString('vi-VN')}</dd>
+                      </div>
+                      <div>
+                        <dt>Phiên bản</dt>
+                        <dd>{item.version}</dd>
+                      </div>
+                    </dl>
+
+                    {canApprove ? (
+                      <div className="decision-panel">
+                        <label className="presence-check">
+                          <input
+                            checked={confirmedPresence[item.id] ?? false}
+                            type="checkbox"
+                            onChange={(event) =>
+                              setConfirmedPresence((current) => ({
+                                ...current,
+                                [item.id]: event.target.checked,
+                              }))
+                            }
+                          />
+                          Tôi đã trực tiếp xác nhận khách đang có mặt tại bàn này.
+                        </label>
+                        <button
+                          className="primary-button"
+                          disabled={!confirmedPresence[item.id] || isBusy}
+                          type="button"
+                          onClick={() => void decide('approve', item)}
+                        >
+                          {busyDecision === approvalOperation ? 'Đang duyệt…' : 'Duyệt kích hoạt'}
+                        </button>
+
+                        <div className="rejection-form">
+                          <label htmlFor={`rejection-${item.id}`}>Lý do từ chối</label>
+                          <textarea
+                            id={`rejection-${item.id}`}
+                            maxLength={500}
+                            rows={3}
+                            value={reason}
+                            onChange={(event) =>
+                              setRejectionReasons((current) => ({
+                                ...current,
+                                [item.id]: event.target.value,
+                              }))
+                            }
+                          />
+                          <span>{reason.length}/500</span>
+                          <button
+                            className="danger-button"
+                            disabled={reason.trim().length === 0 || isBusy}
+                            type="button"
+                            onClick={() => void decide('reject', item)}
+                          >
+                            {busyDecision === rejectionOperation ? 'Đang từ chối…' : 'Từ chối'}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="permission-note">
+                        Bạn chỉ có quyền xem hàng chờ tại địa điểm này.
+                      </p>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
+      ) : null}
+
+      {canReadFulfillment ? (
+        <KitchenQueue
+          allowed
+          onSessionInvalid={() =>
+            expireSession('Phiên nhân viên đã hết hạn hoặc bị thu hồi. Vui lòng đăng nhập lại.')
+          }
+        />
+      ) : null}
 
       {canReadSessions ? (
         <section className="activation-queue" aria-labelledby="active-sessions-heading">

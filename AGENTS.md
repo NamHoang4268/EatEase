@@ -65,6 +65,8 @@ Không tạo tài liệu trùng lặp. Mỗi quyết định lớn phải có m�
 - Nếu validation fail, chỉ điều tra output liên quan, thực hiện targeted fix và đề xuất rerun tối thiểu cần thiết.
 - Sau khi required validation pass, cung cấp final report cùng suggested branch name, Conventional Commit message và optional PR title.
 - Codex không thực hiện Git write operations; owner chịu trách nhiệm branch, stage, commit, push, PR và merge.
+- Sau **mọi chỉnh sửa cuối cùng**, kể cả cập nhật documentation status/verification evidence, chạy `pnpm format:check` và `git diff --check` trước handoff. Nếu format fail, chạy `pnpm exec prettier --write <affected-files>` rồi chạy lại cả hai checks. Mọi edit tiếp theo đều yêu cầu chạy lại hai checks này.
+- Sau **mọi chỉnh sửa cuối cùng**, kể cả cập nhật documentation status/verification evidence, chạy `pnpm format:check` và `git diff --check` trước handoff. Nếu format fail, chạy `pnpm exec prettier --write <affected-files>` rồi chạy lại cả hai checks. Mọi edit tiếp theo đều yêu cầu chạy lại hai checks này.
 
 ## Decision statuses
 
