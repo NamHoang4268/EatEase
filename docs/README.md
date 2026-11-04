@@ -33,7 +33,7 @@ Thư mục này là source of truth cho product, design, architecture và implem
 - [Git workflow](development/git-workflow.md): Conventional Commits, task branches, Pull Requests và Codex authorization rules.
 - [Local development setup](development/local-setup.md): prerequisites, environment, commands, database workflow và compatibility notes.
 - [Portfolio deployment](development/deployment.md): Vercel/Render/Neon setup, secrets, verification và free-tier limitations.
-- [M2.7 production verification](development/m2-7-production-verification.md): deployment, managed Manager bootstrap, functional smoke-test evidence và pending production security checks.
+- [M2.7 production verification](development/m2-7-production-verification.md): deployment, functional/security observations, evidence boundaries và demo cleanup guidance.
 
 ## Maintenance rules
 
