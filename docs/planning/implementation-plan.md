@@ -114,7 +114,7 @@ Dependency: M1 complete/owner-approved; [Phase 1 plan](phase-01.md) approved. M2
 | DONE   | M2.7     | Implement secure Host/member join-code lifecycle, staff controls and recovery    |
 | DONE   | M2.8     | Implement ordering/billing/idempotency/outbox persistence                        |
 | DONE   | M2.9     | Implement shared guest/Waiter `SubmitOrder` and consolidated bill preview        |
-| TODO   | M2.10    | Implement read-only unified kitchen queue                                        |
+| DONE   | M2.10    | Implement read-only unified kitchen queue                                        |
 | TODO   | M2.11    | Implement approved outbox publisher/realtime topology                            |
 | TODO   | M2.12    | Complete unit/integration/authorization/concurrency/E2E evidence                 |
 
@@ -183,6 +183,17 @@ Out of scope for M2.7: order/cart submission and billing lines (M2.8–M2.9), ki
 - No schema/migration, kitchen state transition, payment/settlement or outbox publisher is added. Do not start M2.10 automatically.
 
 M2.9 verification: owner-executed final validation passed `99/99` API unit tests, `53/53` Web component tests and `83/83` PostgreSQL integration tests (`235/235` total). API/Web lint, typecheck, production builds, Prettier and `git diff --check` also passed. No M2.9 schema migration was required.
+
+### M2.10 — Read-only unified kitchen queue
+
+**Status:** `DONE` — implementation and owner-executed final validation complete.
+
+- `GET /staff/fulfillment/items` reuses StaffSession and `fulfillment.read` guards, derives restaurant/location from the authenticated principal and returns NEW item snapshots from Guest and Waiter Orders.
+- Optional immutable station filter, oldest-first `(submittedAt, itemId)` keyset pagination, default 50/max 100 items, safe operational fields and `Cache-Control: no-store`. No queue table, migration, business writes, polling or realtime publisher.
+- Staff workspace includes a permission-gated kitchen view with manual refresh, station selection, next page and loading/empty/error/session-expired states. Kitchen-only staff do not fetch activation data.
+- Focused tests cover validation, scoped bounded queries, Guest/Waiter inclusion, snapshots, pagination/ties, current staff permission/membership/session changes, uncommitted/rolled-back item exclusion and PostgreSQL READ ONLY execution. Integration fixtures use random IDs and retain append-only financial history in isolated local `eatease_m2_test`.
+- `AGENTS.md` now requires `pnpm format:check` and `git diff --check` after every final edit, including status/evidence updates; fix affected files and rerun both before handoff.
+- Final validation: owner executed `112/112` API unit tests, `61/61` Web component tests and `91/91` PostgreSQL integration tests (`264/264` total); all PASS. API and Web production builds PASS; API/Web lint and typecheck were also verified PASS. M2.11 has not started.
 
 ## M3 — Fulfillment, cancellation and serving
 

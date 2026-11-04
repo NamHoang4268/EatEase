@@ -443,6 +443,15 @@ Bill reads handle an empty OPEN Bill with `orders: []`, `lines: []` and decimal-
 
 Permission `fulfillment.read`. Unified board có filters `KITCHEN|BAR|DIRECT`. Response không chứa payment/customer-sensitive fields.
 
+M2.10 implements this as a read-only queue of persisted `OrderItem.status = NEW` from both `QR_GUEST` and `STAFF_WAITER` submissions. `status` defaults to `NEW`; other statuses are rejected in this slice. Omit `station` for all three stations, or filter by immutable `stationSnapshot`. Non-NEW items are excluded; menu changes do not alter queue snapshots. No extra ACTIVE-session/OPEN-Bill filter is applied: fulfillment state is item-level and checkout does not cancel submitted work.
+
+- Valid StaffSession and `fulfillment.read` are required on each request. Restaurant/location come only from the authenticated membership; client scope parameters are rejected. Existing staff read guards revalidate session, membership, user and effective permissions against PostgreSQL. This GET uses the existing authenticated-read convention (no CSRF token or mandatory Origin); deployment CORS restrictions still apply.
+- Query parameters: `status=NEW`, optional `station=KITCHEN|BAR|DIRECT`, `limit` (default `50`, integer `1–100`), optional opaque `cursor`. Unknown, repeated or malformed parameters return `400 FULFILLMENT_QUERY_INVALID`.
+- Oldest submission first, then OrderItem UUID ascending as stable tie-breaker. Keyset cursor encodes `(submittedAt, itemId)` and never changes authenticated scope. Each query fetches at most `limit + 1` items with batched related context, without per-item reads or a count query. Response: `{ data: { items, page: { limit, nextCursor } } }`; `nextCursor = null` ends pagination. This is a live queue, not a frozen snapshot; manual refresh restarts at the first page.
+- Each item exposes `id`, `nameSnapshot`, `quantity`, `note`, `stationSnapshot`, `status`, `version`, `tableSessionId`, `table: { code }`, and `order: { id, orderNumber, source, submittedAt }`. No current menu lookup, prices, Bill data, guest identity or credential fields are returned.
+- `Cache-Control: no-store`. Empty queue returns `items: []`. GET performs no session refresh, business writes, outbox/audit writes or lazy transitions.
+- Existing `/staff/login` workspace shows the queue only with `fulfillment.read`, including station filter, next page, loading/empty/error/expired states and explicit manual refresh. No polling or state-transition controls; M3 owns fulfillment mutations.
+
 ## Realtime events
 
 Planned event names:

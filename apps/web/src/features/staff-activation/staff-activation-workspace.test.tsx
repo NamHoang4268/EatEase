@@ -64,6 +64,29 @@ describe('StaffActivationWorkspace', () => {
     });
   });
 
+  it('opens the kitchen queue for kitchen-only staff without fetching unauthorized activation data', async () => {
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url === '/api/v1/staff/auth/me')
+        return Promise.resolve(
+          mockResponse({ data: { staff: { ...staff, permissions: ['fulfillment.read'] } } }),
+        );
+      if (url === '/api/v1/staff/auth/csrf-token')
+        return Promise.resolve(mockResponse({ data: { csrfToken: 'staff-csrf' } }));
+      if (url.startsWith('/api/v1/staff/fulfillment/items?'))
+        return Promise.resolve(
+          mockResponse({ data: { items: [], page: { limit: 50, nextCursor: null } } }),
+        );
+      return Promise.reject(new Error(`Unexpected request: ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    render(<StaffActivationWorkspace />);
+    await screen.findByText('Chưa có món mới đang chờ tại trạm này.');
+    expect(screen.queryByRole('heading', { name: 'Yêu cầu kích hoạt bàn' })).toBeNull();
+    expect(
+      fetchMock.mock.calls.some(([url]) => String(url).includes('/staff/activation-requests')),
+    ).toBe(false);
+  });
+
   it.each([403, 500, 503, 'network'])(
     'blocks protected actions and retries restoration after CSRF recovery failure %s',
     async (failure) => {

@@ -676,6 +676,58 @@ a:focus-visible {
   min-width: 0;
 }
 
+.kitchen-queue-actions,
+.kitchen-item-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.kitchen-queue-actions label {
+  display: grid;
+  gap: 8px;
+}
+
+.kitchen-queue select {
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.kitchen-queue select:focus-visible {
+  outline: 3px solid var(--primary);
+  outline-offset: 3px;
+}
+
+.kitchen-items {
+  display: grid;
+  gap: 16px;
+  padding: 0;
+  list-style: none;
+}
+
+.kitchen-items li {
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.kitchen-items h3 {
+  margin: 0;
+}
+
+.kitchen-order-reference,
+.kitchen-item-note {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
 .staff-auth-shell,
 .staff-shell {
   width: min(1120px, calc(100% - 32px));
