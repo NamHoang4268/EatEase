@@ -1,6 +1,6 @@
 # Relational data model
 
-Status: **APPROVED implemented baseline through M2.7**. Physical schema/migrations hiện gồm restaurant/location/table/menu, staff identity/RBAC/session, guest session, activation request, TableSession, Bill, claim/join recovery hashes, Join Code/rate-limit state, idempotency, outbox và audit persistence. Các domain tables từ M2.8 trở đi tiếp tục là logical baseline cho task tương ứng.
+Status: **APPROVED baseline through M2.8; M2.8 implementation pending PostgreSQL validation**. Physical schema/migrations hiện gồm restaurant/location/table/menu, staff identity/RBAC/session, guest session, activation request, TableSession, Bill, claim/join recovery hashes, Join Code/rate-limit state, idempotency, outbox và audit persistence. M2.8 bổ sung Order/OrderItem/BillLine; các domain tables từ M3 trở đi tiếp tục là logical baseline cho task tương ứng.
 
 ## ERD
 
@@ -168,16 +168,23 @@ Important constraints:
 
 ### Order and item snapshots
 
-`order(id, restaurant_id, location_id, table_session_id, order_number, source, created_by_guest_session_id, created_by_membership_id, status, submitted_at, version)`
+`order(id, restaurant_id, location_id, table_session_id, bill_id, order_number, item_count, source, created_by_guest_session_id, created_by_membership_id, status, submitted_at, version)`
 
 - Unique `(location_id, order_number)`.
 - Exactly one actor, tương ứng `QR_GUEST` hoặc `STAFF_WAITER`.
+- Owner-approved M2.8 decision (`2026-11-04`): `OrderStatus` chỉ có `SUBMITTED`; Order là immutable submission, không có aggregate fulfillment state. `version = 0`; UPDATE/DELETE bị database trigger chặn.
+- `order_number` là opaque UUID identifier, unique trong location; chưa có sequential/daily numbering contract.
+- Scoped composite FKs enforce Bill thuộc đúng TableSession, guest creator đã bind vào chính TableSession đó, và staff creator cùng restaurant/location.
+- `item_count > 0` là immutable cardinality snapshot; deferred triggers yêu cầu đúng số OrderItems tại commit, đồng thời chặn append thêm item vào một Order đã submit.
 
 `order_item(id, order_id, menu_item_id, name_snapshot, unit_price_amount, quantity, modifiers_snapshot, note, station_snapshot, status, cancellation_reason, cancelled_by_membership_id, preparing_at, ready_at, served_at, cancelled_at, version)`
 
 - `quantity > 0`, price không âm.
 - Snapshot fields immutable sau submit.
 - Terminal operational records không bị xóa.
+- Physical M2.8 OrderItem thêm `restaurant_id`, `location_id`, `bill_id` cho composite Order/Bill/menu ownership. Cancellation metadata và operational timestamps chưa được thêm; chúng thuộc M3.
+- Database trigger chặn DELETE và mọi thay đổi submission snapshots, scope, menu reference, quantity và note. Chỉ operational status/version là mutable; authorized transition commands thuộc M3.
+- `modifiers_snapshot` là JSON array, hiện persist `[]`. Non-empty modifier selections bị từ chối tại internal persistence boundary vì modifier model/pricing vẫn `OPEN`; không invent modifier pricing.
 
 ### Cancellation request
 
@@ -196,10 +203,13 @@ Important constraints:
 - `SETTLED` yêu cầu balance bằng 0.
 - M2.6 approval creates exactly one `OPEN` Bill with all monetary totals `0` and `version = 0`; it creates no BillLine, adjustment, payment or settlement.
 
-`bill_line(id, bill_id, order_item_id, description_snapshot, quantity, unit_amount, line_amount)`
+`bill_line(id, restaurant_id, location_id, bill_id, order_item_id, description_snapshot, quantity, unit_amount, line_amount)`
 
 - Unique `order_item_id`.
 - Immutable.
+- Composite FKs enforce cùng Bill/OrderItem/scope. `quantity > 0`, `unit_amount >= 0`, `line_amount = quantity * unit_amount`; arithmetic dùng BIGINT/NUMERIC checks, không floating point.
+- Deferred constraints enforce đúng một matching BillLine cho mỗi OrderItem và Bill subtotal bằng tổng immutable lines. Existing `total = subtotal + adjustment` và `balance = total - paid` checks vẫn giữ nguyên.
+- M2.8 migration additive, không backfill; fail closed nếu existing Bill có subtotal khác `0` trước khi có financial lines. New indexes trên existing Bill/GuestSession có thể block writes trong migration transaction; rollout cần low-traffic window và preflight. Không thay applied migrations.
 
 `bill_adjustment(id, bill_id, order_item_id, type, amount, reason, policy_code, approved_by_membership_id, created_at)`
 
@@ -226,6 +236,10 @@ Unique `(actor_type, actor_id, operation, idempotency_key)`.
 
 M2.5 triển khai subset generic tối thiểu cho operation `REQUEST_ACTIVATION`. M2.6 extends operations with `APPROVE_ACTIVATION`, `REJECT_ACTIVATION` và `CLAIM_ACTIVATION`: request payload được SHA-256 fingerprint, sanitized response/status commit cùng command transaction, và reuse cùng actor/operation/key với payload khác bị reject. Raw credential/CSRF values không được persist trong response body. Cleanup/retention policy tổng quát vẫn `OPEN`; guest-actor record expire không muộn hơn absolute expiry của guest actor.
 
+M2.8 reuses this table/key for `SUBMIT_ORDER` with `response_status = 201`, Order resource ID và a JSON-safe submission result. Fingerprint includes restaurant/location/TableSession and ordered selections (menu ID, quantity, normalized note and empty modifiers); it excludes mutable menu prices and authentication expiry. Identical retries replay original snapshots and the Bill totals as observed at submission, not a fresh Bill preview. Different target/payload returns `409 IDEMPOTENCY_KEY_REUSED`. Distinct keys create separate intentional Orders. Keys are not recycled merely because `expires_at` passed while retention/cleanup remains OPEN.
+
+Internal persistence takes an explicitly supplied authenticated actor expiry; guest records are additionally capped at guest absolute expiry. M2.8 revalidates guest binding/expiry and staff membership/user status, but is not a complete authorization use case. M2.9 must add authentication, Origin/CSRF, server-side scope resolution and transactional staff-session/permission revalidation before wiring endpoints; this provider has no HTTP endpoint in M2.8.
+
 ### Transactional outbox
 
 `outbox_event(id, restaurant_id, location_id, aggregate_type, aggregate_id, event_type, payload, occurred_at, published_at, attempt_count, next_attempt_at)`
@@ -234,6 +248,7 @@ M2.5 triển khai subset generic tối thiểu cho operation `REQUEST_ACTIVATION
 - Approval writes `activation.updated` và `table.session.updated`; rejection writes `activation.updated`. Claim is security-sensitive credential rotation and writes audit only, not an outbox event.
 - Payload chỉ chứa scoped resource IDs, status/version và event time; không chứa guest/session credential, CSRF token, requester identifier hoặc rejection detail không cần thiết.
 - New events initialize `published_at = null`, `attempt_count = 0`; delivery/retry behavior thuộc milestone sau.
+- M2.8 reuses this generic table: one `order.submitted` per Order, one `fulfillment.item.created` per OrderItem, one `bill.updated` per Bill revision. Payloads contain only `id`, `tableSessionId`, `version`, `occurredAt`, and `status: NEW` for OrderItems. They contain no actor identifier, note, monetary amounts or credentials. No publisher/worker is added.
 
 ### Audit
 
@@ -254,3 +269,5 @@ M2.5 triển khai subset generic tối thiểu cho operation `REQUEST_ACTIVATION
 - Partial unique active TableSession index và unique activation-request link là final guard cho exactly-once creation. Concurrent approve/approve hoặc approve/reject với cùng stale version chỉ cho một transaction transition; transaction còn lại trả `409` và không ghi partial side effects.
 - Write-side expiry transition được commit trước khi application trả expired conflict; read-only GET tiếp tục không lazy-write.
 - Prisma migrations phải được review; custom SQL được dùng khi schema DSL không biểu đạt đủ constraint.
+- M2.8 internal persistence locks TableSession → Bill → guest/membership actor → sorted menu rows (shared). Parent scope/state and active menu/category/location/restaurant are revalidated in transaction. Bill writes serialize on the same Bill row; snapshots use native `bigint` and reject BIGINT overflow before insertion.
+- The existing idempotency unique key is the final cross-session race guard. A unique-key loser rolls back every financial/outbox write and re-enters the same scoped locks/actor checks to replay or reject the winner. Order/Items/Lines, Bill totals/version, outbox and completed idempotency result commit atomically; no in-progress or separate idempotency framework is introduced.

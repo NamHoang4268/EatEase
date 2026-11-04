@@ -102,21 +102,21 @@ Mỗi assigned delivery bắt đầu từ updated `main`, giữ scope rõ và d�
 
 Dependency: M1 complete/owner-approved; [Phase 1 plan](phase-01.md) approved. M2 readiness review đã hoàn tất; các decision còn pending chỉ block task phụ thuộc trực tiếp, không block M2.1 catalog schema.
 
-| Status | Sequence | Task                                                                             |
-| ------ | -------- | -------------------------------------------------------------------------------- |
-| DONE   | M2.0     | Clarify catalog/table baseline, approved constraints và remaining decision gates |
-| DONE   | M2.1     | Implement scoped restaurant/location/table/menu schema + synthetic fixtures      |
-| DONE   | M2.2     | Implement public static-QR table context, menu API và customer browse/cart       |
-| DONE   | M2.3     | Implement staff auth, memberships, multi-role permissions và login               |
-| DONE   | M2.4     | Implement browse-only guest session, cookie/origin boundary và CSRF              |
-| DONE   | M2.5     | Implement activation request, generic waiting state và staff queue               |
-| DONE   | M2.6     | Implement atomic approval/rejection và approved credential-claim contract        |
-| DONE   | M2.7     | Implement secure Host/member join-code lifecycle, staff controls and recovery    |
-| TODO   | M2.8     | Implement ordering/billing/idempotency/outbox persistence                        |
-| TODO   | M2.9     | Implement shared guest/Waiter `SubmitOrder` and consolidated bill preview        |
-| TODO   | M2.10    | Implement read-only unified kitchen queue                                        |
-| TODO   | M2.11    | Implement approved outbox publisher/realtime topology                            |
-| TODO   | M2.12    | Complete unit/integration/authorization/concurrency/E2E evidence                 |
+| Status      | Sequence | Task                                                                             |
+| ----------- | -------- | -------------------------------------------------------------------------------- |
+| DONE        | M2.0     | Clarify catalog/table baseline, approved constraints và remaining decision gates |
+| DONE        | M2.1     | Implement scoped restaurant/location/table/menu schema + synthetic fixtures      |
+| DONE        | M2.2     | Implement public static-QR table context, menu API và customer browse/cart       |
+| DONE        | M2.3     | Implement staff auth, memberships, multi-role permissions và login               |
+| DONE        | M2.4     | Implement browse-only guest session, cookie/origin boundary và CSRF              |
+| DONE        | M2.5     | Implement activation request, generic waiting state và staff queue               |
+| DONE        | M2.6     | Implement atomic approval/rejection và approved credential-claim contract        |
+| DONE        | M2.7     | Implement secure Host/member join-code lifecycle, staff controls and recovery    |
+| IN_PROGRESS | M2.8     | Implement ordering/billing/idempotency/outbox persistence                        |
+| TODO        | M2.9     | Implement shared guest/Waiter `SubmitOrder` and consolidated bill preview        |
+| TODO        | M2.10    | Implement read-only unified kitchen queue                                        |
+| TODO        | M2.11    | Implement approved outbox publisher/realtime topology                            |
+| TODO        | M2.12    | Complete unit/integration/authorization/concurrency/E2E evidence                 |
 
 M2.1 evidence: versioned Prisma migration deploys cleanly on isolated PostgreSQL; integration tests cover scoped relationships, documented uniqueness/check constraints, MVP one-active-location partial index và idempotent synthetic fixtures. Public menu/API behavior remains M2.2 scope.
 
@@ -156,7 +156,20 @@ M2.6 evidence: reviewed forward-only migrations enforce scoped TableSession/Bill
 
 M2.7 evidence: reviewed forward-only migration adds scoped Join Code/rate-limit persistence and database constraints; API uses deterministic TableSession → JoinCode → GuestSession → sorted rate-bucket locking, HMAC-SHA-256 fingerprints and operation-scoped idempotency. Host/staff UI never persists plaintext and reload never auto-rotates. Security-review remediation fixes retry-key handling, fixed contract TTLs and signed Vercel → Render source-IP proof. Post-fix local verification: 47 API unit/request tests, 34 web unit/component tests and 8 focused PostgreSQL M2.7 integration tests pass on isolated `eatease_m2_test`, together with formatting, lint, typecheck and production builds. Additional spoof-resistance regressions pass `31/31` API and `14/14` Web tests plus both typechecks. Owner-observed production evidence confirms activation/claim/join, direct unsigned rejection, rotation, revocation, natural expiration, preservation of existing Guest access, Staff Session restoration and distinct Wi-Fi/4G IP buckets. Production threshold load testing was intentionally omitted; [the detailed record](../development/m2-7-production-verification.md) documents evidence boundaries, IPv6 canonicalization follow-up and demo cleanup guidance.
 
-Out of scope: order/cart submission and billing lines (M2.8–M2.9), kitchen workflows, outbox worker/realtime delivery (M2.11), settlement and later milestones.
+Out of scope for M2.7: order/cart submission and billing lines (M2.8–M2.9), kitchen workflows, outbox worker/realtime delivery (M2.11), settlement and later milestones.
+
+### M2.8 — Ordering persistence
+
+**Status:** `IN_PROGRESS` — implementation written; isolated PostgreSQL migration/integration and final owner validation pending. Do not mark `DONE` until those results pass.
+
+- Owner approved `OrderStatus.SUBMITTED` only; Order is immutable and fulfillment stays item-level.
+- Additive migration adds scoped Order/OrderItem/BillLine relationships, exact VND arithmetic, immutable submission guards and deferred graph/Bill consistency checks.
+- Internal `OrderPersistence` reuses generic idempotency/outbox tables and implements atomic financial writes, stable replay, payload conflict and concurrent duplicate protection. No SubmitOrder endpoint/UI, Bill preview or outbox publisher is wired.
+- Focused tests cover money precision/overflow and real PostgreSQL scope, snapshots, Bill consolidation, idempotency, concurrency, rollback, immutability and outbox persistence. Results remain pending until executed; development checks are reported in the task handoff.
+- Development checks executed: Prisma schema format/validation/client generation PASS; 21 schema-derived M2.8 index/FK names matched the reviewed migration; 9 VND unit tests PASS; API typecheck and scoped ESLint PASS. The 16 PostgreSQL integration cases and final regression/build checks have not been executed by Codex.
+- Validate only against explicitly verified isolated local `eatease_m2_test` or ephemeral localhost CI. Prisma CLI imports dotenv: point `DOTENV_CONFIG_PATH` at a nonexistent path and explicitly pin both database URLs; never use a real environment file or managed database for this validation.
+- Integration fixtures use random IDs and retain submitted synthetic financial history in the isolated test DB, preserving append-only triggers. No reset, history deletion or disabling constraints is required for reruns.
+- Remaining HTTP authentication/permission/Origin/CSRF orchestration and current consolidated Bill read belong to M2.9; no automatic continuation.
 
 ## M3 — Fulfillment, cancellation and serving
 
