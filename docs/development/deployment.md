@@ -4,7 +4,7 @@ Guide này ghi lại và hướng dẫn tái tạo public portfolio/demo deploym
 
 ## Current portfolio deployment
 
-Initial M1 cloud deployment đã được verify ngày `2026-10-27`. M2.7 functional production smoke evidence ngày `2026-10-31` được ghi riêng để giữ nguyên lịch sử M1 và phân biệt các production security checks còn pending.
+Initial M1 cloud deployment đã được verify ngày `2026-10-27`. M2.7 production evidence ngày `2026-10-31` và `2026-11-04` được ghi riêng để giữ nguyên lịch sử M1 và phân biệt functional, security, automated-test và cleanup evidence.
 
 | Component  | Provider/plan | Public endpoint                         | Region/configuration                                  |
 | ---------- | ------------- | --------------------------------------- | ----------------------------------------------------- |
@@ -231,11 +231,11 @@ Invoke-RestMethod https://eat-ease.vercel.app/api/v1/health/ready
 
 ## M2.7 production verification status
 
-M2.7 was deployed at commit `bb179bd` and its core browser flow was observed successfully on `2026-10-31`: managed Manager login, public A01 catalog, activation request/approval/claim, one-time six-digit Join Code creation, and a second independent GuestSession joining the same active TableSession. Read-only Neon evidence showed one active A01 TableSession and two non-revoked `ORDER_ENABLED` GuestSessions linked to it.
+M2.7 was deployed at commit `bb179bd` and its core browser flow was observed successfully on `2026-10-31`: managed Manager login, public A01 catalog, activation request/approval/claim, one-time six-digit Join Code creation, and a second independent GuestSession joining the same active TableSession. Read-only Neon evidence showed one active A01 TableSession and two non-revoked `ORDER_ENABLED` GuestSessions linked to it. Staff Session restoration was subsequently fixed in PR #22 at `3c4ffb1`; Render and Vercel deployed the same fix and browser refresh recovery returned HTTP `200` from the POST CSRF endpoint.
 
 The initial staff login failed because Render lacked `TRUSTED_WEB_ORIGINS`; adding the exact Vercel origin and redeploying Render resolved the configuration issue without a code or database change.
 
-This is a **functional production smoke PASS**, not full production security verification. Direct unsigned Render rejection, deployed rotation/revocation, invalid/expired code and rate-limit behavior, live per-IP separation/spoof resistance, and final demo cleanup remain pending. Full commands, observations, SQL evidence and non-claims are in [M2.7 production deployment and smoke-test evidence](m2-7-production-verification.md).
+M2.7 scoped production verification is **COMPLETE**. Follow-up observations on `2026-11-04` confirmed direct unsigned Render rejection, rotation, revocation, natural 30-minute expiration, existing Guest access preservation, Staff Session restoration, focused IP-spoof regression coverage and distinct Wi-Fi/4G `IP_TABLE` fingerprints. Production threshold load testing was intentionally omitted; IPv6 canonicalization remains non-blocking. Full observations, evidence boundaries, cleanup recommendation and non-claims are in [M2.7 production verification](m2-7-production-verification.md).
 
 ## Actionable free-tier limitations
 

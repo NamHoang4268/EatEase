@@ -1,16 +1,16 @@
-# M2.7 production deployment and smoke-test evidence
+# M2.7 production verification evidence
 
-Status: **functional production smoke test PASS; production security verification PARTIAL**
+Status: **M2.7 production verification COMPLETE; non-blocking limitations documented**
 
 ## Purpose and evidence boundary
 
-Tài liệu này ghi lại production deployment và browser/database observations do owner thực hiện ngày `2026-10-31` theo giờ Việt Nam (`Asia/Ho_Chi_Minh`). Nó là durable evidence cho functional M2.7 flow, không phải chứng nhận security audit đầy đủ hoặc production SLA.
+Tài liệu này ghi lại production deployment và browser/database observations do owner thực hiện ngày `2026-10-31` và `2026-11-04` theo giờ Việt Nam (`UTC+7`, `Asia/Ho_Chi_Minh`). Nó là durable evidence cho functional M2.7 flow và các security checks được liệt kê rõ bên dưới, không phải chứng nhận universal spoof resistance hoặc production SLA.
 
 Các nhãn evidence được dùng nhất quán:
 
 - `PASS — production observation`: owner trực tiếp quan sát trên deployed application hoặc bằng read-only Neon query được ghi lại bên dưới.
 - `PASS — automated tests`: behavior được repository tests/CI bao phủ; task tài liệu này không chạy lại test.
-- `PENDING — production verification`: control đã có implementation/test evidence nhưng chưa được owner kiểm tra trực tiếp trên deployed environment.
+- `NOT EXECUTED — documented limitation`: check có chủ đích không chạy trên Production; automated evidence hoặc giới hạn còn lại được ghi rõ.
 - `NOT IN SCOPE — future milestone`: behavior chưa thuộc M2.7.
 
 Không có production request, database mutation, migration, seed hoặc provisioning nào được Codex thực hiện trong task lập tài liệu này.
@@ -21,6 +21,7 @@ Không có production request, database mutation, migration, seed hoặc provisi
 
 - Repository: `NamHoang4268/EatEase`.
 - Deployment commit: `bb179bdbcc34a65604d8d5110653f0df8a9bfcaf` (`bb179bd`).
+- Staff Session restoration fix: PR #22, commit `3c4ffb1`; Render API và Vercel Web sau đó cùng deploy commit này.
 - Merged PRs:
   - PR #19: `chore/managed-demo-staff-bootstrap`.
   - PR #18: `feat(join-code): implement secure table session joining`.
@@ -210,6 +211,63 @@ The UI displayed restaurant `Bếp Mây Demo`, location `Chi nhánh Demo`, table
 
 The Guest UI stated that sending orders belongs to a later milestone. No order submission was performed or verified.
 
+## Subsequent production security verification
+
+Các checks dưới đây được owner thực hiện ngày `2026-11-04` theo giờ Việt Nam (`UTC+7`). Không có Join Code plaintext, credential, raw IP hoặc secret nào được giữ trong evidence.
+
+### Direct unsigned Render request
+
+Owner gửi trực tiếp một unsigned `POST /api/v1/table-sessions/join` tới Render API, bỏ qua Vercel signer. Lúc `16:08:11`, Render trả HTTP `403 Forbidden` với application error `TRUSTED_PROXY_REQUIRED` và request ID `f6daa9bf-4f5e-43af-9855-34e3d9aa2103`.
+
+Kết quả này xác nhận deployed API fail closed khi Join Code mutation không có valid trusted-proxy proof. Nó không tự chứng minh mọi forged-signature hoặc header-propagation scenario.
+
+### Join Code rotation and revocation
+
+- Rotation tạo replacement code; previous code bị reject ngay và replacement code được một Guest mới dùng thành công.
+- Guest đã được authorize trước rotation vẫn truy cập được TableSession.
+- Staff revocation làm current code bị reject cho new join.
+- Các Guest đã được authorize trước revocation vẫn truy cập được TableSession.
+
+Các observations này phù hợp với contract: rotation/revocation chỉ chặn new joins và không revoke existing Guest Sessions.
+
+### Natural 30-minute expiration
+
+- Code E1 được tạo lúc `17:17`.
+- Một fresh Guest join thành công lúc `17:23`.
+- E1 đạt contract expiry lúc `17:47`.
+- Một fresh Guest bị reject khi thử E1 lúc `17:49`.
+- Guest đã được authorize trước expiry vẫn hợp lệ sau browser refresh lúc `17:49`.
+
+Không thay system clock, database timestamp hoặc TTL configuration. Kết quả xác nhận natural expiration chặn new joins sau đúng contract window mà không revoke existing Guest Sessions.
+
+### Staff Session restoration regression
+
+PR #22, commit `3c4ffb1`, chuyển Staff CSRF recovery sang `POST /api/v1/staff/auth/csrf-token` và giữ strict Origin/session validation. Sau khi Render API và Vercel Web cùng deploy commit này, owner xác nhận một existing Staff Session được restore sau browser refresh và CSRF recovery trả HTTP `200`.
+
+### IP spoof-resistance audit and regression coverage
+
+Focused code audit không tìm thấy confirmed bypass cho phép caller-supplied forwarding headers chọn IP rate-limit bucket. Vercel signer thay caller-supplied internal proof; Render verifier bind HMAC vào client IP, HTTP method, pathname và timestamp.
+
+Regression evidence sau remediation:
+
+- API Join Source IP tests: `31/31` PASS.
+- Web proxy signer tests: `14/14` PASS.
+- API và Web typechecks: PASS.
+- Coverage gồm missing/malformed/combined proof, caller proof replacement, independent signed-field tampering, IPv4 và các IPv6 representations được hỗ trợ hiện tại.
+
+Equivalent IPv6 textual representations vẫn chưa được canonicalize. Tests cố ý preserve behavior hiện tại và không claim chúng tạo cùng signature hoặc rate-limit bucket.
+
+### Wi-Fi and mobile 4G IP bucket separation
+
+Owner thực hiện đúng một invalid Join Code attempt qua Wi-Fi và một attempt qua mobile 4G. Cả hai đều bị reject; không chạy threshold loop. Read-only Neon observation sau đó thấy hai distinct `IP_TABLE` fingerprints, chỉ ghi prefix không thể dùng để khôi phục raw IP:
+
+| Network | Fingerprint prefix | failed_attempts | updated_at (UTC+7)    |
+| ------- | ------------------ | --------------: | --------------------- |
+| Wi-Fi   | `a47e1248baf4`     |               1 | `2026-11-04 18:40:57` |
+| 4G      | `ca09f7f90a42`     |               1 | `2026-11-04 18:50:40` |
+
+Không bucket nào bị blocked. Observation này xác nhận hai deployed network identities tạo distinct persistent buckets; nó không chứng minh universal spoof resistance hoặc mọi IPv4/IPv6/provider topology.
+
 ## Read-only database evidence
 
 ### Active TableSession
@@ -337,6 +395,12 @@ This establishes that two non-revoked GuestSession records were associated with 
 - Guest 2 accepted that code in an independent browser session.
 - One active A01 TableSession was observed.
 - Two non-revoked `ORDER_ENABLED` GuestSessions were linked to that TableSession.
+- Direct unsigned Render Join Code mutation returned `403 TRUSTED_PROXY_REQUIRED`.
+- Rotation rejected the previous code, accepted the replacement and preserved existing Guest access.
+- Revocation rejected the revoked code and preserved existing Guest access.
+- Natural 30-minute expiration rejected E1 after expiry and preserved the previously joined Guest.
+- Staff Session restoration survived browser refresh after PR #22 deployment; POST CSRF recovery returned `200`.
+- Wi-Fi and mobile 4G invalid attempts produced two distinct non-blocked `IP_TABLE` fingerprints.
 
 ### PASS — automated tests
 
@@ -345,16 +409,15 @@ Existing repository evidence, not rerun for this documentation task:
 - GitHub CI passed for the merged managed-bootstrap and M2.7 PRs.
 - M2.7 implementation evidence records 47 API unit/request tests, 34 web unit/component tests and 8 focused PostgreSQL integration tests passing on isolated local database `eatease_m2_test`, plus formatting, lint, typecheck and production builds.
 - Focused tests cover fixed 30-minute code TTL and 120-second recovery; Host-only issue; explicit replacement; independent member join; expiry; operation-scoped recovery/idempotency; guest/IP/aggregate rate-limit persistence; signed source-IP verification; spoofed-header rejection; distinct trusted-IP buckets; frontend retry-key reuse; CSRF recovery; and explicit Host/staff replacement confirmation.
+- Additional IP spoof-resistance regression evidence records `31/31` API tests and `14/14` Web tests passing, plus API/Web typechecks.
 
-Automated coverage supports the implementation controls but does not replace live verification of provider header propagation, deployed secrets or production rate-limit behavior.
+Automated coverage supports threshold/concurrency behavior that was intentionally not load-tested on Production. Production observations confirm deployed fail-closed behavior and two-network bucket separation, but do not establish universal spoof resistance.
 
-### PENDING — production verification
+### NOT EXECUTED — documented limitations
 
-1. Confirm a direct unsigned Join Code mutation to Render is rejected with `TRUSTED_PROXY_REQUIRED`.
-2. Exercise deployed Join Code rotation and revocation UI behavior.
-3. Exercise deployed expired/invalid code handling and rate limiting without unsafe load.
-4. Independently confirm live per-client-IP bucket separation and spoofed-header resistance.
-5. Complete the final demo TableSession/staff-account cleanup or revocation under a separately reviewed owner-authorized procedure.
+- Production rate-limit thresholds were not exercised with brute-force/high-volume traffic; threshold, cooldown and concurrency enforcement remain supported by PostgreSQL integration tests.
+- Equivalent IPv6 representations are not canonicalized and may create distinct fingerprints. This is a non-blocking hardening follow-up.
+- The evidence does not cover every proxy provider, VPN, NAT, IPv4/IPv6 transition or compromised-secret scenario.
 
 ### NOT IN SCOPE — future milestone
 
@@ -365,9 +428,24 @@ Automated coverage supports the implementation controls but does not replace liv
 
 ## Limitations and non-claims
 
-- M2.7 is functionally smoke-tested in production but **not fully production-security-verified**.
+- M2.7 acceptance and scoped production verification are complete based on functional observations, focused security checks and automated coverage. This is not a general security certification.
 - No Join Code, password, database URL, endpoint hostname secret, cookie, CSRF value or token is recorded here.
 - The successful browser flow does not independently prove every concurrency, authorization, expiry or rate-limit invariant.
 - The read-only queries establish only the rows and scopes they explicitly selected at that moment.
 - The resolved `TRUSTED_WEB_ORIGINS` incident was a deployment configuration issue, not a code or database defect.
 - The two investigative SQL errors were incorrect manual schema assumptions, not application failures.
+- Production threshold testing was intentionally omitted to avoid blocking legitimate demo users.
+- IPv6 textual canonicalization remains a non-blocking follow-up.
+
+## Production demo cleanup recommendation
+
+Cleanup was not performed as part of this documentation task.
+
+- A01 was observed with an active TableSession and authorized Guest Sessions during verification. No later session-close evidence is recorded here, so these records may remain until their normal lifecycle/expiry.
+- Rotated, revoked and expired Join Code records are historical evidence; they cannot authorize new joins and do not require direct deletion.
+- If Staff UI reports a current active Join Code, an authorized Manager may revoke it through the existing staff workflow. Do not delete or rewrite Join Code rows manually.
+- Guest credentials should expire through their configured idle/absolute timeouts. No manual database revocation is required solely for this verification record.
+- TableSession close, table cleaning and return to `AVAILABLE` belong to M4 and are not implemented by M2.7. Leave A01's synthetic demo state intact until an approved application workflow can close it; do not issue direct SQL updates to simulate lifecycle transitions.
+- The synthetic Manager may remain for the portfolio demo. Log out/revoke its current Staff Session when it is not needed; any account removal or password rotation should use a separately reviewed operational procedure.
+
+The absence of cleanup does not block M2.7 completion because cleanup is an operational follow-up, not an M2.7 acceptance criterion.
