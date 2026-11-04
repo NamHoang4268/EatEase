@@ -166,9 +166,9 @@ Successful response sets staff cookie and returns staff scope/effective permissi
 
 Requires valid staff cookie; read-only và không cần CSRF header. Response trả current user, membership, restaurant/location scope và effective permissions. Session expiry không được extend.
 
-### `GET /staff/auth/csrf-token`
+### `POST /staff/auth/csrf-token`
 
-CSRF recovery sau browser refresh. Requires valid staff cookie và trusted `Origin`; atomically replaces stored CSRF hash, returns replacement raw token với `Cache-Control: no-store`, không tạo staff session mới. Token trước đó hết hiệu lực.
+CSRF recovery sau browser refresh. Requires valid staff cookie và trusted `Origin`; không yêu cầu CSRF token cũ. Atomically replaces stored CSRF hash, returns `200` with replacement raw token và `Cache-Control: no-store`, không tạo staff session mới. Token trước đó hết hiệu lực. Dùng POST để browser gửi Origin cho same-origin recovery; GET không còn được hỗ trợ. Session invalid trả `401` và frontend hiển thị Login; lỗi recovery `403`, network hoặc `5xx` hiển thị retry state và không cho phép protected mutations cho đến khi recovery thành công.
 
 ### `POST /staff/auth/logout`
 

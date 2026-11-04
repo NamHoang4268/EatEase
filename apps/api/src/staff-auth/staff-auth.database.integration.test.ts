@@ -175,7 +175,7 @@ describe('staff authentication database integration', () => {
 
   it('rotates the CSRF token after refresh and requires trusted origin plus the replacement token for logout', async () => {
     await request(server)
-      .get('/api/v1/staff/auth/csrf-token')
+      .post('/api/v1/staff/auth/csrf-token')
       .set('Origin', 'http://localhost:3000')
       .expect(401);
     await request(server)
@@ -192,12 +192,35 @@ describe('staff authentication database integration', () => {
     const originalCsrf = (login.body as CsrfResponse).data.csrfToken;
 
     await request(server)
-      .get('/api/v1/staff/auth/csrf-token')
+      .post('/api/v1/staff/auth/csrf-token')
       .set('Cookie', cookie)
       .set('Origin', 'https://untrusted.example')
       .expect(403);
-    const recovery = await request(server)
+    const beforeMissingOrigin = await prisma.staffSession.findFirstOrThrow({
+      where: { staffUserId: ids.user, revokedAt: null },
+      orderBy: { createdAt: 'desc' },
+    });
+    const missingOrigin = await request(server)
+      .post('/api/v1/staff/auth/csrf-token')
+      .set('Cookie', cookie)
+      .expect(403);
+    expect((missingOrigin.body as ErrorResponse).error.code).toBe('UNTRUSTED_ORIGIN');
+    const afterMissingOrigin = await prisma.staffSession.findUniqueOrThrow({
+      where: { id: beforeMissingOrigin.id },
+    });
+    expect(afterMissingOrigin.csrfTokenHash).toBe(beforeMissingOrigin.csrfTokenHash);
+    await request(server)
       .get('/api/v1/staff/auth/csrf-token')
+      .set('Cookie', cookie)
+      .set('Origin', 'http://localhost:3000')
+      .expect(404);
+    await request(server)
+      .post('/api/v1/staff/auth/csrf-token')
+      .set('Cookie', 'eatease_staff_session=invalid-session')
+      .set('Origin', 'http://localhost:3000')
+      .expect(401);
+    const recovery = await request(server)
+      .post('/api/v1/staff/auth/csrf-token')
       .set('Cookie', cookie)
       .set('Origin', 'http://localhost:3000')
       .expect('Cache-Control', 'no-store')
@@ -223,6 +246,11 @@ describe('staff authentication database integration', () => {
       .set('X-CSRF-Token', replacementCsrf)
       .expect(204);
     await request(server).get('/api/v1/staff/auth/me').set('Cookie', cookie).expect(401);
+    await request(server)
+      .post('/api/v1/staff/auth/csrf-token')
+      .set('Cookie', cookie)
+      .set('Origin', 'http://localhost:3000')
+      .expect(401);
   });
 
   it('rejects expired sessions and sessions whose membership becomes revoked', async () => {
@@ -243,6 +271,11 @@ describe('staff authentication database integration', () => {
       data: { expiresAt: new Date(expiredSession.createdAt.getTime() + 1) },
     });
     await request(server).get('/api/v1/staff/auth/me').set('Cookie', expiredCookie).expect(401);
+    await request(server)
+      .post('/api/v1/staff/auth/csrf-token')
+      .set('Cookie', expiredCookie)
+      .set('Origin', 'http://localhost:3000')
+      .expect(401);
 
     const revokedMembershipLogin = await request(server)
       .post('/api/v1/staff/auth/login')
