@@ -4,7 +4,7 @@ import { z } from 'zod';
 const cursorSchema = z.object({ submittedAt: z.iso.datetime(), itemId: z.uuid() }).strict();
 const querySchema = z
   .object({
-    status: z.literal('NEW').default('NEW'),
+    status: z.enum(['NEW', 'PREPARING', 'READY']).default('NEW'),
     station: z.enum(['KITCHEN', 'BAR', 'DIRECT']).optional(),
     limit: z
       .string()

@@ -280,7 +280,7 @@ describe('M2.10 read-only fulfillment queue on PostgreSQL', () => {
       '?limit=101',
       '?cursor=bad',
       '?locationId=foreign',
-      '?status=READY',
+      '?status=SERVED',
     ]) {
       await read(local, query).expect(400);
     }
@@ -297,11 +297,98 @@ describe('M2.10 read-only fulfillment queue on PostgreSQL', () => {
       expect(result((await read().expect(200)).body).items.map((item) => item.id)).not.toContain(
         first.id,
       );
+      if (status === 'PREPARING' || status === 'READY') {
+        const selected = result(
+          (await read(local, `?status=${status}&station=KITCHEN`).expect(200)).body,
+        );
+        const selectedItem = selected.items.find((item) => item.id === first.id);
+        expect(selectedItem).toMatchObject({ status, stationSnapshot: 'KITCHEN' });
+        expect(selectedItem?.version).toBeTypeOf('number');
+        expect(
+          result((await read(foreign, `?status=${status}`).expect(200)).body).items.map(
+            (item) => item.id,
+          ),
+        ).not.toContain(first.id);
+        expect(
+          result((await read(local, `?status=${status}&station=BAR`).expect(200)).body).items,
+        ).toEqual([]);
+      }
     }
     await prisma.orderItem.update({
       where: { id: first.id },
       data: { status: 'NEW', version: { increment: 1 } },
     });
+  });
+
+  it('pages all operational states and station snapshots without crossing location scope', async () => {
+    const contexts = [await fixture(), await fixture()];
+    for (const context of contexts) {
+      for (const station of ['KITCHEN', 'BAR', 'DIRECT'] as const) {
+        await prisma.menuItem.update({
+          where: { id: context.itemId },
+          data: { fulfillmentStation: station },
+        });
+        await persistence.persist({
+          restaurantId: context.restaurantId,
+          locationId: context.locationId,
+          tableSessionId: context.tableSessionId,
+          actor: { type: 'GUEST_SESSION', id: context.guestId },
+          idempotencyKey: randomUUID(),
+          idempotencyExpiresAt: new Date(Date.now() + 600_000),
+          items: [
+            { menuItemId: context.itemId, quantity: 1 },
+            { menuItemId: context.itemId, quantity: 2 },
+          ],
+        });
+      }
+    }
+    const context = contexts[0]!;
+    for (const status of ['NEW', 'PREPARING', 'READY'] as const) {
+      for (const entry of contexts)
+        await prisma.orderItem.updateMany({
+          where: { restaurantId: entry.restaurantId },
+          data: { status, version: { increment: 1 } },
+        });
+      const all = result((await read(context, `?status=${status}`).expect(200)).body);
+      expect(all.items).toHaveLength(6);
+      expect(
+        all.items.every(
+          (item) => item.tableSessionId === context.tableSessionId && item.status === status,
+        ),
+      ).toBe(true);
+      for (const station of ['KITCHEN', 'BAR', 'DIRECT']) {
+        const ids: string[] = [];
+        let cursor: string | null = null;
+        do {
+          const page = result(
+            (
+              await read(
+                context,
+                `?status=${status}&station=${station}&limit=1${cursor ? `&cursor=${cursor}` : ''}`,
+              ).expect(200)
+            ).body,
+          );
+          expect(page.items).toHaveLength(1);
+          expect(page.items[0]!.stationSnapshot).toBe(station);
+          ids.push(page.items[0]!.id);
+          cursor = page.page.nextCursor;
+        } while (cursor && ids.length < 3);
+        expect(ids).toEqual(
+          all.items.filter((item) => item.stationSnapshot === station).map((item) => item.id),
+        );
+        expect(new Set(ids).size).toBe(2);
+      }
+      await request(server).get(`/api/v1/staff/fulfillment/items?status=${status}`).expect(401);
+      await prisma.rolePermission.delete({
+        where: {
+          roleId_permissionId: { roleId: context.roleId, permissionId: context.permissionId },
+        },
+      });
+      await read(context, `?status=${status}`).expect(403);
+      await prisma.rolePermission.create({
+        data: { roleId: context.roleId, permissionId: context.permissionId },
+      });
+    }
   });
 
   it('denies missing, expired and revoked sessions and membership/permission changes on the next request', async () => {

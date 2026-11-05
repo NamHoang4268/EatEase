@@ -26,7 +26,8 @@ describe('fulfillment query contract', () => {
     { limit: '-1' },
     { limit: '2.5' },
     { limit: ['1', '2'] },
-    { status: 'PREPARING' },
+    { status: 'SERVED' },
+    { status: ['NEW', 'READY'] },
     { station: 'OTHER' },
     { locationId: 'client-scope' },
     { cursor: 'invalid' },
@@ -37,5 +38,13 @@ describe('fulfillment query contract', () => {
     },
   ])('rejects invalid filters, scope and cursors: %j', (query) => {
     expect(() => parseFulfillmentQuery(query)).toThrow(BadRequestException);
+  });
+
+  it.each(['NEW', 'PREPARING', 'READY'])('accepts board status %s', (status) => {
+    expect(parseFulfillmentQuery({ status, station: 'DIRECT' })).toEqual({
+      status,
+      station: 'DIRECT',
+      limit: 50,
+    });
   });
 });

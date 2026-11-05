@@ -115,7 +115,9 @@ test.describe('M2 complete local browser flow', () => {
     );
     expect(new Set(permissions).size).toBe(permissions.length); // Real multi-role permission union.
     await expect.poll(() => kitchen.realtime.connections).toBeGreaterThan(0);
-    await expect(kitchen.page.getByText('Chưa có món mới đang chờ tại trạm này.')).toBeVisible();
+    await expect(
+      kitchen.page.getByText('Chưa có món ở trạng thái này tại trạm đã chọn.'),
+    ).toBeVisible();
     const dining = await activate(host.page, manager.page, f);
     await expect.poll(() => host.realtime.connections).toBeGreaterThan(1); // Browse activation then Bill subscription.
 

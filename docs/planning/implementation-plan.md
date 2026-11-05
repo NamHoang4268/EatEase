@@ -224,7 +224,7 @@ M2.9 verification: owner-executed final validation passed `99/99` API unit tests
 
 ## M3 — Fulfillment, cancellation and serving
 
-**Status:** `IN_PROGRESS` — M3.1 and M3.2 are `DONE` after owner validation. Remaining tasks are not complete.
+**Status:** `IN_PROGRESS` — M3.1, M3.2 and M3.3 are `DONE` after owner validation. Remaining transitions and workflows are not complete.
 
 Dependency: M2.
 
@@ -257,6 +257,16 @@ Dependency: M2.
 - **Acceptance:** allowed station/state matrix, one version/timestamp/audit/event under retries/races, operation-scoped replay/conflicts, authorization and rollback consistency; preparingAt/snapshots/Order/BillLines/Bill totals unchanged.
 - **Verification:** owner-confirmed local validation: migrations `11/11` applied and schema up to date; PostgreSQL integration `62/62` PASS; API unit `155/155` PASS; API lint, typecheck and production build PASS; Prisma validate/generate PASS; `pnpm format:check` and `git diff --check` PASS.
 - **Release/checkpoint:** production migration/deployment/public smoke remain pending; local validation does not establish production behavior. Do not start the next task before separate owner authorization.
+
+### M3.3 — Interactive fulfillment board
+
+- **Status:** `DONE`; implementation and owner validation complete. M3 overall remains `IN_PROGRESS` because later transitions and workflows are still pending.
+- **Scope:** extend the existing authenticated staff board with NEW/PREPARING/READY status filters and existing station filters/pagination. Expose only M3.1/M3.2 actions allowed by station/state and `fulfillment.transition`; preserve `fulfillment.read`, server-derived scope and snapshots.
+- **Artifacts:** backward-compatible query status extension (default NEW), existing KitchenQueue/workspace action integration, in-memory item/action/version retry keys, CSRF recovery, double-submit protection, 409 refetch, existing kitchen realtime invalidation/reconnect and manual refresh fallback. No migration or new transition command.
+- **Acceptance:** operational state/station queries remain scoped and deterministically paginated; actions send latest server version, retain retry identity on ambiguous failures, and refetch authoritative state; permission/session errors fail closed; no financial changes or raw staff credentials in JavaScript.
+- **Verification:** owner-confirmed local validation: PostgreSQL integration `63/63`, API unit `161/161`, Web unit `96/96` and Playwright E2E `5/5` PASS (`325/325` total). API/Web lint, typecheck and production builds, `pnpm format:check` and `git diff --check` PASS. No M3.3 migration was required.
+- **E2E note:** the successful suite logged Next dev-server `ECONNRESET` at teardown. Focused investigation confirmed no application defect and required no code changes; the exact request/socket was not identified. This does not invalidate the owner-confirmed passing assertions or establish production behavior.
+- **Release/checkpoint:** production migrations/deployment/public smoke remain pending; local validation does not establish production behavior. No serving, rejection, cancellation, waiver or payment workflow is included. Do not begin the next task before separate owner authorization.
 
 ## M4 — Checkout and table lifecycle
 
