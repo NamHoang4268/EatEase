@@ -1,6 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useRealtime } from '../realtime/use-realtime';
+import { RealtimeNotice } from '../realtime/realtime-notice';
 
 type QueueItem = {
   id: string;
@@ -24,12 +26,19 @@ type QueueState =
   | { status: 'denied' }
   | { status: 'expired' }
   | { status: 'ready'; data: QueuePage };
-type Props = { allowed: boolean; onSessionInvalid: () => void };
+type Props = {
+  allowed: boolean;
+  onSessionInvalid: () => void;
+  csrfToken?: string | null;
+  recoverCsrf?: () => Promise<string>;
+};
 
-export function KitchenQueue({ allowed, onSessionInvalid }: Props) {
+export function KitchenQueue({ allowed, onSessionInvalid, csrfToken, recoverCsrf }: Props) {
   const [state, setState] = useState<QueueState>({ status: 'loading' });
   const [station, setStation] = useState('');
+  const [refreshRevision, setRefreshRevision] = useState(0);
   const inFlight = useRef(false);
+  const realtimeDirty = useRef(false);
   const requestController = useRef<AbortController | null>(null);
   const onSessionInvalidRef = useRef(onSessionInvalid);
   useEffect(() => {
@@ -37,7 +46,7 @@ export function KitchenQueue({ allowed, onSessionInvalid }: Props) {
   }, [onSessionInvalid]);
 
   const load = useCallback(
-    async (cursor?: string) => {
+    async (cursor?: string): Promise<void> => {
       if (!allowed || inFlight.current) return;
       inFlight.current = true;
       const controller = new AbortController();
@@ -71,11 +80,30 @@ export function KitchenQueue({ allowed, onSessionInvalid }: Props) {
         if (requestController.current === controller) {
           inFlight.current = false;
           requestController.current = null;
+          if (realtimeDirty.current) {
+            realtimeDirty.current = false;
+            setRefreshRevision((value) => value + 1);
+          }
         }
       }
     },
     [allowed, station],
   );
+
+  const realtime = useRealtime({
+    actor: 'staff',
+    audience: 'kitchen',
+    enabled: allowed,
+    csrfToken,
+    ...(recoverCsrf ? { recoverCsrf } : {}),
+    onInvalidate: async () => {
+      if (inFlight.current) {
+        realtimeDirty.current = true;
+        return;
+      }
+      await load();
+    },
+  });
 
   useEffect(() => {
     const timeout = window.setTimeout(() => void load(), 0);
@@ -85,7 +113,7 @@ export function KitchenQueue({ allowed, onSessionInvalid }: Props) {
       requestController.current = null;
       inFlight.current = false;
     };
-  }, [load]);
+  }, [load, refreshRevision]);
 
   if (!allowed) return <p role="status">Bạn không có quyền xem hàng chờ bếp.</p>;
   const loading = state.status === 'loading';
@@ -126,6 +154,7 @@ export function KitchenQueue({ allowed, onSessionInvalid }: Props) {
         </div>
       </div>
       {loading ? <p role="status">Đang tải hàng chờ bếp…</p> : null}
+      <RealtimeNotice {...realtime} />
       {state.status === 'error' ? (
         <p role="alert">Chưa thể tải hàng chờ. Hãy kiểm tra kết nối và làm mới.</p>
       ) : null}

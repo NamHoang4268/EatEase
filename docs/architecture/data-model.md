@@ -1,6 +1,6 @@
 # Relational data model
 
-Status: **APPROVED baseline through M2.8; M2.8 implementation pending PostgreSQL validation**. Physical schema/migrations hiện gồm restaurant/location/table/menu, staff identity/RBAC/session, guest session, activation request, TableSession, Bill, claim/join recovery hashes, Join Code/rate-limit state, idempotency, outbox và audit persistence. M2.8 bổ sung Order/OrderItem/BillLine; các domain tables từ M3 trở đi tiếp tục là logical baseline cho task tương ứng.
+Status: **APPROVED baseline through M2.11; M2.11 implementation pending owner validation**. Physical schema/migrations hiện gồm restaurant/location/table/menu, staff identity/RBAC/session, guest session, activation request, TableSession, Bill, claim/join recovery hashes, Join Code/rate-limit state, idempotency, outbox, realtime tickets và audit persistence. M2.8 bổ sung Order/OrderItem/BillLine; các domain tables từ M3 trở đi tiếp tục là logical baseline cho task tương ứng.
 
 ## ERD
 
@@ -249,6 +249,16 @@ Internal persistence takes server-derived actor context. Guest records are cappe
 - Payload chỉ chứa scoped resource IDs, status/version và event time; không chứa guest/session credential, CSRF token, requester identifier hoặc rejection detail không cần thiết.
 - New events initialize `published_at = null`, `attempt_count = 0`; delivery/retry behavior thuộc milestone sau.
 - M2.8 reuses this generic table: one `order.submitted` per Order, one `fulfillment.item.created` per OrderItem, one `bill.updated` per Bill revision. Payloads contain only `id`, `tableSessionId`, `version`, `occurredAt`, and `status: NEW` for OrderItems. They contain no actor identifier, note, monetary amounts or credentials. No publisher/worker is added.
+
+M2.11 adds nullable `claim_token`, `lease_until`, `failed_at`, `last_error` and a partial pending-delivery index. Claim token and lease must be both NULL or both present. A bounded SKIP LOCKED update claims only committed eligible rows, increments attempts, and returns ownership tokens. Expired leases are reclaimable; completion/failure requires the same token and an unexpired lease. No Order/OrderItem/Bill changes occur in the publisher. There is no total/per-aggregate publication-order requirement: payloads are invalidations and consumers refetch current state.
+
+Default limits: batch 10 (max 50), poll 1000 ms (250–60000), lease 60 seconds (15–300), max 8 attempts (1–20). Transient errors use exponential delay `min(300, 2^attemptCount)` seconds. Exhausted claims, including repeated crashes, set `failed_at`; malformed/unsupported events are quarantined immediately. Operators diagnose and explicitly requeue only after resolving the cause; there is no automatic infinite retry. `published_at` records successful local transport enqueue, not client receipt. A crash after enqueue/before completion or lease expiry may duplicate a hint. Lease fencing protects persistence, not an exactly-once external side effect.
+
+M2.11 also writes `activation.requested` once with a newly created activation request, inside its existing transaction; retries/pending reuse do not create another event. Existing activation/session events are dispatched along with the M2.8 ordering events.
+
+### Realtime tickets
+
+`realtime_ticket(id, token_hash, actor_type, actor_session_id, restaurant_id, location_id, audience, resource_id, origin, created_at, expires_at, consumed_at)` stores SHA-256 ticket hashes only. Ticket is a separate 30-second credential, never a raw Staff/Guest session token. Scoped restaurant/location FKs and actor/audience/resource/hash/expiry checks apply. Actor session and polymorphic resource are reauthorized against real current records, not trusted from the ticket row. Atomic conditional consumption (`consumed_at IS NULL`, `expires_at > now`) allows one winner. Actor advisory lock bounds concurrent issuance to four outstanding tickets. Expired records are deleted in batches of 500 per authorization scan; no audit, outbox or log contains ticket plaintext.
 
 ### Audit
 

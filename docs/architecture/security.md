@@ -29,7 +29,7 @@ Lợi ích:
 - CSRF policy nhất quán.
 - Local dev có thể dùng Next.js proxy/reverse proxy để giữ một browser origin.
 
-Portfolio deployment hiện tại dùng hai site khác nhau: web `https://eat-ease.vercel.app` và API `https://eatease-api-rbgu.onrender.com`. Staff browser requests vì vậy dùng explicit CORS allowlist với credentials, không wildcard hoặc dynamic Origin trust. Production staff cookie dùng `SameSite=None; Secure; HttpOnly`; browser vẫn có thể chặn third-party cookies theo policy/privacy setting, nên topology này không được xem là universally compatible. Same-site reverse proxy vẫn là direction tốt hơn cho deployment tương lai sau explicit review.
+Portfolio deployment uses Vercel same-origin REST proxy to Render, preserving host-only HttpOnly session cookies at the browser-facing origin. M2.11 adds direct Render Socket.IO using a separately issued ticket; it does not rely on a Render cookie or expose an existing session credential. Keep exact Origin allowlists (never wildcard/dynamic trust). Production session cookie attributes remain `SameSite=None; Secure; HttpOnly`; future same-site reverse proxy remains a separately reviewed deployment option.
 
 ## Guest cookies
 
@@ -157,7 +157,8 @@ Lock order for M2.7 is TableSession → current SessionJoinCode → GuestSession
 
 ## WebSocket security
 
-- Authenticate handshake bằng cookie session trên cùng origin.
+- M2.11: authenticate direct Render Socket.IO with a CSPRNG 32-byte ticket from same-origin authenticated REST. Never expose raw session credentials to JavaScript. Ticket TTL 30 seconds, SHA-256 hash only at rest, atomic single use, passed through Socket.IO `auth` only (never query, logs or persistent storage).
+- Ticket issuance requires trusted Origin and existing session/CSRF guards. Bind audience/resource/Origin to actor session; revalidate on consumption, before every notification and in a scan scheduled every 30 seconds after the previous scan completes. Disconnect on failure; idle revocation detection includes scan/database latency, while every notification requires a fresh authorization check. Server assigns subscriptions; no client room names or join commands. Cap active connections (default 100/max 200) and inbound packet size (2048 bytes); never enqueue another hint on a non-writable transport (disconnect and retry instead). Disconnect command-sending clients. Database pool remains bounded.
 - Validate Origin allowlist.
 - Không tin room name/resource ID từ client.
 - Mỗi subscribe/action kiểm tra resource relationship và permission.

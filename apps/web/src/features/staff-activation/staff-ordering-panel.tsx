@@ -15,6 +15,8 @@ import type {
   PublicMenuItem,
 } from '../public-menu/public-menu.types';
 import type { ApiErrorPayload, StaffActiveTableSession } from './staff-activation.types';
+import { useRealtime } from '../realtime/use-realtime';
+import { RealtimeNotice } from '../realtime/realtime-notice';
 
 type Props = {
   sessions: StaffActiveTableSession[];
@@ -42,6 +44,10 @@ export function StaffOrderingPanel({
   onSessionInvalid,
 }: Props) {
   const [selectedId, setSelectedId] = useState('');
+  const selectedIdRef = useRef(selectedId);
+  useEffect(() => {
+    selectedIdRef.current = selectedId;
+  }, [selectedId]);
   const [menu, setMenu] = useState<PublicMenu | null>(null);
   const [cart, setCart] = useState<DraftCartLine[]>([]);
   const [bill, setBill] = useState<ConsolidatedSessionView | null>(null);
@@ -51,6 +57,33 @@ export function StaffOrderingPanel({
   const attemptRef = useRef<{ key: string; payload: string; sessionId: string } | null>(null);
   const selected = sessions.find((session) => session.id === selectedId) ?? null;
   const subtotal = useMemo(() => calculateDraftSubtotal(cart), [cart]);
+
+  const realtime = useRealtime({
+    actor: 'staff',
+    audience: 'bill',
+    csrfToken,
+    recoverCsrf,
+    enabled: canReadBill && Boolean(selected),
+    tableSessionId: selectedId,
+    onInvalidate: async () => {
+      if (!selected) return;
+      try {
+        const response = await fetch(
+          `/api/v1/staff/table-sessions/${encodeURIComponent(selected.id)}/bill`,
+          { credentials: 'include', cache: 'no-store' },
+        );
+        if (response.status === 401) {
+          onSessionInvalid();
+          return;
+        }
+        if (!response.ok) throw new Error();
+        const payload = (await response.json()) as { data: ConsolidatedSessionView };
+        if (selectedIdRef.current === selected.id) setBill(payload.data);
+      } catch {
+        setMessage('Chưa thể cập nhật hóa đơn. Hãy tải lại dữ liệu bàn.');
+      }
+    },
+  });
 
   const loadContext = useCallback(
     async (session: StaffActiveTableSession) => {
@@ -195,6 +228,7 @@ export function StaffOrderingPanel({
       </div>
 
       {message ? <p className="queue-notice">{message}</p> : null}
+      <RealtimeNotice {...realtime} />
       {loading ? <p>Đang tải dữ liệu bàn…</p> : null}
       {selected && menu ? (
         <div className="staff-ordering-grid">

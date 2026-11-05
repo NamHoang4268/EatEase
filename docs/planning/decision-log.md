@@ -74,16 +74,17 @@ Last baseline update: 2026-10-30.
 
 - Staff session restoration fix (owner-approved task): `POST /staff/auth/csrf-token` supersedes GET so same-origin browser recovery supplies Origin. Valid staff session, strict Origin, atomic rotation and no-store remain required; no old CSRF token is needed. Recovery failures offer retry with protected actions unavailable; `401` returns to Login.
 
+- M2.11 owner approval (2026-11-05): direct Browser → Render Socket.IO using single-use tickets issued through authenticated same-origin REST. Bind ticket to session, audience, Origin and resource scope; atomically consume in PostgreSQL. Revalidate current session/membership/permissions during connection lifetime. Explicitly enable publisher in API process; one API instance only. Outbox claims/leases/retries are at-least-once; emission failure is not publication success and emission success does not guarantee receipt. Reconnect refetches authoritative REST. This supersedes the publisher proposal and open MVP realtime topology.
+
 ## PROPOSED
 
 - Same-origin deployment direction (web/API/Socket.IO sau một public origin), dùng host-only `HttpOnly; Secure; SameSite=Lax` cookies.
-- Outbox publisher chạy cùng API process trong MVP với safe locking.
   Các proposal phải được validated/chốt ở milestone implementation liên quan, không được hardcode ngầm.
 
 ## OPEN
 
 - Production domain và exact reverse-proxy topology.
-- Local Next.js REST rewrite, browser/API cookie-session boundary và Socket.IO proxy/WebSocket upgrade behavior.
+- Future same-origin WebSocket reverse proxy; MVP uses approved direct Render ticket topology.
 - Menu modifiers chi tiết ngoài contract tối thiểu.
 - Manager force-close/correction procedure chi tiết.
 - Retention/cleanup periods cho idempotency, outbox, audit và closed guest sessions.

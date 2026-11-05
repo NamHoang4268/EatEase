@@ -14,7 +14,7 @@ EatEase cần một public portfolio/demo deployment sớm với chi phí mục 
 - Deploy `apps/api` thành Render Free web service.
 - Dùng Neon Free PostgreSQL.
 - Browser tiếp tục gọi relative `/api/...`; Next.js server rewrite tới Render thông qua server-only `API_INTERNAL_URL`.
-- Không bật wildcard CORS. Direct cross-origin browser calls không thuộc topology hiện tại.
+- Không bật wildcard CORS. REST remains behind Vercel; direct cross-origin Socket.IO is permitted only by the M2.11 ticket contract below.
 - API dùng Neon pooled URL cho application traffic với pool nhỏ; Prisma CLI dùng direct URL cho reviewed migrations.
 - Render readiness health check phải truy vấn database thật.
 - GitHub Actions là validation gate; cloud dashboard provisioning và production migration vẫn là explicit owner action.
@@ -28,7 +28,8 @@ Topology này chỉ dành cho personal, non-commercial portfolio/demo. Nó khôn
 - Render và Neon cold start có thể cộng dồn vào request đầu tiên.
 - Render Free không cung cấp paid pre-deploy command; owner phải chạy reviewed migration như một explicit release gate.
 - Vercel Hobby chỉ phù hợp personal, non-commercial use.
-- Render hỗ trợ inbound WebSocket, nhưng Socket.IO qua Vercel same-origin rewrite chưa được phê duyệt hoặc verify. Mốc realtime phải review origin, cookie và proxy topology trước khi triển khai.
+- M2.11 owner approval (2026-11-05): REST stays same-origin through Vercel; Socket.IO connects directly Browser → Render using a short-lived, single-use ticket issued by authenticated same-origin REST. Raw session credentials remain HttpOnly. See [realtime contracts](../api-contracts.md#m211-realtime-contract). This supersedes the direct-browser restriction for realtime only.
+- Publisher runs in the explicitly enabled API process. MVP uses one API/Socket.IO instance; multi-publisher database claims do not provide multi-instance socket fanout. No Redis/broker.
 - Public deployment chỉ được gọi là verified sau khi kiểm tra public web, API liveness, readiness và proxied API endpoints.
 
 ## Alternatives considered

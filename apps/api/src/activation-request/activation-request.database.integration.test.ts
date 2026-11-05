@@ -60,6 +60,9 @@ describe('activation request database integration', () => {
   let prisma: PrismaService;
 
   async function cleanup(): Promise<void> {
+    await prisma.outboxEvent.deleteMany({
+      where: { restaurantId: { in: [ids.restaurantA, ids.restaurantB] } },
+    });
     await prisma.idempotencyRecord.deleteMany({
       where: { restaurantId: { in: [ids.restaurantA, ids.restaurantB] } },
     });
@@ -292,6 +295,14 @@ describe('activation request database integration', () => {
       .send({ tablePublicId: ids.tableAPublic })
       .expect(202);
     expect(replay.body).toEqual(first.body);
+    expect(
+      await prisma.outboxEvent.count({
+        where: {
+          aggregateId: (first.body as ActivationResponseBody).data.activationRequestId!,
+          eventType: 'activation.requested',
+        },
+      }),
+    ).toBe(1);
 
     const conflict = await request(server)
       .post('/api/v1/activation-requests')

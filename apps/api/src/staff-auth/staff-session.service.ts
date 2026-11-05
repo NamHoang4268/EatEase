@@ -4,6 +4,7 @@ import { PrismaService } from '../database/prisma.service.js';
 import { STAFF_SESSION_TTL_MS } from './auth.constants.js';
 import { generateOpaqueToken, hashToken } from './auth.crypto.js';
 import type { LoginResult, StaffPrincipal } from './staff-auth.types.js';
+import type { Prisma } from '../generated/prisma/client.js';
 
 @Injectable()
 export class StaffSessionService {
@@ -36,8 +37,19 @@ export class StaffSessionService {
   ): Promise<StaffPrincipal | null> {
     if (!rawToken) return null;
 
+    return this.resolve({ tokenHash: hashToken(rawToken) }, now);
+  }
+
+  async authenticateSessionId(id: string, now = new Date()): Promise<StaffPrincipal | null> {
+    return this.resolve({ id }, now);
+  }
+
+  private async resolve(
+    where: Prisma.StaffSessionWhereUniqueInput,
+    now: Date,
+  ): Promise<StaffPrincipal | null> {
     const session = await this.prisma.staffSession.findUnique({
-      where: { tokenHash: hashToken(rawToken) },
+      where,
       select: {
         id: true,
         csrfTokenHash: true,

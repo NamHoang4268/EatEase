@@ -2,6 +2,28 @@ import { describe, expect, it } from 'vitest';
 import { loadEnvironment } from './environment.js';
 
 describe('loadEnvironment', () => {
+  it('requires explicit realtime configuration and bounds publisher resource use', () => {
+    const base = { DATABASE_URL: 'postgresql://local:local@localhost/eatease_m2_test' };
+    expect(() => loadEnvironment({ ...base, OUTBOX_PUBLISHER_ENABLED: 'true' })).toThrow();
+    expect(() => loadEnvironment({ ...base, REALTIME_ENABLED: 'true' })).toThrow();
+    expect(() =>
+      loadEnvironment({
+        ...base,
+        REALTIME_ENABLED: 'true',
+        REALTIME_PUBLIC_URL: 'https://api.example.com/path',
+      }),
+    ).toThrow();
+    expect(() => loadEnvironment({ ...base, OUTBOX_BATCH_SIZE: '51' })).toThrow();
+    expect(() => loadEnvironment({ ...base, OUTBOX_LEASE_SECONDS: '0' })).toThrow();
+    expect(
+      loadEnvironment({
+        ...base,
+        REALTIME_ENABLED: 'true',
+        REALTIME_PUBLIC_URL: 'http://localhost:3001',
+        OUTBOX_PUBLISHER_ENABLED: 'true',
+      }).REALTIME_ENABLED,
+    ).toBe(true);
+  });
   it('parses a valid environment', () => {
     expect(
       loadEnvironment({
@@ -15,6 +37,13 @@ describe('loadEnvironment', () => {
       API_PORT: 3101,
       DATABASE_URL: 'postgresql://user:password@localhost:5432/eatease',
       DATABASE_POOL_MAX: 7,
+      REALTIME_ENABLED: false,
+      REALTIME_MAX_CONNECTIONS: 100,
+      OUTBOX_PUBLISHER_ENABLED: false,
+      OUTBOX_BATCH_SIZE: 10,
+      OUTBOX_POLL_MS: 1000,
+      OUTBOX_LEASE_SECONDS: 60,
+      OUTBOX_MAX_ATTEMPTS: 8,
       GUEST_IDLE_TIMEOUT_MINUTES: 30,
       GUEST_ABSOLUTE_TIMEOUT_HOURS: 8,
       ACTIVATION_REQUEST_TTL_MINUTES: 5,

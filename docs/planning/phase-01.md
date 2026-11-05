@@ -1,6 +1,8 @@
 # Phase 1 — First business vertical slice
 
-Status: **APPROVED planning target**, implementation `IN_PROGRESS` (`M2.0–M2.10 DONE`; M2.11 is the next task).
+Status: **APPROVED planning target**, implementation `IN_PROGRESS` (`M2.0–M2.11 DONE`; M2.12 final comprehensive verification is next and has not started).
+
+M2.11 owner validation is complete: `311/311` local tests PASS, with API/Web lint, typecheck, production builds and local Prisma migration/validation/generation PASS. See [final evidence](implementation-plan.md#m211--outbox-publisher-and-realtime-topology). M2.11 production migration/deployment and public smoke testing remain pending; the complete M2 milestone is not yet marked DONE.
 
 Trong roadmap repository, business Phase 1 được thực hiện tại Milestone M2 sau foundation M1.
 
