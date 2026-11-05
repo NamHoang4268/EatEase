@@ -88,3 +88,9 @@ jobs:
 
       - name: Build applications
         run: pnpm build
+
+      - name: Install Chromium for browser verification
+        run: pnpm --filter @eatease/api exec playwright install --with-deps chromium
+
+      - name: Run local browser E2E
+        run: pnpm test:e2e

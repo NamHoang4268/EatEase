@@ -16,6 +16,7 @@
     "typecheck": "pnpm --recursive --if-present typecheck",
     "test": "pnpm --recursive --if-present test",
     "test:integration": "pnpm --filter @eatease/api test:integration",
+    "test:e2e": "pnpm --filter @eatease/api test:e2e",
     "db:up": "docker compose -f infrastructure/local/compose.yaml up -d postgres",
     "db:down": "docker compose -f infrastructure/local/compose.yaml down",
     "db:logs": "docker compose -f infrastructure/local/compose.yaml logs postgres",

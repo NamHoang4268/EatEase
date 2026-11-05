@@ -1,6 +1,7 @@
 import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
 import type { Server } from 'node:http';
+import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AppModule } from '../app.module.js';
@@ -171,6 +172,53 @@ describe('staff authentication database integration', () => {
     await request(server).get('/api/v1/staff/auth/me').set('Cookie', cookie).expect(200);
     const afterRead = await prisma.staffSession.findUniqueOrThrow({ where: { id: stored.id } });
     expect(afterRead.expiresAt).toEqual(stored.expiresAt);
+  });
+
+  it('unions permissions across roles without duplicates in login and session restoration', async () => {
+    const roleId = randomUUID();
+    const permissionId = randomUUID();
+    const permission = await prisma.permission.upsert({
+      where: { code: 'bill.read' },
+      create: { id: permissionId, code: 'bill.read' },
+      update: {},
+    });
+    try {
+      await prisma.role.create({
+        data: { id: roleId, restaurantId: ids.restaurantA, code: 'EXTRA-READ', name: 'Extra read' },
+      });
+      await prisma.rolePermission.createMany({
+        data: [ids.permission, permission.id].map((id) => ({ roleId, permissionId: id })),
+      });
+      await prisma.membershipRole.create({
+        data: { restaurantId: ids.restaurantA, membershipId: ids.membership, roleId },
+      });
+      const login = await request(server)
+        .post('/api/v1/staff/auth/login')
+        .set('Origin', 'http://localhost:3000')
+        .send({
+          email: 'manager@example.test',
+          password: 'correct horse battery staple',
+          locationId: ids.locationA,
+        })
+        .expect(200);
+      const body = login.body as { data: { staff: { permissions: string[] } } };
+      expect([...body.data.staff.permissions].sort()).toEqual(['bill.read', 'menu.manage']);
+      const cookie = (login.headers['set-cookie'] as unknown as string[])[0]!.split(';')[0]!;
+      const restored = await request(server)
+        .get('/api/v1/staff/auth/me')
+        .set('Cookie', cookie)
+        .expect(200);
+      expect([...(restored.body as typeof body).data.staff.permissions].sort()).toEqual([
+        'bill.read',
+        'menu.manage',
+      ]);
+    } finally {
+      await prisma.membershipRole.deleteMany({ where: { roleId } });
+      await prisma.rolePermission.deleteMany({ where: { roleId } });
+      await prisma.role.deleteMany({ where: { id: roleId } });
+      if (permission.id === permissionId)
+        await prisma.permission.deleteMany({ where: { id: permissionId, roles: { none: {} } } });
+    }
   });
 
   it('rotates the CSRF token after refresh and requires trusted origin plus the replacement token for logout', async () => {

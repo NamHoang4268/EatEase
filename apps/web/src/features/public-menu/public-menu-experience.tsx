@@ -93,6 +93,7 @@ export function PublicMenuExperience({ publicId }: { publicId: string }) {
   const [view, setView] = useState<'menu' | 'cart'>('menu');
   const [cart, setCart] = useState<DraftCartLine[]>([]);
   const [sessionEstablished, setSessionEstablished] = useState(false);
+  const [recoveryBusy, setRecoveryBusy] = useState(false);
   const [guestAccess, setGuestAccess] = useState<GuestAccessLevel>('BROWSE_ONLY');
   const [csrfToken, setCsrfToken] = useState<string | null>(null);
   const [activation, setActivation] = useState<ActivationState>({ status: 'NOT_REQUESTED' });
@@ -441,7 +442,8 @@ export function PublicMenuExperience({ publicId }: { publicId: string }) {
         } else if (response.status === 409) {
           setJoinError('Phiên dùng bàn không còn sẵn sàng để tham gia.');
         } else if (payload.error?.code === 'GUEST_SESSION_INVALID') {
-          setJoinError('Phiên xem thực đơn đã hết hạn. Hãy tải lại trang rồi thử lại.');
+          setSessionEstablished(false);
+          setJoinError('Phiên xem thực đơn đã hết hạn. Hãy khôi phục phiên rồi thử lại.');
         } else {
           setJoinError('Chưa thể tham gia bàn. Vui lòng thử lại.');
         }
@@ -457,6 +459,36 @@ export function PublicMenuExperience({ publicId }: { publicId: string }) {
       setJoinError('Kết nối bị gián đoạn. Hãy thử lại trong 2 phút để khôi phục an toàn.');
     } finally {
       setJoinBusy(false);
+    }
+  };
+
+  const recoverBrowseSession = async () => {
+    if (recoveryBusy) return;
+    setRecoveryBusy(true);
+    setJoinError(null);
+    try {
+      const response = await fetch('/api/v1/guest-sessions', {
+        method: 'POST',
+        credentials: 'include',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tablePublicId: publicId }),
+      });
+      if (!response.ok) throw new Error('GUEST_BROWSE_RECOVERY_FAILED');
+      const payload = (await response.json()) as { data: GuestSessionData };
+      setCsrfToken(payload.data.csrfToken);
+      setGuestAccess(payload.data.session.accessLevel);
+      setSessionEstablished(true);
+      setLoadState((current) =>
+        current.status === 'ready' ? { ...current, table: payload.data.table } : current,
+      );
+      joinAttemptKeyRef.current = null;
+      claimAttemptRef.current = null;
+      await refreshActivation();
+    } catch {
+      setJoinError('Chưa thể khôi phục phiên xem. Giỏ nháp vẫn được giữ; hãy thử lại.');
+    } finally {
+      setRecoveryBusy(false);
     }
   };
 
@@ -681,6 +713,23 @@ export function PublicMenuExperience({ publicId }: { publicId: string }) {
   return (
     <main className="customer-shell">
       <RealtimeNotice {...activationRealtime} />
+      {!sessionEstablished && (submitError || activationError || joinError || billError) ? (
+        <section aria-label="Khôi phục phiên xem">
+          <p>
+            Phiên xem chưa sẵn sàng. Khôi phục phiên rồi nhập Join Code hợp lệ để tiếp tục; giỏ nháp
+            được giữ nguyên.
+          </p>
+          <button
+            className="secondary-button"
+            type="button"
+            disabled={recoveryBusy}
+            onClick={() => void recoverBrowseSession()}
+          >
+            {recoveryBusy ? 'Đang khôi phục…' : 'Khôi phục phiên xem thực đơn'}
+          </button>
+          {joinError ? <p role="alert">{joinError}</p> : null}
+        </section>
+      ) : null}
       <header className="menu-hero">
         <div>
           <p className="eyebrow">{loadState.table.locationName}</p>

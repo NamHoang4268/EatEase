@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { Logger } from '@nestjs/common';
 import { OutboxPublisher } from './outbox-publisher.service.js';
 import type { OutboxStore, ClaimedEvent } from './outbox.store.js';
 import type { RealtimeService } from './realtime.service.js';
@@ -27,6 +28,7 @@ beforeEach(() => {
   vi.useFakeTimers();
 });
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.useRealTimers();
   vi.unstubAllEnvs();
 });
@@ -48,6 +50,15 @@ function fixture() {
   };
 }
 describe('outbox publisher', () => {
+  it('logs only a safe failure code, not sensitive transport error contents', async () => {
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const { transport, worker } = fixture();
+    const sensitive = 'synthetic-session-token-and-join-code-sentinel';
+    transport.emit.mockRejectedValueOnce(new Error(sensitive));
+    await worker.runOnce();
+    expect(warn).toHaveBeenCalledWith('OUTBOX_DELIVERY_FAILED');
+    expect(JSON.stringify(warn.mock.calls)).not.toContain(sensitive);
+  });
   it('marks emission successful only after transport resolves', async () => {
     const { store, transport, worker } = fixture();
     let resolve!: () => void;
