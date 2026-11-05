@@ -20,14 +20,15 @@ import { StaffSessionGuard } from '../staff-auth/staff-session.guard.js';
 import { parseFulfillmentQuery } from './fulfillment-query.js';
 import { FulfillmentService } from './fulfillment.service.js';
 import { StaffCsrfGuard } from '../staff-auth/staff-csrf.guard.js';
-import { parseStartPreparation } from './start-preparation.contract.js';
-import { StartPreparationService } from './start-preparation.service.js';
+import { parseFulfillmentTransition } from './fulfillment-transition.contract.js';
+import { FulfillmentTransitionService } from './fulfillment-transition.service.js';
 
 @Controller('staff/fulfillment/items')
 export class FulfillmentController {
   constructor(
     @Inject(FulfillmentService) private readonly fulfillment: FulfillmentService,
-    @Inject(StartPreparationService) private readonly preparation: StartPreparationService,
+    @Inject(FulfillmentTransitionService)
+    private readonly transitions: FulfillmentTransitionService,
   ) {}
 
   @Post(':id/start-preparation')
@@ -43,9 +44,29 @@ export class FulfillmentController {
   ) {
     if (!request.staffPrincipal) throw new UnauthorizedException({ code: 'STAFF_SESSION_INVALID' });
     return {
-      data: await this.preparation.start(
+      data: await this.transitions.start(
         request.staffPrincipal,
-        parseStartPreparation(id, body, key),
+        parseFulfillmentTransition(id, body, key),
+      ),
+    };
+  }
+
+  @Post(':id/mark-ready')
+  @HttpCode(200)
+  @UseGuards(StaffSessionGuard, StaffCsrfGuard, StaffAuthorizationGuard)
+  @RequirePermissions('fulfillment.transition')
+  @Header('Cache-Control', 'no-store')
+  async markReady(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Headers('idempotency-key') key: string | undefined,
+    @Req() request: StaffRequest,
+  ) {
+    if (!request.staffPrincipal) throw new UnauthorizedException({ code: 'STAFF_SESSION_INVALID' });
+    return {
+      data: await this.transitions.ready(
+        request.staffPrincipal,
+        parseFulfillmentTransition(id, body, key),
       ),
     };
   }

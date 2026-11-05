@@ -2,15 +2,15 @@ import { BadRequestException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 import { FulfillmentController } from './fulfillment.controller.js';
 import type { FulfillmentService } from './fulfillment.service.js';
-import type { StartPreparationService } from './start-preparation.service.js';
-import { parseStartPreparation } from './start-preparation.contract.js';
+import type { FulfillmentTransitionService } from './fulfillment-transition.service.js';
+import { parseFulfillmentTransition } from './fulfillment-transition.contract.js';
 import type { StaffRequest } from '../staff-auth/staff-auth.types.js';
 import { Test } from '@nestjs/testing';
 import { PrismaService } from '../database/prisma.service.js';
 import { FulfillmentModule } from './fulfillment.module.js';
 
 const id = '31000000-0000-4000-8000-000000000001';
-describe('start preparation contract', () => {
+describe('fulfillment transition contract', () => {
   it('initializes the actual module and mutation guards without a database connection', async () => {
     vi.stubEnv('DATABASE_URL', 'postgresql://local:local@127.0.0.1:5432/eatease_m2_test');
     vi.stubEnv('NODE_ENV', 'test');
@@ -39,40 +39,43 @@ describe('start preparation contract', () => {
     { expectedVersion: 2_147_483_647 },
     { expectedVersion: 0, locationId: id },
   ])('rejects invalid or caller-scoped body %j', (body) => {
-    expect(() => parseStartPreparation(id, body, 'key')).toThrow(BadRequestException);
+    expect(() => parseFulfillmentTransition(id, body, 'key')).toThrow(BadRequestException);
   });
   it.each([undefined, '', '   ', 'x'.repeat(129), ['duplicate', 'header']])(
     'rejects invalid key %j',
     (key) => {
-      expect(() => parseStartPreparation(id, { expectedVersion: 0 }, key)).toThrow(
+      expect(() => parseFulfillmentTransition(id, { expectedVersion: 0 }, key)).toThrow(
         BadRequestException,
       );
     },
   );
   it('rejects malformed resource IDs', () => {
-    expect(() => parseStartPreparation('invalid', { expectedVersion: 0 }, 'key')).toThrow(
+    expect(() => parseFulfillmentTransition('invalid', { expectedVersion: 0 }, 'key')).toThrow(
       BadRequestException,
     );
   });
-  it('forwards only normalized input and the authenticated principal in the existing data envelope', async () => {
-    const result = {
-      item: { id, status: 'PREPARING', version: 1, preparingAt: '2026-11-06T00:00:00.000Z' },
-    };
-    const start = vi.fn().mockResolvedValue(result);
-    const controller = new FulfillmentController(
-      {} as FulfillmentService,
-      { start } as unknown as StartPreparationService,
-    );
-    const principal = { membershipId: id };
-    expect(
-      await controller.startPreparation(id, { expectedVersion: 0 }, ' key ', {
-        staffPrincipal: principal,
-      } as StaffRequest),
-    ).toEqual({ data: result });
-    expect(start).toHaveBeenCalledWith(principal, {
-      itemId: id,
-      expectedVersion: 0,
-      idempotencyKey: 'key',
-    });
-  });
+  it.each(['startPreparation', 'markReady'] as const)(
+    'forwards normalized %s input and authenticated principal in the existing data envelope',
+    async (method) => {
+      const result = {
+        item: { id, status: method === 'markReady' ? 'READY' : 'PREPARING', version: 1 },
+      };
+      const start = vi.fn().mockResolvedValue(result);
+      const controller = new FulfillmentController(
+        {} as FulfillmentService,
+        { start, ready: start } as unknown as FulfillmentTransitionService,
+      );
+      const principal = { membershipId: id };
+      expect(
+        await controller[method](id, { expectedVersion: 0 }, ' key ', {
+          staffPrincipal: principal,
+        } as StaffRequest),
+      ).toEqual({ data: result });
+      expect(start).toHaveBeenCalledWith(principal, {
+        itemId: id,
+        expectedVersion: 0,
+        idempotencyKey: 'key',
+      });
+    },
+  );
 });

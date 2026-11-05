@@ -224,7 +224,7 @@ M2.9 verification: owner-executed final validation passed `99/99` API unit tests
 
 ## M3 — Fulfillment, cancellation and serving
 
-**Status:** `IN_PROGRESS` — owner authorized M3.1 only; remaining tasks are not complete.
+**Status:** `IN_PROGRESS` — M3.1 and M3.2 are `DONE` after owner validation. Remaining tasks are not complete.
 
 Dependency: M2.
 
@@ -248,6 +248,15 @@ Dependency: M2.
 - **Verification:** owner-confirmed local validation: migration `10/10` applied and schema up to date; PostgreSQL integration `49/49` PASS; API unit `154/154` PASS; API lint, typecheck and production build PASS; Prisma validate/generate PASS; `pnpm format:check` and `git diff --check` PASS.
 - **Release boundary:** production migration/deployment and public smoke testing remain pending; local validation does not establish production behavior.
 - **Next:** continue the remaining item transitions only after separate owner authorization; no automatic continuation is authorized.
+
+### M3.2 — Atomic ready transitions
+
+- **Status:** `DONE`; implementation and owner validation complete. M3 overall remains `IN_PROGRESS` because later transitions and workflows are still pending.
+- **Scope:** KITCHEN/BAR `PREPARING → READY` and DIRECT `NEW → READY`; one shared command transaction with M3.1, unchanged staff security/version/idempotency/scope rules, actor audit and existing realtime routing. No UI, serving/cancellation/rejection or financial work.
+- **Artifacts:** reviewed additive `ready_at` migration, shared FulfillmentTransitionService/parser, `POST /staff/fulfillment/items/:id/mark-ready`, focused unit and PostgreSQL cases. See [API contract](../architecture/api-contracts.md#post-stafffulfillmentitemsidmark-ready-m32).
+- **Acceptance:** allowed station/state matrix, one version/timestamp/audit/event under retries/races, operation-scoped replay/conflicts, authorization and rollback consistency; preparingAt/snapshots/Order/BillLines/Bill totals unchanged.
+- **Verification:** owner-confirmed local validation: migrations `11/11` applied and schema up to date; PostgreSQL integration `62/62` PASS; API unit `155/155` PASS; API lint, typecheck and production build PASS; Prisma validate/generate PASS; `pnpm format:check` and `git diff --check` PASS.
+- **Release/checkpoint:** production migration/deployment/public smoke remain pending; local validation does not establish production behavior. Do not start the next task before separate owner authorization.
 
 ## M4 — Checkout and table lifecycle
 
