@@ -52,7 +52,7 @@ Mỗi milestone chỉ bắt đầu khi dependency hoàn tất và có authorizat
 
 ## M3 — Fulfillment, cancellation and serving
 
-**Status:** `TODO` — next milestone after M2 closure; chưa bắt đầu và cần owner authorization riêng.
+**Status:** `IN_PROGRESS` — M3.1 atomic KITCHEN/BAR `NEW → PREPARING` is `DONE` after owner-confirmed local validation: migration `10/10` applied/up to date, PostgreSQL integration `49/49` PASS, API unit `154/154` PASS, API lint/typecheck/build and Prisma validate/generate PASS. No other transition/UI/financial task is complete. Existing station filters are reused from M2.10. Production migration/deployment/public smoke remain pending separately.
 
 **Goal:** complete item-level operational lifecycle.
 

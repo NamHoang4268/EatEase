@@ -37,6 +37,7 @@ export function notification(event: { id: string; eventType: string; payload: un
   const types = [
     'order.submitted',
     'fulfillment.item.created',
+    'fulfillment.item.updated',
     'bill.updated',
     'activation.requested',
     'activation.updated',
@@ -45,7 +46,12 @@ export function notification(event: { id: string; eventType: string; payload: un
   if (!types.includes(event.eventType)) throw new Error('OUTBOX_EVENT_UNSUPPORTED');
   const payload = payloadSchema.parse(event.payload);
   if (
-    ['order.submitted', 'fulfillment.item.created', 'bill.updated'].includes(event.eventType) &&
+    [
+      'order.submitted',
+      'fulfillment.item.created',
+      'fulfillment.item.updated',
+      'bill.updated',
+    ].includes(event.eventType) &&
     !payload.tableSessionId
   )
     throw new Error('OUTBOX_PAYLOAD_INVALID');
@@ -83,7 +89,7 @@ export function matches(
     return false;
   switch (subscription.audience) {
     case 'kitchen':
-      return event.eventType === 'fulfillment.item.created';
+      return ['fulfillment.item.created', 'fulfillment.item.updated'].includes(event.eventType);
     case 'activation':
       return (
         ['activation.requested', 'activation.updated'].includes(event.eventType) &&

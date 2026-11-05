@@ -22,6 +22,7 @@ import { StaffSessionService } from './staff-session.service.js';
     StaffSessionService,
   ],
   exports: [
+    OriginPolicyService,
     StaffAuthorizationGuard,
     StaffCookieService,
     StaffCsrfGuard,

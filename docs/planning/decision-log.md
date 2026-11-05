@@ -4,6 +4,8 @@ Last baseline update: 2026-10-30.
 
 ## APPROVED
 
+- 2026-11-05 — M3.1 owner authorization: implement only KITCHEN/BAR `NEW → PREPARING`, with staff session/Origin/CSRF/`fulfillment.transition`, expectedVersion and atomic preparation metadata/audit/outbox/idempotency. Add `fulfillment.item.updated` routing through existing realtime infrastructure. No UI controls, other transitions or financial adjustments. See [API contract](../architecture/api-contracts.md#post-stafffulfillmentitemsidstart-preparation-m31). Owner final local validation completed: migration `10/10`, PostgreSQL integration `49/49`, API unit `154/154`, lint/typecheck/build, Prisma validate/generate, formatting and diff checks PASS; production release verification remains pending.
+
 - 2026-11-04 — M2.8 owner approval: `OrderStatus` contains only `SUBMITTED`. Order is an immutable submission record; fulfillment transitions belong exclusively to OrderItems. No aggregate `PREPARING` or `COMPLETED` Order state is introduced.
 
 ### Product and workflow

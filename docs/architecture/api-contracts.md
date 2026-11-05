@@ -452,6 +452,18 @@ M2.10 implements this as a read-only queue of persisted `OrderItem.status = NEW`
 - `Cache-Control: no-store`. Empty queue returns `items: []`. GET performs no session refresh, business writes, outbox/audit writes or lazy transitions.
 - Existing `/staff/login` workspace shows the queue only with `fulfillment.read`, including station filter, next page, loading/empty/error/expired states and explicit manual refresh. No polling or state-transition controls; M3 owns fulfillment mutations.
 
+### `POST /staff/fulfillment/items/:id/start-preparation` (M3.1)
+
+Requires a valid StaffSession, exact trusted Origin, staff synchronizer CSRF and `fulfillment.transition`. Path ID must be a UUID. Strict body: `{ "expectedVersion": 0 }` (integer `0–2147483646`). Require a trimmed, non-empty `Idempotency-Key` of at most 128 characters. Client scope/status/station fields are rejected. Missing/malformed input returns `400 FULFILLMENT_REQUEST_INVALID`.
+
+Success: `200`, `Cache-Control: no-store`, `{ "data": { "item": { "id": "uuid", "status": "PREPARING", "version": 1, "preparingAt": "ISO-8601" } } }`. Only persisted `NEW` items with immutable `stationSnapshot = KITCHEN|BAR` are eligible. `DIRECT` and every other transition are outside M3.1. This command changes no Order, snapshot, BillLine, Bill amount or table/session state. Existing submitted work is not gated by ACTIVE-session/OPEN-Bill status.
+
+Scope is resolved from the item and authenticated membership. Missing/foreign items return generic `403 STAFF_AUTHORIZATION_DENIED`; missing/expired/revoked staff sessions return `401 STAFF_SESSION_INVALID`; Origin/CSRF use the existing staff guards. After scoped parent locks, revalidate current staff identity, membership, active restaurant/location and `fulfillment.transition` in the transaction, including before replay. Lock order: TableSession → Bill → staff/session/membership authorization rows → OrderItem → reliability writes. Locks do not mutate parent records. Verify item state/version after locking. Stale version returns `409 FULFILLMENT_VERSION_CONFLICT`; non-NEW state `409 FULFILLMENT_STATE_CONFLICT`; DIRECT `409 FULFILLMENT_STATION_INVALID`.
+
+Atomic commit: PREPARING + version increment + `preparingAt`, membership actor/time/before-after audit, `fulfillment.item.updated`, and completed idempotency result. Operation `START_PREPARATION` is scoped by staff membership and key; fingerprint includes restaurant/location/item ID/expectedVersion. Identical authorized retries return the original response even after the item advanced; changed payload/target returns `409 IDEMPOTENCY_KEY_REUSED`. Distinct-key stale contenders cannot transition twice. Cross-session unique-key losers roll back and re-enter current authorization/locks before replay/conflict. Retention remains the existing OPEN policy; expired keys are not recycled.
+
+The kitchen audience accepts `fulfillment.item.updated` as an invalidation hint with the existing minimal envelope and tenant/location checks. Consumers refetch REST; M3.1 keeps the queue NEW-only and adds no UI controls. A started item disappears from that queue after refresh. Realtime emission/receipt and production deployment remain separate verification gates.
+
 ## Realtime events
 
 Planned event names:
