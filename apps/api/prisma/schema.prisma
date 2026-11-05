@@ -164,6 +164,8 @@ model Restaurant {
   auditLogs          AuditLog[]
   sessionJoinCodes   SessionJoinCode[]
 
+  realtimeTickets RealtimeTicket[]
+
   @@map("restaurant")
 }
 
@@ -185,6 +187,7 @@ model Location {
   outboxEvents       OutboxEvent[]
   auditLogs          AuditLog[]
   sessionJoinCodes   SessionJoinCode[]
+  realtimeTickets    RealtimeTicket[]
 
   @@unique([id, restaurantId], map: "location_id_restaurant_id_key")
   @@unique([restaurantId, code], map: "location_restaurant_id_code_key")
@@ -612,11 +615,36 @@ model OutboxEvent {
   publishedAt   DateTime?  @map("published_at") @db.Timestamptz(3)
   attemptCount  Int        @default(0) @map("attempt_count")
   nextAttemptAt DateTime?  @map("next_attempt_at") @db.Timestamptz(3)
+  claimToken    String?    @map("claim_token") @db.Uuid
+  leaseUntil    DateTime?  @map("lease_until") @db.Timestamptz(3)
+  failedAt      DateTime?  @map("failed_at") @db.Timestamptz(3)
+  lastError     String?    @map("last_error") @db.VarChar(64)
   restaurant    Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "outbox_event_restaurant_fkey")
   location      Location   @relation(fields: [locationId, restaurantId], references: [id, restaurantId], onDelete: Restrict, onUpdate: Cascade, map: "outbox_event_location_scope_fkey")
 
   @@index([aggregateType, aggregateId, occurredAt], map: "outbox_event_aggregate_occurred_idx")
   @@map("outbox_event")
+}
+
+model RealtimeTicket {
+  id             String     @id @default(uuid()) @db.Uuid
+  tokenHash      String     @unique @map("token_hash") @db.Char(64)
+  actorType      String     @map("actor_type") @db.VarChar(16)
+  actorSessionId String     @map("actor_session_id") @db.Uuid
+  restaurantId   String     @map("restaurant_id") @db.Uuid
+  locationId     String     @map("location_id") @db.Uuid
+  audience       String     @db.VarChar(16)
+  resourceId     String?    @map("resource_id") @db.Uuid
+  origin         String     @db.VarChar(256)
+  createdAt      DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  expiresAt      DateTime   @map("expires_at") @db.Timestamptz(3)
+  consumedAt     DateTime?  @map("consumed_at") @db.Timestamptz(3)
+  restaurant     Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Restrict, map: "realtime_ticket_restaurant_id_fkey")
+  location       Location   @relation(fields: [locationId, restaurantId], references: [id, restaurantId], onDelete: Restrict, map: "realtime_ticket_location_fkey")
+
+  @@index([actorType, actorSessionId], map: "realtime_ticket_actor_idx")
+  @@index([expiresAt], map: "realtime_ticket_expiry_idx")
+  @@map("realtime_ticket")
 }
 
 model AuditLog {

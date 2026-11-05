@@ -115,7 +115,7 @@ Dependency: M1 complete/owner-approved; [Phase 1 plan](phase-01.md) approved. M2
 | DONE   | M2.8     | Implement ordering/billing/idempotency/outbox persistence                        |
 | DONE   | M2.9     | Implement shared guest/Waiter `SubmitOrder` and consolidated bill preview        |
 | DONE   | M2.10    | Implement read-only unified kitchen queue                                        |
-| TODO   | M2.11    | Implement approved outbox publisher/realtime topology                            |
+| DONE   | M2.11    | Implement approved outbox publisher/realtime topology                            |
 | TODO   | M2.12    | Complete unit/integration/authorization/concurrency/E2E evidence                 |
 
 M2.1 evidence: versioned Prisma migration deploys cleanly on isolated PostgreSQL; integration tests cover scoped relationships, documented uniqueness/check constraints, MVP one-active-location partial index và idempotent synthetic fixtures. Public menu/API behavior remains M2.2 scope.
@@ -193,7 +193,20 @@ M2.9 verification: owner-executed final validation passed `99/99` API unit tests
 - Staff workspace includes a permission-gated kitchen view with manual refresh, station selection, next page and loading/empty/error/session-expired states. Kitchen-only staff do not fetch activation data.
 - Focused tests cover validation, scoped bounded queries, Guest/Waiter inclusion, snapshots, pagination/ties, current staff permission/membership/session changes, uncommitted/rolled-back item exclusion and PostgreSQL READ ONLY execution. Integration fixtures use random IDs and retain append-only financial history in isolated local `eatease_m2_test`.
 - `AGENTS.md` now requires `pnpm format:check` and `git diff --check` after every final edit, including status/evidence updates; fix affected files and rerun both before handoff.
-- Final validation: owner executed `112/112` API unit tests, `61/61` Web component tests and `91/91` PostgreSQL integration tests (`264/264` total); all PASS. API and Web production builds PASS; API/Web lint and typecheck were also verified PASS. M2.11 has not started.
+- Final validation: owner executed `112/112` API unit tests, `61/61` Web component tests and `91/91` PostgreSQL integration tests (`264/264` total); all PASS. API and Web production builds PASS; API/Web lint and typecheck were also verified PASS.
+
+### M2.11 — Outbox publisher and realtime topology
+
+**Status:** `DONE` — implementation and owner-executed final local validation complete. M2.12 is the next task and remains `TODO`; it has not started. M2.11 production migration, deployment and public smoke testing remain pending.
+
+- Approved [ADR-0007](../architecture/adr/0007-portfolio-deployment.md) topology: same-origin ticket REST, direct Browser → Render Socket.IO, one API instance, explicitly enabled in-process publisher. Ticket is short-lived, hash-only at rest, atomically consumed once and bound to current actor session/Origin/audience/resource.
+- Additive migration `20261105120000_m2_11_realtime_outbox` adds ticket persistence and outbox lease/fencing/quarantine fields/index; no financial data migration or domain-state change.
+- Publisher claims committed bounded batches with SKIP LOCKED, recovers expired leases, backs off transient errors, quarantines invalid/exhausted events, and never completes failed emissions. At-least-once processing is distinct from client receipt; Socket.IO enqueue success does not guarantee receipt.
+- Server reauthorizes subscriptions before fanout and during idle scans. Minimal hints are tenant/location/table isolated. Kitchen, activation/session staff views and Guest/Staff Bill previews refetch REST; fresh-ticket reconnect recovers missed state, coalesces duplicate hints and preserves drafts/manual refresh.
+- Unit/component coverage and real PostgreSQL/Socket.IO integration cases cover leases/concurrency/commit visibility, ticket race/expiry/Origin/CSRF/scopes/revocation, transport errors and financial non-mutation. Local verification does not establish production deployment or public behavior.
+- Development evidence: focused API realtime/config tests `27/27` PASS, Web realtime tests `11/11` PASS, and `33` affected existing component tests PASS across targeted runs. Follow-up focused PostgreSQL verification on isolated local `eatease_m2_test` passed the six previously failing cases plus the ahead-of-database-clock regression (`7/7` selected). Publication/retry timestamps preserve database timeline constraints across clock skew; fixture events whitelist scope fields and use database time.
+- Final owner validation: `131/131` API unit tests, `72/72` Web component tests and `108/108` PostgreSQL integration tests PASS (`311/311` total). API/Web lint, typecheck and production builds PASS. Prisma migration applied successfully to the local test database; Prisma schema validation and client generation PASS.
+- Production release remains pending: owner must apply the reviewed M2.11 migration to the managed database, configure/redeploy the API/Web and execute public smoke tests per the [deployment guide](../development/deployment.md#m211-realtime-and-publisher-setup). Local production-build success is not production deployment evidence. Do not start M2.12 automatically.
 
 ## M3 — Fulfillment, cancellation and serving
 

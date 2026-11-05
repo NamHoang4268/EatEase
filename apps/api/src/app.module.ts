@@ -8,6 +8,7 @@ import { HealthModule } from './health/health.module.js';
 import { JoinCodeModule } from './join-code/join-code.module.js';
 import { OrderingModule } from './ordering/ordering.module.js';
 import { StaffAuthModule } from './staff-auth/staff-auth.module.js';
+import { RealtimeModule } from './realtime/realtime.module.js';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { StaffAuthModule } from './staff-auth/staff-auth.module.js';
     OrderingModule,
     PublicCatalogModule,
     StaffAuthModule,
+    RealtimeModule,
   ],
 })
 export class AppModule {}

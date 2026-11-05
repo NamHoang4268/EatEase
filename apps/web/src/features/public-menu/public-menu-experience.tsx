@@ -1,6 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useRealtime } from '../realtime/use-realtime';
+import { RealtimeNotice } from '../realtime/realtime-notice';
 import {
   addDraftItem,
   calculateDraftSubtotal,
@@ -286,6 +288,21 @@ export function PublicMenuExperience({ publicId }: { publicId: string }) {
     const payload = (await response.json()) as { data: JoinCodeMetadata };
     setHostInvite(payload.data);
   }, []);
+
+  const billRealtime = useRealtime({
+    actor: 'guest',
+    audience: 'bill',
+    csrfToken,
+    enabled: sessionEstablished && guestAccess === 'ORDER_ENABLED',
+    onInvalidate: loadSessionView,
+  });
+  const activationRealtime = useRealtime({
+    actor: 'guest',
+    audience: 'activation',
+    csrfToken,
+    enabled: sessionEstablished && guestAccess !== 'ORDER_ENABLED',
+    onInvalidate: refreshActivation,
+  });
 
   useEffect(() => {
     if (guestAccess !== 'ORDER_ENABLED') {
@@ -663,6 +680,7 @@ export function PublicMenuExperience({ publicId }: { publicId: string }) {
 
   return (
     <main className="customer-shell">
+      <RealtimeNotice {...activationRealtime} />
       <header className="menu-hero">
         <div>
           <p className="eyebrow">{loadState.table.locationName}</p>
@@ -1045,6 +1063,7 @@ export function PublicMenuExperience({ publicId }: { publicId: string }) {
               {billBusy ? 'Đang cập nhật…' : 'Cập nhật'}
             </button>
           </div>
+          <RealtimeNotice {...billRealtime} />
           {billError ? <p className="activation-error">{billError}</p> : null}
           {sessionView ? (
             <>

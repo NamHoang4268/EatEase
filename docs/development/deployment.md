@@ -237,12 +237,53 @@ The initial staff login failed because Render lacked `TRUSTED_WEB_ORIGINS`; addi
 
 M2.7 scoped production verification is **COMPLETE**. Follow-up observations on `2026-11-04` confirmed direct unsigned Render rejection, rotation, revocation, natural 30-minute expiration, existing Guest access preservation, Staff Session restoration, focused IP-spoof regression coverage and distinct Wi-Fi/4G `IP_TABLE` fingerprints. Production threshold load testing was intentionally omitted; IPv6 canonicalization remains non-blocking. Full observations, evidence boundaries, cleanup recommendation and non-claims are in [M2.7 production verification](m2-7-production-verification.md).
 
+## M2.11 realtime and publisher setup
+
+Implementation remains pending owner validation; this section is a release procedure, not production evidence. The approved [ADR-0007 topology](../architecture/adr/0007-portfolio-deployment.md) keeps REST on Vercel, obtains short-lived tickets through that proxy, then connects Socket.IO directly to Render. No Vercel WebSocket rewrite, third-party API cookie, Redis or separate paid worker is required. Client tickets are passed only in Socket.IO auth, never URLs or logs. [Socket.IO emission does not guarantee client receipt](https://socket.io/docs/v4/delivery-guarantees/); reconnect refetches authoritative REST.
+
+### Release sequence and configuration
+
+1. Owner reviews and applies additive migration `20261105120000_m2_11_realtime_outbox` through the existing direct-URL migration gate before enabling new code. Do not run db push/reset. The migration adds an ephemeral ticket table and nullable outbox lease/quarantine fields plus indexes; existing events and financial records are preserved. ALTER TABLE/index creation briefly locks/scans outbox; review backlog size and schedule a quiet window. It needs no seed/backfill and remains compatible with the prior API.
+2. Configure Render `REALTIME_ENABLED=true`, `REALTIME_PUBLIC_URL` equal to the exact public Render HTTPS origin (no trailing slash), `OUTBOX_PUBLISHER_ENABLED=true`, and the existing exact Vercel `TRUSTED_WEB_ORIGINS`. Keep one API instance. Existing database/Join Code/proxy secrets remain server-only; no new shared secret is needed for tickets.
+3. Optional Render limits: `REALTIME_MAX_CONNECTIONS=100` (max 200), `OUTBOX_BATCH_SIZE=10` (max 50), `OUTBOX_POLL_MS=1000`, `OUTBOX_LEASE_SECONDS=60`, `OUTBOX_MAX_ATTEMPTS=8`. Defaults are safe and bounded. Publisher cannot be enabled without realtime. API validates public HTTPS Origin configuration on production startup.
+4. Configure Vercel `NEXT_PUBLIC_REALTIME_ENABLED=true` and rebuild/redeploy Web; it is a public build-time feature flag, never a secret. The authenticated ticket response provides the Socket.IO URL, so do not add production URLs to source. Keep existing REST proxy environment unchanged.
+5. Owner verifies public health/readiness, trusted-Origin ticket POST, direct Socket.IO handshake, authorized queue/Bill invalidation, revocation and reconnect/refetch using separate authorized browser sessions. No production verification is implied by CI or local tests. Never paste tickets/cookies/CSRF tokens into evidence.
+
+Both API flags and the Web feature flag default false. Local development uses `REALTIME_PUBLIC_URL=http://localhost:3001` and trusted `http://localhost:3000`; owner explicitly enables flags in the respective terminal processes or authorized local configuration. Existing Docker PostgreSQL workflow remains unchanged. No worker starts in `NODE_ENV=test`; integration tests invoke one tick explicitly.
+
+### Worker lifecycle and diagnostics
+
+- Main attaches Socket.IO to the API HTTP server; an explicitly enabled publisher starts at application bootstrap. It schedules the next bounded batch after the previous batch completes, with no overlapping timer ticks. Shutdown cancels timers, awaits active processing and closes sockets; an interrupted claim recovers after its lease expires.
+- Events are claimed only after commit. Errors back off `min(300, 2^attemptCount)` seconds. After the configured maximum, including crashed attempts, quarantine stops automatic retries. Invalid/unsupported events quarantine immediately. Older pending activation/ordering events are also eligible; clients safely refetch current state.
+- Logs contain safe error codes (`OUTBOX_DELIVERY_FAILED`, `OUTBOX_TICK_FAILED`, `REALTIME_CLEANUP_FAILED`), never payloads/credentials. Liveness/readiness endpoints retain their API/database meanings; they do not prove worker delivery or browser receipt. Diagnose backlog with the read-only SQL below.
+- Realtime failure leaves manual refresh and all authoritative REST commands available. Client retries are bounded (six reconnect retries, exponential delay up to 30 seconds), then offers explicit retry. Every reconnect obtains a new ticket and refetches; no durable replay/ordering guarantee and no financial side effects. Ticket rejection never converts an HTTP-authenticated session to anonymous.
+- Restart/lease expiry may duplicate invalidations. Successful local emission with no connected audience can mark publication successful; a disconnected client recovers through REST when reconnecting. No multi-instance Socket.IO fanout exists, even though database claims support multiple publisher contenders.
+- During idle periods Render may suspend the API and stop publisher timers; Neon/Render cold starts delay delivery. Publisher queries can consume free-tier database compute while the API is running; disable demo realtime/publisher when not needed and monitor included quotas. Do not add synthetic keep-alive or paid services.
+
+Read-only operational query (no payloads, ticket hashes or credentials):
+
+```sql
+SELECT count(*) FILTER (WHERE published_at IS NULL AND failed_at IS NULL) AS pending,
+       count(*) FILTER (WHERE published_at IS NULL AND lease_until > now()) AS leased,
+       count(*) FILTER (WHERE failed_at IS NOT NULL) AS quarantined,
+       min(occurred_at) FILTER (WHERE published_at IS NULL AND failed_at IS NULL) AS oldest_pending
+FROM outbox_event;
+
+SELECT id, event_type, attempt_count, next_attempt_at, lease_until, failed_at, last_error
+FROM outbox_event
+WHERE published_at IS NULL
+ORDER BY occurred_at, id
+LIMIT 50;
+```
+
+If backlog grows, check enabled flags, startup logs, database schema/availability and quarantine codes. Diagnose the root cause before any explicitly authorized, ID-scoped requeue; never reset financial records or bulk-reset the outbox. If sockets fail, check exact Origin allowlist, direct Render reachability, enabled flags, ticket age (30 seconds)/single use and current permissions. Never debug by logging ticket auth or session material.
+
 ## Actionable free-tier limitations
 
 - **Render cold start:** Free web service spin down sau 15 phút không có inbound HTTP hoặc WebSocket message và có thể cần khoảng một phút để wake. UI/demo phải chấp nhận request đầu chậm; không dùng synthetic keep-alive để lách giới hạn.
 - **Neon wake and connections:** Free compute có thể scale to zero. Dùng pooled URL cho API và giới hạn process pool ở `5`; dùng direct URL chỉ cho migration/admin workflow.
 - **Combined latency:** Render và Neon cùng ngủ có thể làm readiness/request đầu tiên chậm hơn bình thường. Đây là demo limitation, không phải API performance baseline.
-- **Socket.IO later:** Render web service nhận được inbound WebSocket và active messages có thể ngăn spin-down. Tuy nhiên Vercel REST rewrite hiện chưa chứng minh WebSocket upgrade/cookie behavior; không triển khai Socket.IO qua topology này trước security/origin review.
+- **Socket.IO:** M2.11 uses direct Render WebSocket with REST-issued tickets, not a Vercel upgrade proxy. Reconnect/refetch handles sleep, restart and missed events. Keep one API instance until cross-instance fanout is separately approved.
 - **Ephemeral API filesystem:** Render Free filesystem mất dữ liệu khi restart/redeploy; mọi durable state phải ở Neon hoặc external object storage được phê duyệt sau này.
 - **Vercel Hobby usage:** Hobby chỉ cho personal, non-commercial use và có included usage limits. Khi vượt giới hạn, feature có thể bị unavailable cho tới khi usage window reset; không bật paid upgrade cho task này.
 - **Migration gate:** Render Free không có paid pre-deploy command. Chạy `pnpm db:migrate:deploy` thủ công với direct Neon URL trước deploy; không dùng `prisma db push`.

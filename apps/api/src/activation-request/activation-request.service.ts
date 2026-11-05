@@ -163,6 +163,24 @@ export class ActivationRequestService {
           }));
 
         const created = pending === null;
+        if (created) {
+          await transaction.outboxEvent.create({
+            data: {
+              restaurantId: input.principal.restaurantId,
+              locationId: input.principal.locationId,
+              aggregateType: 'ActivationRequest',
+              aggregateId: activation.id,
+              eventType: 'activation.requested',
+              occurredAt: now,
+              payload: {
+                id: activation.id,
+                tableId: input.principal.tableId,
+                version: 0,
+                occurredAt: now.toISOString(),
+              },
+            },
+          });
+        }
         const data: ActivationGuestResponse = {
           status: 'PENDING',
           expiresAt: activation.expiresAt.toISOString(),

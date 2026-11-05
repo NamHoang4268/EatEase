@@ -9,6 +9,8 @@ import type {
 } from './staff-activation.types';
 import { StaffOrderingPanel } from './staff-ordering-panel';
 import { KitchenQueue } from '../fulfillment/kitchen-queue';
+import { useRealtime } from '../realtime/use-realtime';
+import { RealtimeNotice } from '../realtime/realtime-notice';
 
 type AuthState =
   | { status: 'checking' }
@@ -171,6 +173,25 @@ export function StaffActivationWorkspace() {
       setActiveSessions({ status: 'error', message: 'Kết nối bị gián đoạn.' });
     }
   }, []);
+
+  const activationRealtime = useRealtime({
+    actor: 'staff',
+    audience: 'activation',
+    csrfToken,
+    recoverCsrf,
+    enabled:
+      auth.status === 'authenticated' && auth.staff.permissions.includes('table.activation.read'),
+    onInvalidate: loadQueue,
+  });
+  const sessionsRealtime = useRealtime({
+    actor: 'staff',
+    audience: 'sessions',
+    csrfToken,
+    recoverCsrf,
+    enabled:
+      auth.status === 'authenticated' && auth.staff.permissions.includes('table.session.read'),
+    onInvalidate: loadActiveSessions,
+  });
 
   useEffect(() => {
     if (auth.status !== 'authenticated' || !auth.staff.permissions.includes('table.session.read'))
@@ -620,6 +641,8 @@ export function StaffActivationWorkspace() {
 
       {canReadFulfillment ? (
         <KitchenQueue
+          csrfToken={csrfToken}
+          recoverCsrf={recoverCsrf}
           allowed
           onSessionInvalid={() =>
             expireSession('Phiên nhân viên đã hết hạn hoặc bị thu hồi. Vui lòng đăng nhập lại.')
@@ -700,6 +723,8 @@ export function StaffActivationWorkspace() {
         </section>
       ) : null}
 
+      <RealtimeNotice {...activationRealtime} />
+      <RealtimeNotice {...sessionsRealtime} />
       {canReadSessions && (canSubmitOrders || canReadBills) ? (
         <StaffOrderingPanel
           canReadBill={canReadBills}

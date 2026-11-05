@@ -181,8 +181,19 @@ export class GuestSessionService {
       return null;
     }
 
+    return this.authenticateSessionIdOrHash({ tokenHash: hashToken(rawToken) }, now);
+  }
+
+  async authenticateSessionId(id: string, now = new Date()): Promise<GuestPrincipal | null> {
+    return this.authenticateSessionIdOrHash({ id }, now);
+  }
+
+  private async authenticateSessionIdOrHash(
+    where: { id: string } | { tokenHash: string },
+    now: Date,
+  ): Promise<GuestPrincipal | null> {
     const session = await this.prisma.guestSession.findUnique({
-      where: { tokenHash: hashToken(rawToken) },
+      where,
       select: {
         id: true,
         restaurantId: true,

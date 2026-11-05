@@ -466,11 +466,19 @@ bill.updated
 table.session.updated
 ```
 
-- Handshake authenticates cookie session.
-- Subscribe/join room là authorized command riêng.
+- Handshake uses the M2.11 single-use realtime ticket below.
+- Subscription is assigned from the authorized ticket; M2.11 accepts no client room/join command.
 - Guest chỉ join room của TableSession hiện tại.
 - Staff rooms scope theo active membership/location/permission.
 - Event payload có resource ID/version tối thiểu; client refetch REST.
+
+### M2.11 realtime contract
+
+- `POST /staff/realtime/tickets` and `POST /guest/realtime/tickets`: valid session, trusted Origin and existing CSRF guard; strict body `{ audience, tableSessionId? }`; response `201 { data: { ticket, expiresAt, url } }`, `Cache-Control: no-store`. Disabled realtime returns 503. TTL 30 seconds; max four outstanding tickets per session. No idempotency key: each connection/reconnect obtains a new ticket.
+- Staff audiences: `kitchen` requires `fulfillment.read`; `activation` requires `table.activation.read`; `sessions` requires `table.session.read`; `bill` requires `bill.read` plus explicit active/checkout-locked scoped TableSession. Guest `bill` requires ORDER_ENABLED bound to their current active/checkout-locked TableSession; Guest `activation` is bound to their current table. Never accept client tenant/location or another Guest's session.
+- Direct Socket.IO `/socket.io` at returned `url`, WebSocket only, `auth: { ticket }`, no session credentials or query ticket. Trusted issuance Origin must match handshake Origin. Invalid/reused/expired ticket or revoked access yields generic `REALTIME_UNAUTHORIZED`. No client room/join commands.
+- `invalidate` payload is `{ eventId, type, resourceId, version }` only, after current permission and restaurant/location/table authorization. Guest activation hints use constant `resourceId: "current-table"`, never the requester-only ActivationRequest ID. UI coalesces duplicate/burst hints and refetches authoritative REST; reconnect refetches missed state. No mutation or draft clearing. Manual refresh remains available. No durable replay or total event ordering.
+- Explicitly enabled in-process publisher uses bounded PostgreSQL SKIP LOCKED claims, expiring fencing tokens and capped exponential retry/backoff; exhausted/invalid events are quarantined for manual diagnosis. At-least-once processing permits duplicates/out-of-order hints. `publishedAt` means transport emission succeeded, never client receipt. Failure remains retryable. One API/Socket.IO instance only.
 
 ## Transaction contracts
 
