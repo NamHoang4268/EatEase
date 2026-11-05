@@ -2,7 +2,7 @@
 
 Status values: `TODO`, `IN_PROGRESS`, `BLOCKED`, `DONE`.
 
-Planning completion và implementation completion là hai việc khác nhau. M1 foundation đã được implement và verified; M2 đang được triển khai theo task sequence, M3–M5 chưa được implement.
+Planning completion và implementation completion là hai việc khác nhau. M1/M2 và M3.1 đã hoàn tất, được owner verify; phần còn lại của M3 đang `IN_PROGRESS`, M4–M5 chưa bắt đầu.
 
 ## M0 — Repository and documentation bootstrap
 
@@ -220,24 +220,34 @@ M2.9 verification: owner-executed final validation passed `99/99` API unit tests
 - Fix a genuine client recovery gap: re-bootstrap an expired Guest into browse mode explicitly without reloading or losing its in-memory cart; require valid rejoining and explicit submission. No authentication or authorization checks are bypassed.
 - Add Chromium E2E to CI against its ephemeral PostgreSQL service. Explicit StaffSession Prisma injection for TSX and the correct Waiter combobox locator resolve the browser follow-up defects. Final owner browser validation is now `5/5 PASS` in one suite, superseding earlier partial runs. A new M2.12 CI result has not been reported; do not infer it from local validation.
 - Final owner evidence: API unit `138/138`, Web component `73/73`, PostgreSQL integration `109/109`, Playwright browser E2E `5/5` (`325/325`) PASS. API/Web lint, typecheck, production builds and Prisma schema validation PASS; local PostgreSQL `9/9` migrations applied/up to date. Browser evidence covers login/restoration, ordering, authorization boundaries, Guest recovery, retry and reconnect. Approved Phase 1 acceptance criteria have been reviewed and checked complete.
-- Reproducible commands, historical findings and pending production-only gates remain in the verification record. M3 is next; do not begin it without separate owner authorization.
+- Reproducible commands, historical findings and pending production-only gates remain in the verification record. M3.1 was subsequently authorized and completed; later M3 tasks retain separate authorization gates.
 
 ## M3 — Fulfillment, cancellation and serving
 
-**Status:** `TODO` — next milestone; not started. Implementation requires separate owner authorization.
+**Status:** `IN_PROGRESS` — owner authorized M3.1 only; remaining tasks are not complete.
 
 Dependency: M2.
 
-| Status | Task                                                    |
-| ------ | ------------------------------------------------------- |
-| TODO   | Implement KITCHEN/BAR/DIRECT queue filters              |
-| TODO   | Implement versioned item transitions                    |
-| TODO   | Implement guest cancellation request and waiter routing |
-| TODO   | Implement Kitchen PREPARING decision                    |
-| TODO   | Implement automatic full-waiver adjustments             |
-| TODO   | Implement Manager exceptional full correction           |
-| TODO   | Implement waiter serving workflow                       |
-| TODO   | Implement realtime/reconnect behavior and audit tests   |
+| Status      | Task                                                     |
+| ----------- | -------------------------------------------------------- |
+| DONE        | Reuse KITCHEN/BAR/DIRECT queue filters verified in M2.10 |
+| IN_PROGRESS | Implement versioned item transitions                     |
+| TODO        | Implement guest cancellation request and waiter routing  |
+| TODO        | Implement Kitchen PREPARING decision                     |
+| TODO        | Implement automatic full-waiver adjustments              |
+| TODO        | Implement Manager exceptional full correction            |
+| TODO        | Implement waiter serving workflow                        |
+| TODO        | Implement realtime/reconnect behavior and audit tests    |
+
+### M3.1 — Atomic start preparation
+
+- **Status:** `DONE`; implementation and owner validation complete. M3 remains `IN_PROGRESS` because later transitions and workflows are still pending.
+- **Scope:** only KITCHEN/BAR `NEW → PREPARING`, existing staff session/Origin/CSRF/permission enforcement and transaction-time revalidation; no UI controls, other transitions, cancellation or money changes.
+- **Artifacts:** additive nullable preparation timestamp migration; staff REST command, atomic membership audit/outbox/idempotency; `fulfillment.item.updated` allowlist/kitchen routing and focused tests. [Authoritative contract](../architecture/api-contracts.md#post-stafffulfillmentitemsidstart-preparation-m31).
+- **Acceptance:** one status/version/time/audit/event/result under retries/races; deny invalid state/station/version/scope/authentication; rollback leaves no partial records; Order/snapshots/BillLines/Bill totals unchanged.
+- **Verification:** owner-confirmed local validation: migration `10/10` applied and schema up to date; PostgreSQL integration `49/49` PASS; API unit `154/154` PASS; API lint, typecheck and production build PASS; Prisma validate/generate PASS; `pnpm format:check` and `git diff --check` PASS.
+- **Release boundary:** production migration/deployment and public smoke testing remain pending; local validation does not establish production behavior.
+- **Next:** continue the remaining item transitions only after separate owner authorization; no automatic continuation is authorized.
 
 ## M4 — Checkout and table lifecycle
 

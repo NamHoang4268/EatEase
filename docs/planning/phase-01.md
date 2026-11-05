@@ -2,7 +2,7 @@
 
 Status: **APPROVED planning target**, implementation `DONE` (`M2.0–M2.12 DONE`; final owner validation and M2 acceptance review complete).
 
-M2 final owner validation: API `138/138`, Web `73/73`, PostgreSQL `109/109`, browser E2E `5/5` (`325/325`) PASS; API/Web lint, typecheck, production builds and Prisma schema validation PASS; local PostgreSQL `9/9` migrations applied/up to date. All approved M2 acceptance criteria below are satisfied by the [coverage and final evidence](../development/m2-verification.md). M2.11 production migration/deployment and public smoke testing remain pending; local milestone closure does not claim production verification. M3 is next and requires separate implementation authorization.
+M2 final owner validation: API `138/138`, Web `73/73`, PostgreSQL `109/109`, browser E2E `5/5` (`325/325`) PASS; API/Web lint, typecheck, production builds and Prisma schema validation PASS; local PostgreSQL `9/9` migrations applied/up to date. All approved M2 acceptance criteria below are satisfied by the [coverage and final evidence](../development/m2-verification.md). M2.11 production migration/deployment and public smoke testing remain pending; local milestone closure does not claim production verification. Separately, M3.1 start preparation is `DONE` after owner-confirmed local validation; M3 overall remains `IN_PROGRESS` in the [implementation plan](implementation-plan.md#m31--atomic-start-preparation).
 
 Trong roadmap repository, business Phase 1 được thực hiện tại Milestone M2 sau foundation M1.
 

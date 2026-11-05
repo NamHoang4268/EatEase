@@ -37,6 +37,26 @@ describe('realtime contracts', () => {
     expect(matches(scope, { ...event, locationId: 'foreign' }, {})).toBe(false);
     expect(matches(scope, { ...event, eventType: 'bill.updated' }, {})).toBe(false);
   });
+  it('routes item updates only to the scoped kitchen audience with minimal notification data', () => {
+    const event = {
+      id,
+      restaurantId: 'r',
+      locationId: 'l',
+      eventType: 'fulfillment.item.updated',
+      payload: { id, tableSessionId: id, version: 1, status: 'PREPARING', actorId: 'private' },
+    };
+    const hint = notification(event);
+    expect(hint.data).toEqual({ eventId: id, type: event.eventType, resourceId: id, version: 1 });
+    expect(matches(scope, event, hint.payload)).toBe(true);
+    expect(matches(scope, { ...event, restaurantId: 'other' }, hint.payload)).toBe(false);
+    expect(matches(scope, { ...event, locationId: 'other' }, hint.payload)).toBe(false);
+    for (const audience of ['bill', 'activation', 'sessions'] as const) {
+      expect(matches({ ...scope, audience, resourceId: id }, event, hint.payload)).toBe(false);
+    }
+    expect(() => notification({ ...event, payload: { id, version: 1 } })).toThrow(
+      'OUTBOX_PAYLOAD_INVALID',
+    );
+  });
   it('isolates guest table and bill audiences without granting staff room access', () => {
     const event = { restaurantId: 'r', locationId: 'l', eventType: 'activation.updated' };
     const guest = {

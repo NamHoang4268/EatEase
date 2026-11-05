@@ -1,6 +1,6 @@
 # Relational data model
 
-Status: **APPROVED baseline through M2.11; M2.11 implementation pending owner validation**. Physical schema/migrations hiện gồm restaurant/location/table/menu, staff identity/RBAC/session, guest session, activation request, TableSession, Bill, claim/join recovery hashes, Join Code/rate-limit state, idempotency, outbox, realtime tickets và audit persistence. M2.8 bổ sung Order/OrderItem/BillLine; các domain tables từ M3 trở đi tiếp tục là logical baseline cho task tương ứng.
+Status: **APPROVED baseline; M2 and M3.1 DONE, M3 overall IN_PROGRESS**. Physical schema/migrations hiện gồm restaurant/location/table/menu, staff identity/RBAC/session, guest session, activation request, TableSession, Bill, claim/join recovery hashes, Join Code/rate-limit state, idempotency, outbox, realtime tickets và audit persistence. M2.8 bổ sung Order/OrderItem/BillLine; M3.1 adds preparation metadata only. Other M3 domain tables remain logical baseline for their assigned tasks. M3.1 production migration/deployment and public smoke testing remain pending.
 
 ## ERD
 
@@ -182,8 +182,10 @@ Important constraints:
 - `quantity > 0`, price không âm.
 - Snapshot fields immutable sau submit.
 - Terminal operational records không bị xóa.
-- Physical M2.8 OrderItem thêm `restaurant_id`, `location_id`, `bill_id` cho composite Order/Bill/menu ownership. Cancellation metadata và operational timestamps chưa được thêm; chúng thuộc M3.
-- Database trigger chặn DELETE và mọi thay đổi submission snapshots, scope, menu reference, quantity và note. Chỉ operational status/version là mutable; authorized transition commands thuộc M3.
+- Physical M2.8 OrderItem thêm `restaurant_id`, `location_id`, `bill_id` cho composite Order/Bill/menu ownership. M3.1 adds nullable `preparing_at`; cancellation metadata and other operational timestamps remain later M3 scope.
+- Database trigger chặn DELETE và mọi thay đổi submission snapshots, scope, menu reference, quantity và note. Operational status/version and first preparation timestamp are mutable only through authorized transitions; submitted snapshots remain immutable.
+- M3.1 forward-only migration adds `preparing_at TIMESTAMPTZ(3)` without backfill or invented historical times. Existing records retain NULL; a populated timestamp requires non-NEW status and positive version, and cannot be changed/cleared once recorded. Existing snapshot/financial constraints are preserved. ALTER TABLE takes a table lock; production migration/deployment remains pending and needs a reviewed low-traffic release window.
+- Start preparation records the membership actor in atomic `AuditLog` action `FULFILLMENT_PREPARATION_STARTED`, with item ID, TableSession ID, before/after state/version and `created_at` equal to `preparing_at`. Actor is not accepted from the client or exposed in realtime hints. This task does not add redundant actor fields to immutable submission snapshots.
 - `modifiers_snapshot` là JSON array, hiện persist `[]`. Non-empty modifier selections bị từ chối tại internal persistence boundary vì modifier model/pricing vẫn `OPEN`; không invent modifier pricing.
 
 ### Cancellation request
@@ -280,4 +282,5 @@ M2.11 also writes `activation.requested` once with a newly created activation re
 - Write-side expiry transition được commit trước khi application trả expired conflict; read-only GET tiếp tục không lazy-write.
 - Prisma migrations phải được review; custom SQL được dùng khi schema DSL không biểu đạt đủ constraint.
 - M2.8 internal persistence locks TableSession → Bill → guest/membership actor → sorted menu rows (shared). Parent scope/state and active menu/category/location/restaurant are revalidated in transaction. Bill writes serialize on the same Bill row; snapshots use native `bigint` and reject BIGINT overflow before insertion.
+- M3.1 uses TableSession → Bill → staff authorization rows → OrderItem → audit/outbox/idempotency. Parent locks serialize with submission without changing money or imposing ordering eligibility on submitted work. Revalidate staff/session/permission and item scope/state/version under locks; same-key replay occurs before state/version rejection but after authorization. See [start-preparation contract](api-contracts.md#post-stafffulfillmentitemsidstart-preparation-m31).
 - The existing idempotency unique key is the final cross-session race guard. A unique-key loser rolls back every financial/outbox write and re-enters the same scoped locks/actor checks to replay or reject the winner. Order/Items/Lines, Bill totals/version, outbox and completed idempotency result commit atomically; no in-progress or separate idempotency framework is introduced.

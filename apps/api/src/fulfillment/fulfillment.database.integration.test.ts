@@ -3,7 +3,8 @@ import type { INestApplication } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';
 import request from 'supertest';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import type { Prisma } from '../generated/prisma/client.js';
 import { AppModule } from '../app.module.js';
 import { FoundationExceptionFilter } from '../common/filters/foundation-exception.filter.js';
 import { PrismaService } from '../database/prisma.service.js';
@@ -11,6 +12,7 @@ import { OrderPersistence } from '../ordering/order-persistence.js';
 import { hashToken } from '../staff-auth/auth.crypto.js';
 import type { StaffPrincipal } from '../staff-auth/staff-auth.types.js';
 import { FulfillmentService } from './fulfillment.service.js';
+import { StartPreparationService } from './start-preparation.service.js';
 
 const url = process.env.DATABASE_URL;
 if (!url) throw new Error('DATABASE_URL is required for M2.10 integration tests.');
@@ -36,6 +38,7 @@ type Fixture = {
   roleId: string;
   itemId: string;
   token: string;
+  csrf: string;
   permissionId: string;
   categoryId: string;
 };
@@ -55,6 +58,7 @@ describe('M2.10 read-only fulfillment queue on PostgreSQL', () => {
     const membershipId = randomUUID();
     const roleId = randomUUID();
     const token = randomUUID();
+    const csrf = randomUUID();
     await prisma.restaurant.create({ data: { id: restaurantId, name: 'M2.10 synthetic' } });
     await prisma.location.create({
       data: { id: locationId, restaurantId, code: 'M210', name: 'M2.10', isActive: true },
@@ -74,7 +78,7 @@ describe('M2.10 read-only fulfillment queue on PostgreSQL', () => {
       data: { id: roleId, restaurantId, code: 'M210', name: 'M2.10 test permissions' },
     });
     let permissionId = '';
-    for (const code of ['fulfillment.read', 'order.create_for_table']) {
+    for (const code of ['fulfillment.read', 'fulfillment.transition', 'order.create_for_table']) {
       const permission = await prisma.permission.upsert({
         where: { code },
         create: { code },
@@ -89,7 +93,7 @@ describe('M2.10 read-only fulfillment queue on PostgreSQL', () => {
         staffUserId: userId,
         membershipId,
         tokenHash: hashToken(token),
-        csrfTokenHash: hashToken(randomUUID()),
+        csrfTokenHash: hashToken(csrf),
         expiresAt: new Date(Date.now() + 3_600_000),
       },
     });
@@ -158,6 +162,7 @@ describe('M2.10 read-only fulfillment queue on PostgreSQL', () => {
       roleId,
       itemId: item.id,
       token,
+      csrf,
       permissionId,
       categoryId: category.id,
     };
@@ -169,6 +174,7 @@ describe('M2.10 read-only fulfillment queue on PostgreSQL', () => {
       .set('Cookie', `eatease_staff_session=${context.token}`);
   }
   const result = (body: unknown) => (body as { data: QueueResult }).data;
+  const errorCode = (body: unknown) => (body as { error: { code: string } }).error.code;
 
   beforeAll(async () => {
     const module = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -449,5 +455,287 @@ describe('M2.10 read-only fulfillment queue on PostgreSQL', () => {
     });
     await read().expect(200);
     expect(await snapshot()).toEqual(before);
+  });
+
+  async function preparationFixture(station: 'KITCHEN' | 'BAR' | 'DIRECT' = 'KITCHEN') {
+    const context = await fixture();
+    await prisma.menuItem.update({
+      where: { id: context.itemId },
+      data: { fulfillmentStation: station },
+    });
+    const order = await persistence.persist({
+      restaurantId: context.restaurantId,
+      locationId: context.locationId,
+      tableSessionId: context.tableSessionId,
+      actor: { type: 'GUEST_SESSION', id: context.guestId },
+      idempotencyKey: randomUUID(),
+      idempotencyExpiresAt: new Date(Date.now() + 600_000),
+      items: [
+        { menuItemId: context.itemId, quantity: 2, note: 'Preserve snapshot' },
+        { menuItemId: context.itemId, quantity: 1 },
+      ],
+    });
+    return { ...context, order, targetId: order.order.items[0]!.id };
+  }
+
+  function start(context: Fixture, id: string, version = 0, key = randomUUID()) {
+    return request(server)
+      .post(`/api/v1/staff/fulfillment/items/${id}/start-preparation`)
+      .set('Cookie', `eatease_staff_session=${context.token}`)
+      .set('Origin', 'http://localhost:3000')
+      .set('X-CSRF-Token', context.csrf)
+      .set('Idempotency-Key', key)
+      .send({ expectedVersion: version });
+  }
+
+  const principalFor = (context: Fixture): StaffPrincipal => ({
+    sessionId: context.staffSessionId,
+    staffUserId: context.userId,
+    membershipId: context.membershipId,
+    restaurantId: context.restaurantId,
+    locationId: context.locationId,
+    email: 'fixture@example.test',
+    name: 'Fixture',
+    permissions: ['fulfillment.transition'],
+    csrfTokenHash: hashToken(context.csrf),
+  });
+
+  it.each(['KITCHEN', 'BAR'] as const)(
+    'M3.1 atomically starts %s, records actor/time and preserves financial history',
+    async (station) => {
+      const f = await preparationFixture(station);
+      const before = await prisma.orderItem.findUniqueOrThrow({ where: { id: f.targetId } });
+      const financial = () =>
+        Promise.all([
+          prisma.order.findUnique({ where: { id: f.order.order.id } }),
+          prisma.bill.findUnique({ where: { tableSessionId: f.tableSessionId } }),
+          prisma.billLine.findMany({
+            where: { billId: f.order.order.billId },
+            orderBy: { id: 'asc' },
+          }),
+        ]);
+      const financialBefore = await financial();
+      const response = await start(f, f.targetId).expect(200).expect('Cache-Control', 'no-store');
+      const after = await prisma.orderItem.findUniqueOrThrow({ where: { id: f.targetId } });
+      expect(after).toEqual({
+        ...before,
+        status: 'PREPARING',
+        version: 1,
+        preparingAt: after.preparingAt,
+      });
+      expect(after.preparingAt).toBeInstanceOf(Date);
+      expect(response.body).toEqual({
+        data: {
+          item: {
+            id: f.targetId,
+            status: 'PREPARING',
+            version: 1,
+            preparingAt: after.preparingAt!.toISOString(),
+          },
+        },
+      });
+      expect(await financial()).toEqual(financialBefore);
+      const audit = await prisma.auditLog.findMany({ where: { resourceId: f.targetId } });
+      expect(audit).toHaveLength(1);
+      expect(audit[0]).toMatchObject({
+        actorType: 'STAFF_MEMBERSHIP',
+        actorId: f.membershipId,
+        action: 'FULFILLMENT_PREPARATION_STARTED',
+        createdAt: after.preparingAt,
+      });
+      const events = await prisma.outboxEvent.findMany({
+        where: { aggregateId: f.targetId, eventType: 'fulfillment.item.updated' },
+      });
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({
+        restaurantId: f.restaurantId,
+        locationId: f.locationId,
+        payload: {
+          id: f.targetId,
+          tableSessionId: f.tableSessionId,
+          version: 1,
+          status: 'PREPARING',
+        },
+      });
+      expect(result((await read(f).expect(200)).body).items.map((i) => i.id)).not.toContain(
+        f.targetId,
+      );
+      await expect(
+        prisma.orderItem.update({ where: { id: f.targetId }, data: { preparingAt: null } }),
+      ).rejects.toThrow();
+      await expect(
+        prisma.orderItem.update({ where: { id: f.targetId }, data: { nameSnapshot: 'tampered' } }),
+      ).rejects.toThrow();
+    },
+  );
+
+  it('M3.1 replays concurrent identical keys once and rejects changed payload or target', async () => {
+    const f = await preparationFixture();
+    const key = randomUUID();
+    const responses = await Promise.all([
+      start(f, f.targetId, 0, key),
+      start(f, f.targetId, 0, key),
+    ]);
+    expect(responses.map((r) => r.status)).toEqual([200, 200]);
+    expect(responses[0].body).toEqual(responses[1].body);
+    expect(errorCode((await start(f, f.targetId, 1, key).expect(409)).body)).toBe(
+      'IDEMPOTENCY_KEY_REUSED',
+    );
+    expect(errorCode((await start(f, f.order.order.items[1]!.id, 0, key).expect(409)).body)).toBe(
+      'IDEMPOTENCY_KEY_REUSED',
+    );
+    expect(await prisma.auditLog.count({ where: { resourceId: f.targetId } })).toBe(1);
+    expect(
+      await prisma.outboxEvent.count({
+        where: { aggregateId: f.targetId, eventType: 'fulfillment.item.updated' },
+      }),
+    ).toBe(1);
+    expect(
+      await prisma.idempotencyRecord.count({
+        where: { actorId: f.membershipId, operation: 'START_PREPARATION' },
+      }),
+    ).toBe(1);
+  });
+
+  it('M3.1 serializes distinct-key contenders and rejects stale versions', async () => {
+    const f = await preparationFixture();
+    expect(errorCode((await start(f, f.targetId, 1).expect(409)).body)).toBe(
+      'FULFILLMENT_VERSION_CONFLICT',
+    );
+    const responses = await Promise.all([start(f, f.targetId), start(f, f.targetId)]);
+    expect(responses.map((r) => r.status).sort()).toEqual([200, 409]);
+    expect(await prisma.orderItem.findUnique({ where: { id: f.targetId } })).toMatchObject({
+      version: 1,
+      status: 'PREPARING',
+    });
+    expect(await prisma.auditLog.count({ where: { resourceId: f.targetId } })).toBe(1);
+  });
+
+  it('M3.1 rejects DIRECT and every non-NEW state without reliability writes', async () => {
+    const direct = await preparationFixture('DIRECT');
+    expect(errorCode((await start(direct, direct.targetId).expect(409)).body)).toBe(
+      'FULFILLMENT_STATION_INVALID',
+    );
+    const f = await preparationFixture();
+    for (const status of ['PREPARING', 'READY', 'SERVED', 'REJECTED', 'CANCELLED'] as const) {
+      await prisma.orderItem.update({ where: { id: f.targetId }, data: { status } });
+      expect(errorCode((await start(f, f.targetId).expect(409)).body)).toBe(
+        'FULFILLMENT_STATE_CONFLICT',
+      );
+    }
+    expect(await prisma.auditLog.count({ where: { resourceId: f.targetId } })).toBe(0);
+    expect(
+      await prisma.idempotencyRecord.count({
+        where: { actorId: f.membershipId, operation: 'START_PREPARATION' },
+      }),
+    ).toBe(0);
+  });
+
+  it('M3.1 denies missing/revoked sessions, Origin/CSRF failures, permission and cross-location access', async () => {
+    const f = await preparationFixture();
+    const path = `/api/v1/staff/fulfillment/items/${f.targetId}/start-preparation`;
+    await request(server).post(path).send({ expectedVersion: 0 }).expect(401);
+    await start(f, f.targetId).unset('Origin').expect(403);
+    await start(f, f.targetId).set('Origin', 'https://untrusted.example').expect(403);
+    await start(f, f.targetId).unset('X-CSRF-Token').expect(403);
+    await start(f, f.targetId).set('X-CSRF-Token', 'invalid').expect(403);
+    const expiredAt = new Date(Date.now() - 1_000);
+    await prisma.staffSession.update({
+      where: { id: f.staffSessionId },
+      data: { createdAt: new Date(expiredAt.getTime() - 1_000), expiresAt: expiredAt },
+    });
+    await start(f, f.targetId).expect(401);
+    await prisma.staffSession.update({
+      where: { id: f.staffSessionId },
+      data: { expiresAt: new Date(Date.now() + 3_600_000) },
+    });
+    const other = await fixture();
+    await start(other, f.targetId).expect(403);
+    const permission = await prisma.permission.findUniqueOrThrow({
+      where: { code: 'fulfillment.transition' },
+    });
+    await prisma.rolePermission.delete({
+      where: { roleId_permissionId: { roleId: f.roleId, permissionId: permission.id } },
+    });
+    await start(f, f.targetId).expect(403);
+    await prisma.rolePermission.create({ data: { roleId: f.roleId, permissionId: permission.id } });
+    await prisma.staffSession.update({
+      where: { id: f.staffSessionId },
+      data: { revokedAt: new Date() },
+    });
+    await start(f, f.targetId).expect(401);
+    expect(await prisma.auditLog.count({ where: { resourceId: f.targetId } })).toBe(0);
+  });
+
+  it('M3.1 revalidates stale principals and replay authorization inside the transaction', async () => {
+    const f = await preparationFixture();
+    const principal = principalFor(f);
+    const command = { itemId: f.targetId, expectedVersion: 0, idempotencyKey: randomUUID() };
+    const service = app.get(StartPreparationService);
+    await service.start(principal, command);
+    const permission = await prisma.permission.findUniqueOrThrow({
+      where: { code: 'fulfillment.transition' },
+    });
+    await prisma.rolePermission.delete({
+      where: { roleId_permissionId: { roleId: f.roleId, permissionId: permission.id } },
+    });
+    await expect(service.start(principal, command)).rejects.toMatchObject({ status: 403 });
+    await prisma.rolePermission.create({ data: { roleId: f.roleId, permissionId: permission.id } });
+    await prisma.staffSession.update({
+      where: { id: f.staffSessionId },
+      data: { revokedAt: new Date() },
+    });
+    await expect(service.start(principal, command)).rejects.toMatchObject({ status: 401 });
+  });
+
+  it('M3.1 rolls back item, audit, outbox and idempotency after a late persistence failure', async () => {
+    const f = await preparationFixture();
+    const original = prisma.$transaction.bind(prisma);
+    const spy = vi
+      .spyOn(prisma, '$transaction')
+      .mockImplementationOnce((fn: (tx: Prisma.TransactionClient) => Promise<unknown>) =>
+        original(async (tx) =>
+          fn(
+            new Proxy(tx, {
+              get(target, property) {
+                if (property === 'idempotencyRecord')
+                  return {
+                    ...target.idempotencyRecord,
+                    create: () => Promise.reject(new Error('M31 injected late failure')),
+                  };
+                return Reflect.get(target, property) as unknown;
+              },
+            }),
+          ),
+        ),
+      );
+    try {
+      await expect(
+        app.get(StartPreparationService).start(principalFor(f), {
+          itemId: f.targetId,
+          expectedVersion: 0,
+          idempotencyKey: randomUUID(),
+        }),
+      ).rejects.toThrow('M31 injected late failure');
+    } finally {
+      spy.mockRestore();
+    }
+    expect(await prisma.orderItem.findUnique({ where: { id: f.targetId } })).toMatchObject({
+      status: 'NEW',
+      version: 0,
+      preparingAt: null,
+    });
+    expect(await prisma.auditLog.count({ where: { resourceId: f.targetId } })).toBe(0);
+    expect(
+      await prisma.outboxEvent.count({
+        where: { aggregateId: f.targetId, eventType: 'fulfillment.item.updated' },
+      }),
+    ).toBe(0);
+    expect(
+      await prisma.idempotencyRecord.count({
+        where: { actorId: f.membershipId, operation: 'START_PREPARATION' },
+      }),
+    ).toBe(0);
+    await start(f, f.targetId).expect(200);
   });
 });
