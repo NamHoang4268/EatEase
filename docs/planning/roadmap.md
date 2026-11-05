@@ -52,11 +52,13 @@ Mỗi milestone chỉ bắt đầu khi dependency hoàn tất và có authorizat
 
 ## M3 — Fulfillment, cancellation and serving
 
-**Status:** `IN_PROGRESS` — M3.1 and M3.2 atomic fulfillment transitions are `DONE` after owner-confirmed local validation. M3.2 evidence: migrations `11/11` applied/up to date, PostgreSQL integration `62/62` PASS, API unit `155/155` PASS, API lint/typecheck/build, Prisma validate/generate, formatting and diff checks PASS. Later transition/UI/financial tasks are not complete. Existing station filters are reused from M2.10. Production migration/deployment/public smoke remain pending separately.
+**Status:** `IN_PROGRESS` — M3.1–M3.3 are `DONE` after owner-confirmed local validation. M3.3 evidence: PostgreSQL integration `63/63`, API unit `161/161`, Web unit `96/96`, Playwright E2E `5/5` (`325/325`) PASS; API/Web lint, typecheck, production builds, formatting and diff checks PASS. Remaining transitions and serving/cancellation/financial workflows are not complete. Production migrations/deployment/public smoke remain pending separately.
 
 **Goal:** complete item-level operational lifecycle.
 
-M3.2 atomic ready transitions are `DONE`: KITCHEN/BAR PREPARING → READY and DIRECT NEW → READY share M3.1 transaction/security/idempotency infrastructure. No UI, serving or financial workflow is complete. See [task tracker](implementation-plan.md#m32--atomic-ready-transitions).
+M3.2 atomic ready transitions are `DONE`: KITCHEN/BAR PREPARING → READY and DIRECT NEW → READY share M3.1 transaction/security/idempotency infrastructure. See [task tracker](implementation-plan.md#m32--atomic-ready-transitions).
+
+M3.3 interactive fulfillment board is `DONE`: operational status filters, existing transition actions, retry/version recovery and scoped realtime REST refetch extend the staff workspace. No new migration, serving or financial command is added. See [M3.3 tracker and validation evidence](implementation-plan.md#m33--interactive-fulfillment-board). Production migrations/deployment/public smoke remain pending.
 
 **Dependencies:** M2 committed order/queue model.
 

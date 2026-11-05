@@ -67,25 +67,35 @@ afterEach(() => {
 });
 
 describe('realtime view invalidation', () => {
-  it('refreshes the kitchen HTTP queue without sending any mutation', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue(response({ items: [], page: { limit: 50, nextCursor: null } }));
-    vi.stubGlobal('fetch', fetchMock);
-    render(<KitchenQueue allowed csrfToken="csrf" onSessionInvalid={vi.fn()} />);
-    await screen.findByText('Chưa có món mới đang chờ tại trạm này.');
-    await act(async () => {
-      await subscriptions.get('staff:kitchen')!.onInvalidate();
-    });
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(
-      fetchMock.mock.calls.every(
-        ([url, init]) =>
-          String(url).includes('/staff/fulfillment/items') &&
-          (init as RequestInit).method === undefined,
-      ),
-    ).toBe(true);
-  });
+  it.each(['NEW', 'PREPARING', 'READY'])(
+    'refetches the selected %s board on kitchen invalidation without mutating',
+    async (status) => {
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValue(response({ items: [], page: { limit: 50, nextCursor: null } }));
+      vi.stubGlobal('fetch', fetchMock);
+      render(<KitchenQueue allowed csrfToken="csrf" onSessionInvalid={vi.fn()} />);
+      await screen.findByText('Chưa có món ở trạng thái này tại trạm đã chọn.');
+      if (status !== 'NEW') {
+        fireEvent.change(screen.getByLabelText('Trạng thái món'), { target: { value: status } });
+        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+        await screen.findByText('Chưa có món ở trạng thái này tại trạm đã chọn.');
+      }
+      const reads = fetchMock.mock.calls.length;
+      await act(async () => {
+        await subscriptions.get('staff:kitchen')!.onInvalidate();
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(reads + 1);
+      expect(String(fetchMock.mock.lastCall?.[0])).toContain(`status=${status}`);
+      expect(
+        fetchMock.mock.calls.every(
+          ([url, init]) =>
+            String(url).includes('/staff/fulfillment/items') &&
+            (init as RequestInit).method === undefined,
+        ),
+      ).toBe(true);
+    },
+  );
   it('refreshes staff bill only and preserves an in-progress Waiter draft', async () => {
     let billReads = 0;
     const fetchMock = vi.fn().mockImplementation(async (url: string) => {

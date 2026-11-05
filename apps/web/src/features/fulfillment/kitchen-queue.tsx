@@ -10,7 +10,8 @@ type QueueItem = {
   quantity: number;
   note: string | null;
   stationSnapshot: 'KITCHEN' | 'BAR' | 'DIRECT';
-  status: 'NEW';
+  status: 'NEW' | 'PREPARING' | 'READY';
+  version: number;
   order: {
     id: string;
     orderNumber: string;
@@ -28,14 +29,38 @@ type QueueState =
   | { status: 'ready'; data: QueuePage };
 type Props = {
   allowed: boolean;
+  canTransition?: boolean;
   onSessionInvalid: () => void;
   csrfToken?: string | null;
   recoverCsrf?: () => Promise<string>;
 };
 
-export function KitchenQueue({ allowed, onSessionInvalid, csrfToken, recoverCsrf }: Props) {
+const statusLabels = { NEW: 'Mới gửi', PREPARING: 'Đang chuẩn bị', READY: 'Sẵn sàng' };
+function itemAction(item: QueueItem) {
+  if (item.status === 'NEW' && ['KITCHEN', 'BAR'].includes(item.stationSnapshot))
+    return { endpoint: 'start-preparation', label: 'Bắt đầu chuẩn bị' };
+  if (
+    (item.status === 'PREPARING' && ['KITCHEN', 'BAR'].includes(item.stationSnapshot)) ||
+    (item.status === 'NEW' && item.stationSnapshot === 'DIRECT')
+  )
+    return { endpoint: 'mark-ready', label: 'Đánh dấu sẵn sàng' };
+  return null;
+}
+
+export function KitchenQueue({
+  allowed,
+  canTransition = false,
+  onSessionInvalid,
+  csrfToken,
+  recoverCsrf,
+}: Props) {
   const [state, setState] = useState<QueueState>({ status: 'loading' });
   const [station, setStation] = useState('');
+  const [status, setStatus] = useState('NEW');
+  const [pending, setPending] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const actionInFlight = useRef(false);
+  const attempts = useRef(new Map<string, string>());
   const [refreshRevision, setRefreshRevision] = useState(0);
   const inFlight = useRef(false);
   const realtimeDirty = useRef(false);
@@ -53,7 +78,7 @@ export function KitchenQueue({ allowed, onSessionInvalid, csrfToken, recoverCsrf
       requestController.current = controller;
       setState({ status: 'loading' });
       try {
-        const query = new URLSearchParams({ status: 'NEW', limit: '50' });
+        const query = new URLSearchParams({ status, limit: '50' });
         if (station) query.set('station', station);
         if (cursor) query.set('cursor', cursor);
         const response = await fetch(`/api/v1/staff/fulfillment/items?${query}`, {
@@ -87,8 +112,86 @@ export function KitchenQueue({ allowed, onSessionInvalid, csrfToken, recoverCsrf
         }
       }
     },
-    [allowed, station],
+    [allowed, station, status],
   );
+
+  const transition = async (item: QueueItem) => {
+    const action = itemAction(item);
+    if (!allowed || !canTransition || !action || actionInFlight.current || !csrfToken) return;
+    // Bind retries to the exact item/action/version, even after a refresh or filter change.
+    const identity = `${item.id}:${action.endpoint}:${item.version}`;
+    const key = attempts.current.get(identity) ?? crypto.randomUUID();
+    attempts.current.set(identity, key);
+    actionInFlight.current = true;
+    setPending(item.id);
+    setMessage(null);
+    const send = (token: string) =>
+      fetch(`/api/v1/staff/fulfillment/items/${encodeURIComponent(item.id)}/${action.endpoint}`, {
+        method: 'POST',
+        credentials: 'include',
+        cache: 'no-store',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': token,
+          'Idempotency-Key': key,
+        },
+        body: JSON.stringify({ expectedVersion: item.version }),
+      });
+    const readCode = async (response: Response) => {
+      const body = (await response.json().catch(() => null)) as {
+        error?: { code?: string };
+      } | null;
+      return body?.error?.code;
+    };
+    try {
+      let response = await send(csrfToken);
+      let code = response.ok ? undefined : await readCode(response);
+      if (response.status === 403 && code === 'STAFF_CSRF_INVALID' && recoverCsrf) {
+        response = await send(await recoverCsrf());
+        code = response.ok ? undefined : await readCode(response);
+      }
+      if (response.status === 401) {
+        attempts.current.clear();
+        onSessionInvalidRef.current();
+        return;
+      }
+      if (response.ok) {
+        attempts.current.delete(identity);
+        setMessage('Đã cập nhật món. Đang tải trạng thái từ máy chủ.');
+        setState({ status: 'loading' });
+        setRefreshRevision((value) => value + 1);
+      } else if (response.status === 409) {
+        attempts.current.delete(identity);
+        setMessage(
+          'Trạng thái món hoặc lần thao tác đã thay đổi. Đã yêu cầu tải lại; hãy kiểm tra trước khi thao tác tiếp.',
+        );
+        setState({ status: 'loading' });
+        setRefreshRevision((value) => value + 1);
+      } else {
+        if (
+          response.status < 500 &&
+          ![408, 429].includes(response.status) &&
+          code !== 'STAFF_CSRF_INVALID'
+        )
+          attempts.current.delete(identity);
+        setMessage(
+          response.status === 403 && code !== 'STAFF_CSRF_INVALID'
+            ? 'Bạn không còn quyền thực hiện thao tác này. Hãy làm mới hàng chờ.'
+            : 'Chưa thể xác nhận thao tác. Hãy thử lại để tiếp tục cùng lần thao tác.',
+        );
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message === 'STAFF_SESSION_INVALID') {
+        attempts.current.clear();
+        onSessionInvalidRef.current();
+      } else {
+        setMessage('Kết nối bị gián đoạn. Thử lại sẽ tiếp tục cùng lần thao tác.');
+      }
+    } finally {
+      actionInFlight.current = false;
+      setPending(null);
+    }
+  };
 
   const realtime = useRealtime({
     actor: 'staff',
@@ -127,15 +230,33 @@ export function KitchenQueue({ allowed, onSessionInvalid, csrfToken, recoverCsrf
         <div>
           <p className="eyebrow">Kitchen · Bar · Direct</p>
           <h2 id="kitchen-queue-heading">Hàng chờ phục vụ</h2>
-          <p>Danh sách món mới đã gửi · Chỉ xem</p>
+          <p>Theo dõi món mới, đang chuẩn bị và sẵn sàng</p>
         </div>
         <div className="kitchen-queue-actions">
+          <label>
+            Trạng thái món
+            <select
+              value={status}
+              disabled={loading || pending !== null}
+              onChange={(event) => {
+                setState({ status: 'loading' });
+                setStatus(event.target.value);
+              }}
+            >
+              <option value="NEW">Mới gửi</option>
+              <option value="PREPARING">Đang chuẩn bị</option>
+              <option value="READY">Sẵn sàng</option>
+            </select>
+          </label>
           <label>
             Trạm phục vụ
             <select
               value={station}
-              disabled={loading}
-              onChange={(event) => setStation(event.target.value)}
+              disabled={loading || pending !== null}
+              onChange={(event) => {
+                setState({ status: 'loading' });
+                setStation(event.target.value);
+              }}
             >
               <option value="">Tất cả trạm</option>
               <option value="KITCHEN">Kitchen</option>
@@ -155,6 +276,11 @@ export function KitchenQueue({ allowed, onSessionInvalid, csrfToken, recoverCsrf
       </div>
       {loading ? <p role="status">Đang tải hàng chờ bếp…</p> : null}
       <RealtimeNotice {...realtime} />
+      {message ? (
+        <p role="status" className="queue-notice">
+          {message}
+        </p>
+      ) : null}
       {state.status === 'error' ? (
         <p role="alert">Chưa thể tải hàng chờ. Hãy kiểm tra kết nối và làm mới.</p>
       ) : null}
@@ -165,7 +291,7 @@ export function KitchenQueue({ allowed, onSessionInvalid, csrfToken, recoverCsrf
       {state.status === 'ready' ? (
         <>
           {state.data.items.length === 0 ? (
-            <p role="status">Chưa có món mới đang chờ tại trạm này.</p>
+            <p role="status">Chưa có món ở trạng thái này tại trạm đã chọn.</p>
           ) : (
             <ul className="kitchen-items">
               {state.data.items.map((item) => (
@@ -176,7 +302,9 @@ export function KitchenQueue({ allowed, onSessionInvalid, csrfToken, recoverCsrf
                     </h3>
                     <strong>× {item.quantity}</strong>
                   </div>
-                  <p>{item.stationSnapshot} · Mới gửi</p>
+                  <p>
+                    {item.stationSnapshot} · {statusLabels[item.status]}
+                  </p>
                   <p>
                     {item.order.source === 'QR_GUEST' ? 'Khách gửi' : 'Nhân viên nhập'} ·{' '}
                     <time dateTime={item.order.submittedAt}>
@@ -185,6 +313,16 @@ export function KitchenQueue({ allowed, onSessionInvalid, csrfToken, recoverCsrf
                   </p>
                   <p className="kitchen-order-reference">Order: {item.order.orderNumber}</p>
                   {item.note ? <p className="kitchen-item-note">Ghi chú: {item.note}</p> : null}
+                  {canTransition && itemAction(item) ? (
+                    <button
+                      type="button"
+                      className="primary-button"
+                      disabled={pending !== null || !csrfToken}
+                      onClick={() => void transition(item)}
+                    >
+                      {pending === item.id ? 'Đang cập nhật…' : itemAction(item)!.label}
+                    </button>
+                  ) : null}
                 </li>
               ))}
             </ul>

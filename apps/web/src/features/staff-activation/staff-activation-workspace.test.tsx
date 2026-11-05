@@ -80,7 +80,7 @@ describe('StaffActivationWorkspace', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
     render(<StaffActivationWorkspace />);
-    await screen.findByText('Chưa có món mới đang chờ tại trạm này.');
+    await screen.findByText('Chưa có món ở trạng thái này tại trạm đã chọn.');
     expect(screen.queryByRole('heading', { name: 'Yêu cầu kích hoạt bàn' })).toBeNull();
     expect(
       fetchMock.mock.calls.some(([url]) => String(url).includes('/staff/activation-requests')),
