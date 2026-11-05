@@ -7,7 +7,7 @@ const inputSchema = z.object({
   key: z.string().trim().min(1).max(128),
 });
 
-export function parseStartPreparation(itemId: unknown, body: unknown, key: unknown) {
+export function parseFulfillmentTransition(itemId: unknown, body: unknown, key: unknown) {
   const parsed = inputSchema.safeParse({ itemId, body, key });
   if (!parsed.success) throw new BadRequestException({ code: 'FULFILLMENT_REQUEST_INVALID' });
   return {

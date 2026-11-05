@@ -52,9 +52,11 @@ Mỗi milestone chỉ bắt đầu khi dependency hoàn tất và có authorizat
 
 ## M3 — Fulfillment, cancellation and serving
 
-**Status:** `IN_PROGRESS` — M3.1 atomic KITCHEN/BAR `NEW → PREPARING` is `DONE` after owner-confirmed local validation: migration `10/10` applied/up to date, PostgreSQL integration `49/49` PASS, API unit `154/154` PASS, API lint/typecheck/build and Prisma validate/generate PASS. No other transition/UI/financial task is complete. Existing station filters are reused from M2.10. Production migration/deployment/public smoke remain pending separately.
+**Status:** `IN_PROGRESS` — M3.1 and M3.2 atomic fulfillment transitions are `DONE` after owner-confirmed local validation. M3.2 evidence: migrations `11/11` applied/up to date, PostgreSQL integration `62/62` PASS, API unit `155/155` PASS, API lint/typecheck/build, Prisma validate/generate, formatting and diff checks PASS. Later transition/UI/financial tasks are not complete. Existing station filters are reused from M2.10. Production migration/deployment/public smoke remain pending separately.
 
 **Goal:** complete item-level operational lifecycle.
+
+M3.2 atomic ready transitions are `DONE`: KITCHEN/BAR PREPARING → READY and DIRECT NEW → READY share M3.1 transaction/security/idempotency infrastructure. No UI, serving or financial workflow is complete. See [task tracker](implementation-plan.md#m32--atomic-ready-transitions).
 
 **Dependencies:** M2 committed order/queue model.
 

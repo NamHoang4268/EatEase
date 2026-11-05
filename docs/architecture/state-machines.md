@@ -76,7 +76,7 @@ Owner-approved M2.8 contract (`2026-11-04`): `OrderStatus = SUBMITTED` only. Ord
 
 `REJECTED`, `CANCELLED`, `SERVED` là terminal. Manager financial correction cho `READY/SERVED` không đổi operational state.
 
-M3.1 implements only `NEW → PREPARING` for KITCHEN/BAR snapshots, with `fulfillment.transition`, expectedVersion, atomic preparation timestamp/membership audit/outbox/idempotency. DIRECT remains NEW until its separately implemented ready command; no UI mutation controls or other transitions are added. See [command contract](api-contracts.md#post-stafffulfillmentitemsidstart-preparation-m31).
+M3.1 implements `NEW → PREPARING` for KITCHEN/BAR snapshots. M3.2 adds KITCHEN/BAR `PREPARING → READY` and DIRECT `NEW → READY`, all requiring `fulfillment.transition`, expectedVersion and atomic timestamp/membership audit/outbox/idempotency. DIRECT cannot start preparation; KITCHEN/BAR cannot skip it. Both commands share one station-aware transaction implementation and do not mutate submitted snapshots or money. No UI controls, serving, rejection or cancellation commands are added. See [start-preparation](api-contracts.md#post-stafffulfillmentitemsidstart-preparation-m31) and [mark-ready](api-contracts.md#post-stafffulfillmentitemsidmark-ready-m32) contracts.
 
 ## CancellationRequest
 

@@ -9,17 +9,33 @@ import {
 import { PrismaService } from '../database/prisma.service.js';
 import type { StaffPrincipal } from '../staff-auth/staff-auth.types.js';
 
-const OPERATION = 'START_PREPARATION';
+type Operation = 'START_PREPARATION' | 'MARK_READY';
 const denied = () => new ForbiddenException({ code: 'STAFF_AUTHORIZATION_DENIED' });
 const conflict = (code: string) => new ConflictException({ code });
 type Input = { itemId: string; expectedVersion: number; idempotencyKey: string };
-type Result = { item: { id: string; status: 'PREPARING'; version: number; preparingAt: string } };
+type Result = {
+  item: { id: string; version: number } & (
+    { status: 'PREPARING'; preparingAt: string } | { status: 'READY'; readyAt: string }
+  );
+};
 
 @Injectable()
-export class StartPreparationService {
+export class FulfillmentTransitionService {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   async start(principal: StaffPrincipal, input: Input): Promise<Result> {
+    return this.execute(principal, input, 'START_PREPARATION');
+  }
+
+  async ready(principal: StaffPrincipal, input: Input): Promise<Result> {
+    return this.execute(principal, input, 'MARK_READY');
+  }
+
+  private async execute(
+    principal: StaffPrincipal,
+    input: Input,
+    operation: Operation,
+  ): Promise<Result> {
     const scope = { restaurantId: principal.restaurantId, locationId: principal.locationId };
     const target = await this.prisma.orderItem.findFirst({
       where: { id: input.itemId, ...scope },
@@ -30,7 +46,7 @@ export class StartPreparationService {
     const key = {
       actorType: 'STAFF_MEMBERSHIP' as const,
       actorId: principal.membershipId,
-      operation: OPERATION,
+      operation,
       idempotencyKey: input.idempotencyKey,
     };
     const requestHash = createHash('sha256')
@@ -68,9 +84,15 @@ export class StartPreparationService {
           AND p."code" = 'fulfillment.transition' FOR SHARE OF mr, rp, p`;
         if (!permissions[0]) throw denied();
         const items = await tx.$queryRaw<
-          Array<{ id: string; status: string; station: string; version: number }>
+          Array<{
+            id: string;
+            status: 'NEW' | 'PREPARING' | 'READY' | 'SERVED' | 'REJECTED' | 'CANCELLED';
+            station: string;
+            version: number;
+            preparingAt: Date | null;
+          }>
         >`
-        SELECT "id", "status", "station_snapshot" AS "station", "version" FROM "order_item"
+        SELECT "id", "status", "station_snapshot" AS "station", "version", "preparing_at" AS "preparingAt" FROM "order_item"
         WHERE "id" = ${input.itemId}::uuid AND "restaurant_id" = ${scope.restaurantId}::uuid
           AND "location_id" = ${scope.locationId}::uuid FOR UPDATE`;
         const item = items[0];
@@ -90,31 +112,45 @@ export class StartPreparationService {
           return replay.responseBody as unknown as Result;
         }
         if (item.version !== input.expectedVersion) throw conflict('FULFILLMENT_VERSION_CONFLICT');
-        if (item.status !== 'NEW') throw conflict('FULFILLMENT_STATE_CONFLICT');
-        if (!['KITCHEN', 'BAR'].includes(item.station))
+        const markingReady = operation === 'MARK_READY';
+        const expectedState = markingReady && item.station !== 'DIRECT' ? 'PREPARING' : 'NEW';
+        if (item.status !== expectedState) throw conflict('FULFILLMENT_STATE_CONFLICT');
+        if (
+          !(markingReady ? ['KITCHEN', 'BAR', 'DIRECT'] : ['KITCHEN', 'BAR']).includes(item.station)
+        )
           throw conflict('FULFILLMENT_STATION_INVALID');
-        const now = new Date();
+        // Keep readiness monotonic if the process clock moved backwards since preparation.
+        const now = new Date(
+          Math.max(Date.now(), markingReady ? (item.preparingAt?.getTime() ?? 0) : 0),
+        );
+        const status = markingReady ? 'READY' : 'PREPARING';
         const updated = await tx.orderItem.update({
-          where: { id: item.id, status: 'NEW', version: input.expectedVersion },
-          data: { status: 'PREPARING', version: { increment: 1 }, preparingAt: now },
+          where: { id: item.id, status: expectedState, version: input.expectedVersion },
+          data: {
+            status,
+            version: { increment: 1 },
+            ...(markingReady ? { readyAt: now } : { preparingAt: now }),
+          },
           select: { id: true, version: true },
         });
         const result: Result = {
-          item: { ...updated, status: 'PREPARING', preparingAt: now.toISOString() },
+          item: markingReady
+            ? { ...updated, status: 'READY', readyAt: now.toISOString() }
+            : { ...updated, status: 'PREPARING', preparingAt: now.toISOString() },
         };
         await tx.auditLog.create({
           data: {
             ...scope,
             actorType: 'STAFF_MEMBERSHIP',
             actorId: principal.membershipId,
-            action: 'FULFILLMENT_PREPARATION_STARTED',
+            action: markingReady ? 'FULFILLMENT_ITEM_READY' : 'FULFILLMENT_PREPARATION_STARTED',
             resourceType: 'OrderItem',
             resourceId: item.id,
             createdAt: now,
             metadata: {
               tableSessionId,
-              statusBefore: 'NEW',
-              statusAfter: 'PREPARING',
+              statusBefore: item.status,
+              statusAfter: status,
               versionBefore: item.version,
               versionAfter: updated.version,
             },
@@ -130,7 +166,7 @@ export class StartPreparationService {
             payload: {
               id: item.id,
               tableSessionId,
-              status: 'PREPARING',
+              status,
               version: updated.version,
               occurredAt: now.toISOString(),
             },

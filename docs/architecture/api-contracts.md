@@ -464,6 +464,16 @@ Atomic commit: PREPARING + version increment + `preparingAt`, membership actor/t
 
 The kitchen audience accepts `fulfillment.item.updated` as an invalidation hint with the existing minimal envelope and tenant/location checks. Consumers refetch REST; M3.1 keeps the queue NEW-only and adds no UI controls. A started item disappears from that queue after refresh. Realtime emission/receipt and production deployment remain separate verification gates.
 
+### `POST /staff/fulfillment/items/:id/mark-ready` (M3.2)
+
+Uses the same staff guards, `fulfillment.transition`, server-resolved scope, strict `{ "expectedVersion": 0 }`, required `Idempotency-Key`, input limits and error envelope as start-preparation. Success is `200`, `Cache-Control: no-store`, `{ "data": { "item": { "id": "uuid", "status": "READY", "version": 1, "readyAt": "ISO-8601" } } }`; the version shown is illustrative and always increments the current version exactly once.
+
+Station-aware rules: KITCHEN/BAR require `PREPARING → READY`; DIRECT requires `NEW → READY`. KITCHEN/BAR cannot skip preparation and DIRECT cannot mark a PREPARING item READY. Other states return `409 FULFILLMENT_STATE_CONFLICT`, stale versions return `409 FULFILLMENT_VERSION_CONFLICT`, and unsupported stations return `409 FULFILLMENT_STATION_INVALID`. Normal readiness needs no reason; audit records the authenticated membership, item/TableSession, before/after state/version and timestamp.
+
+Both endpoints use one `FulfillmentTransitionService` transaction implementation with the existing TableSession → Bill → staff authorization → item → reliability lock order. It revalidates current actor/permission and scope before replay or mutation. MARK_READY atomically writes READY/version/`readyAt`, `FULFILLMENT_ITEM_READY` audit, the existing `fulfillment.item.updated` event and completed idempotency result. It preserves `preparingAt`, submitted snapshots, Order, BillLines and all financial totals. Submitted work is not gated by ACTIVE-session/OPEN-Bill status. `readyAt` is no earlier than a recorded `preparingAt` even if the process clock moved backwards; historical NULL preparation timestamps are not fabricated.
+
+Idempotency operation is `MARK_READY`, separate from `START_PREPARATION`, with the same membership/key uniqueness and scoped item/version fingerprint. Same-operation identical retries return the original READY response; changed payload/target returns `409 IDEMPOTENCY_KEY_REUSED`. A key may independently identify one start and one ready operation. Retrying start after READY still replays its original PREPARING result. No duplicate audit/outbox writes occur. Existing event allowlist, kitchen audience isolation and REST-refetch semantics are reused; the queue remains NEW-only and no UI actions are added. Production migration/deployment/public smoke remain pending.
+
 ## Realtime events
 
 Planned event names:
