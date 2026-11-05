@@ -33,10 +33,15 @@ const menu = {
 };
 
 function response(body: unknown, status = 200) {
-  return { ok: status >= 200 && status < 300, status, json: vi.fn().mockResolvedValue(body) };
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    json: vi.fn().mockResolvedValue(body),
+    clone: () => ({ json: vi.fn().mockResolvedValue(body) }),
+  };
 }
 
-function bootstrap(accessLevel: 'BROWSE_ONLY' | 'ORDER_ENABLED') {
+function bootstrap(accessLevel: 'BROWSE_ONLY' | 'ORDER_ENABLED', csrfToken = 'guest-csrf') {
   return response({
     data: {
       table,
@@ -46,7 +51,7 @@ function bootstrap(accessLevel: 'BROWSE_ONLY' | 'ORDER_ENABLED') {
         idleExpiresAt: new Date(Date.now() + 1_800_000).toISOString(),
         absoluteExpiresAt: new Date(Date.now() + 28_800_000).toISOString(),
       },
-      csrfToken: 'guest-csrf',
+      csrfToken,
     },
   });
 }
@@ -91,6 +96,61 @@ async function submitJoin(): Promise<void> {
 }
 
 describe('M2.7 Host and Join experience', () => {
+  it('recovers expired credentials without reload, retains the draft and requires explicit valid joining', async () => {
+    vi.stubGlobal('crypto', { randomUUID: () => 'recovery-key' });
+    let bootstraps = 0;
+    const fetchMock = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (url.includes('/public/tables/')) return Promise.resolve(response({ data: table }));
+      if (url.includes('/public/menu')) return Promise.resolve(response({ data: menu }));
+      if (url === '/api/v1/guest-sessions' && init?.method === 'POST') {
+        bootstraps++;
+        return Promise.resolve(
+          bootstraps === 1
+            ? bootstrap('ORDER_ENABLED')
+            : bootstrap('BROWSE_ONLY', 'fresh-browse-csrf'),
+        );
+      }
+      if (url === '/api/v1/activation-requests/current')
+        return Promise.resolve(response({ data: { status: 'NOT_REQUESTED' } }));
+      if (url.endsWith('/join-code')) return Promise.resolve(response({}, 403));
+      if (url === '/api/v1/table-sessions/current')
+        return Promise.resolve(
+          response({ data: { bill: { lines: [], totalAmount: '0', balanceAmount: '0' } } }),
+        );
+      if (url === '/api/v1/orders')
+        return Promise.resolve(response({ error: { code: 'GUEST_SESSION_INVALID' } }, 401));
+      if (url === '/api/v1/table-sessions/join') return Promise.resolve(joinSuccess());
+      if (url === '/api/v1/guest-sessions/current')
+        return Promise.resolve(response({ data: { session: { accessLevel: 'ORDER_ENABLED' } } }));
+      return Promise.reject(new Error(`Unhandled ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    render(<PublicMenuExperience publicId={publicId} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Thêm Cơm gà vào giỏ nháp' }));
+    fireEvent.click(screen.getByRole('button', { name: /Giỏ nháp/ }));
+    await waitFor(() =>
+      expect((screen.getByRole('button', { name: 'Gửi món' }) as HTMLButtonElement).disabled).toBe(
+        false,
+      ),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Gửi món' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Khôi phục phiên xem thực đơn' }));
+    await waitFor(() => expect(bootstraps).toBe(2));
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'Khôi phục phiên xem thực đơn' })).toBeNull(),
+    );
+    expect((screen.getByRole('button', { name: 'Gửi món' }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    expect(screen.getByLabelText('Số lượng hiện tại: 1')).toBeDefined();
+    await submitJoin();
+    await screen.findByText('Đã cấp quyền tại bàn');
+    expect(screen.getByLabelText('Số lượng hiện tại: 1')).toBeDefined();
+    expect(fetchMock.mock.calls.filter(([url]) => url === '/api/v1/orders')).toHaveLength(1);
+    const joinCall = fetchMock.mock.calls.find(([url]) => url === '/api/v1/table-sessions/join');
+    expect(joinCall?.[1]).toMatchObject({ headers: { 'X-CSRF-Token': 'fresh-browse-csrf' } });
+  });
+
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();

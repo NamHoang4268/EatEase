@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { StaffMembershipStatus, StaffUserStatus } from '../generated/prisma/enums.js';
 import { PrismaService } from '../database/prisma.service.js';
 import { STAFF_SESSION_TTL_MS } from './auth.constants.js';
@@ -8,7 +8,7 @@ import type { Prisma } from '../generated/prisma/client.js';
 
 @Injectable()
 export class StaffSessionService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   async create(
     staff: Omit<LoginResult['staff'], 'permissions'> & { permissions: readonly string[] },

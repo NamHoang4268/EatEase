@@ -11,6 +11,8 @@
   "include": [
     "src/**/*.ts",
     "scripts/**/*.ts",
+    "e2e/**/*.ts",
+    "playwright.config.ts",
     "prisma7.config.ts",
     "vitest.config.ts",
     "vitest.integration.config.ts"

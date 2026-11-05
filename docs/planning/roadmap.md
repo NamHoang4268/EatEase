@@ -38,7 +38,7 @@ Mỗi milestone chỉ bắt đầu khi dependency hoàn tất và có authorizat
 
 **Goal:** static QR đến kitchen queue với hybrid ordering và consolidated bill preview.
 
-**Status:** M2.0–M2.11 `DONE`, với M2.11 owner local validation `311/311` tests PASS cùng lint/typecheck/build và local Prisma verification. M2 vẫn `IN_PROGRESS`; M2.12 final comprehensive verification là task kế tiếp, vẫn `TODO` và chưa bắt đầu. M2.11 production migration/deployment và public smoke testing vẫn pending; xem [implementation evidence](implementation-plan.md#m211--outbox-publisher-and-realtime-topology).
+**Status:** M2 và toàn bộ M2.0–M2.12 `DONE` sau final owner validation: API `138/138`, Web `73/73`, PostgreSQL `109/109`, browser E2E `5/5` (`325/325`) PASS; API/Web lint, typecheck, production builds và Prisma schema validation PASS; local PostgreSQL `9/9` migrations applied/up to date. Approved Phase 1 acceptance criteria đã đạt; xem [M2 closure evidence](../development/m2-verification.md). M2.11 production migration/deployment và public smoke testing vẫn pending, không nằm trong claim local verification này.
 
 **Dependencies:** M1 completed/owner-approved; schema/permission/API contract review theo task liên quan.
 
@@ -51,6 +51,8 @@ Mỗi milestone chỉ bắt đầu khi dependency hoàn tất và có authorizat
 **Deliverables:** first demonstrable business slice và test evidence.
 
 ## M3 — Fulfillment, cancellation and serving
+
+**Status:** `TODO` — next milestone after M2 closure; chưa bắt đầu và cần owner authorization riêng.
 
 **Goal:** complete item-level operational lifecycle.
 

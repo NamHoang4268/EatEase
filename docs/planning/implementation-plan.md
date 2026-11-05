@@ -100,6 +100,8 @@ Mỗi assigned delivery bắt đầu từ updated `main`, giữ scope rõ và d�
 
 ## M2 — First business vertical slice
 
+**Status:** `DONE` — approved M2 acceptance criteria satisfied; owner final local validation `325/325` PASS. Production migration/deployment/public smoke remain pending separately; see [M2 final evidence](../development/m2-verification.md).
+
 Dependency: M1 complete/owner-approved; [Phase 1 plan](phase-01.md) approved. M2 readiness review đã hoàn tất; các decision còn pending chỉ block task phụ thuộc trực tiếp, không block M2.1 catalog schema.
 
 | Status | Sequence | Task                                                                             |
@@ -116,7 +118,7 @@ Dependency: M1 complete/owner-approved; [Phase 1 plan](phase-01.md) approved. M2
 | DONE   | M2.9     | Implement shared guest/Waiter `SubmitOrder` and consolidated bill preview        |
 | DONE   | M2.10    | Implement read-only unified kitchen queue                                        |
 | DONE   | M2.11    | Implement approved outbox publisher/realtime topology                            |
-| TODO   | M2.12    | Complete unit/integration/authorization/concurrency/E2E evidence                 |
+| DONE   | M2.12    | Complete unit/integration/authorization/concurrency/E2E evidence                 |
 
 M2.1 evidence: versioned Prisma migration deploys cleanly on isolated PostgreSQL; integration tests cover scoped relationships, documented uniqueness/check constraints, MVP one-active-location partial index và idempotent synthetic fixtures. Public menu/API behavior remains M2.2 scope.
 
@@ -197,7 +199,7 @@ M2.9 verification: owner-executed final validation passed `99/99` API unit tests
 
 ### M2.11 — Outbox publisher and realtime topology
 
-**Status:** `DONE` — implementation and owner-executed final local validation complete. M2.12 is the next task and remains `TODO`; it has not started. M2.11 production migration, deployment and public smoke testing remain pending.
+**Status:** `DONE` — implementation and owner-executed final local validation complete. M2.12 final verification is tracked below. M2.11 production migration, deployment and public smoke testing remain pending.
 
 - Approved [ADR-0007](../architecture/adr/0007-portfolio-deployment.md) topology: same-origin ticket REST, direct Browser → Render Socket.IO, one API instance, explicitly enabled in-process publisher. Ticket is short-lived, hash-only at rest, atomically consumed once and bound to current actor session/Origin/audience/resource.
 - Additive migration `20261105120000_m2_11_realtime_outbox` adds ticket persistence and outbox lease/fencing/quarantine fields/index; no financial data migration or domain-state change.
@@ -206,9 +208,23 @@ M2.9 verification: owner-executed final validation passed `99/99` API unit tests
 - Unit/component coverage and real PostgreSQL/Socket.IO integration cases cover leases/concurrency/commit visibility, ticket race/expiry/Origin/CSRF/scopes/revocation, transport errors and financial non-mutation. Local verification does not establish production deployment or public behavior.
 - Development evidence: focused API realtime/config tests `27/27` PASS, Web realtime tests `11/11` PASS, and `33` affected existing component tests PASS across targeted runs. Follow-up focused PostgreSQL verification on isolated local `eatease_m2_test` passed the six previously failing cases plus the ahead-of-database-clock regression (`7/7` selected). Publication/retry timestamps preserve database timeline constraints across clock skew; fixture events whitelist scope fields and use database time.
 - Final owner validation: `131/131` API unit tests, `72/72` Web component tests and `108/108` PostgreSQL integration tests PASS (`311/311` total). API/Web lint, typecheck and production builds PASS. Prisma migration applied successfully to the local test database; Prisma schema validation and client generation PASS.
-- Production release remains pending: owner must apply the reviewed M2.11 migration to the managed database, configure/redeploy the API/Web and execute public smoke tests per the [deployment guide](../development/deployment.md#m211-realtime-and-publisher-setup). Local production-build success is not production deployment evidence. Do not start M2.12 automatically.
+- Production release remains pending: owner must apply the reviewed M2.11 migration to the managed database, configure/redeploy the API/Web and execute public smoke tests per the [deployment guide](../development/deployment.md#m211-realtime-and-publisher-setup). Local production-build success is not production deployment evidence.
+
+### M2.12 — Final verification and M2 closure
+
+**Status:** `DONE`; M2 overall `DONE` after final owner validation and acceptance review. Production release verification remains pending separately.
+
+- Map approved acceptance criteria to existing meaningful unit/component/PostgreSQL coverage in the [M2 verification record](../development/m2-verification.md). Preserve the owner-confirmed M2.11 `311/311` baseline; do not count it as verification of new M2.12 changes.
+- Add real multi-role permission-union persistence coverage, safe publisher-error logging regression and local E2E database-target guard tests.
+- Add four Playwright browser scenarios using real local Web/API/PostgreSQL/Socket.IO: activation/explicit claim/cart, Guest/member/Waiter consolidated ordering, lost-response retry, committed Kitchen Queue, realtime/reconnect recovery, copied-QR/old-code/isolation denial and expired/revoked Guest recovery.
+- Fix a genuine client recovery gap: re-bootstrap an expired Guest into browse mode explicitly without reloading or losing its in-memory cart; require valid rejoining and explicit submission. No authentication or authorization checks are bypassed.
+- Add Chromium E2E to CI against its ephemeral PostgreSQL service. Explicit StaffSession Prisma injection for TSX and the correct Waiter combobox locator resolve the browser follow-up defects. Final owner browser validation is now `5/5 PASS` in one suite, superseding earlier partial runs. A new M2.12 CI result has not been reported; do not infer it from local validation.
+- Final owner evidence: API unit `138/138`, Web component `73/73`, PostgreSQL integration `109/109`, Playwright browser E2E `5/5` (`325/325`) PASS. API/Web lint, typecheck, production builds and Prisma schema validation PASS; local PostgreSQL `9/9` migrations applied/up to date. Browser evidence covers login/restoration, ordering, authorization boundaries, Guest recovery, retry and reconnect. Approved Phase 1 acceptance criteria have been reviewed and checked complete.
+- Reproducible commands, historical findings and pending production-only gates remain in the verification record. M3 is next; do not begin it without separate owner authorization.
 
 ## M3 — Fulfillment, cancellation and serving
+
+**Status:** `TODO` — next milestone; not started. Implementation requires separate owner authorization.
 
 Dependency: M2.
 

@@ -1,8 +1,8 @@
 # Phase 1 — First business vertical slice
 
-Status: **APPROVED planning target**, implementation `IN_PROGRESS` (`M2.0–M2.11 DONE`; M2.12 final comprehensive verification is next and has not started).
+Status: **APPROVED planning target**, implementation `DONE` (`M2.0–M2.12 DONE`; final owner validation and M2 acceptance review complete).
 
-M2.11 owner validation is complete: `311/311` local tests PASS, with API/Web lint, typecheck, production builds and local Prisma migration/validation/generation PASS. See [final evidence](implementation-plan.md#m211--outbox-publisher-and-realtime-topology). M2.11 production migration/deployment and public smoke testing remain pending; the complete M2 milestone is not yet marked DONE.
+M2 final owner validation: API `138/138`, Web `73/73`, PostgreSQL `109/109`, browser E2E `5/5` (`325/325`) PASS; API/Web lint, typecheck, production builds and Prisma schema validation PASS; local PostgreSQL `9/9` migrations applied/up to date. All approved M2 acceptance criteria below are satisfied by the [coverage and final evidence](../development/m2-verification.md). M2.11 production migration/deployment and public smoke testing remain pending; local milestone closure does not claim production verification. M3 is next and requires separate implementation authorization.
 
 Trong roadmap repository, business Phase 1 được thực hiện tại Milestone M2 sau foundation M1.
 
@@ -64,7 +64,7 @@ Serving, cancellation execution, checkout/payment và table cleaning thuộc mil
 - [x] Approval không tự upgrade guest; requester explicit claim rotates guest + CSRF credentials khi nâng access.
 - [x] Additional device needs valid join code and gets independent credential.
 - [x] Expired/revoked code is rejected and attempts are rate-limited.
-- [x] Expired guest keeps local draft and can recover through an explicit join without auto-submitting it; order revalidation/submission remains M2.8+.
+- [x] Expired/revoked Guest keeps the local draft, explicitly recovers browse access and rejoins without reload or automatic submission; owner-confirmed M2.12 browser verification PASS.
 
 ### Ordering and billing preview
 
@@ -83,15 +83,17 @@ Serving, cancellation execution, checkout/payment và table cleaning thuộc mil
 
 - [x] Guest cannot read/write another TableSession.
 - [x] Staff cannot cross location scope.
-- [ ] Multi-role staff receives intended permission union.
+- [x] Multi-role staff receives intended permission union.
 - [x] Disabled/revoked staff/guest session is denied.
-- [ ] HTTP and Socket.IO room access use server-side authorization.
-- [ ] Socket outage does not roll back or lose committed order.
-- [ ] Outbox retry does not duplicate business records.
-- [ ] Transaction failure leaves no orphan Order/BillLine/Table state.
-- [ ] Logs contain no raw credential/join code.
+- [x] HTTP and Socket.IO room access use server-side authorization.
+- [x] Socket outage does not roll back or lose committed order.
+- [x] Outbox retry does not duplicate business records.
+- [x] Transaction failure leaves no orphan Order/BillLine/Table state.
+- [x] Logs contain no raw credential/join code.
 
 ## Test scenarios
+
+Acceptance coverage and final owner evidence are mapped in the [M2 verification record](../development/m2-verification.md). PostgreSQL tests cover permission union, authorized fanout, retry/rollback and financial consistency; unit/source review covers safe application logging; browser E2E verifies complete workflows and expired/revoked Guest recovery without page reload or automatic submission. Production infrastructure/logs and public transport behavior are not inferred from local results.
 
 ### Unit
 

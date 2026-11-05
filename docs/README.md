@@ -34,6 +34,7 @@ Thư mục này là source of truth cho product, design, architecture và implem
 - [Local development setup](development/local-setup.md): prerequisites, environment, commands, database workflow và compatibility notes.
 - [Portfolio deployment](development/deployment.md): Vercel/Render/Neon setup, secrets, verification và free-tier limitations.
 - [M2.7 production verification](development/m2-7-production-verification.md): deployment, functional/security observations, evidence boundaries và demo cleanup guidance.
+- [M2 verification and closure](development/m2-verification.md): acceptance coverage, local browser E2E, owner validation commands và pending production gates.
 
 ## Maintenance rules
 
