@@ -37,7 +37,7 @@ describe('realtime contracts', () => {
     expect(matches(scope, { ...event, locationId: 'foreign' }, {})).toBe(false);
     expect(matches(scope, { ...event, eventType: 'bill.updated' }, {})).toBe(false);
   });
-  it.each(['PREPARING', 'READY', 'SERVED'])(
+  it.each(['PREPARING', 'READY', 'SERVED', 'CANCELLED'])(
     'routes %s updates only to the scoped kitchen audience with minimal notification data',
     (status) => {
       const event = {
@@ -60,6 +60,28 @@ describe('realtime contracts', () => {
       );
     },
   );
+  it('routes cancellation invalidation to scoped kitchen and owning bill audiences only', () => {
+    const event = {
+      id,
+      restaurantId: 'r',
+      locationId: 'l',
+      eventType: 'cancellation.updated',
+      payload: { id, tableSessionId: id, version: 2, reason: 'private' },
+    };
+    const hint = notification(event);
+    expect(hint.data).toEqual({
+      eventId: id,
+      type: 'cancellation.updated',
+      resourceId: id,
+      version: 2,
+    });
+    expect(matches(scope, event, hint.payload)).toBe(true);
+    expect(matches({ ...scope, audience: 'bill', resourceId: id }, event, hint.payload)).toBe(true);
+    expect(
+      matches({ ...scope, audience: 'bill', resourceId: 'foreign' }, event, hint.payload),
+    ).toBe(false);
+    expect(matches({ ...scope, locationId: 'foreign' }, event, hint.payload)).toBe(false);
+  });
   it('isolates guest table and bill audiences without granting staff room access', () => {
     const event = { restaurantId: 'r', locationId: 'l', eventType: 'activation.updated' };
     const guest = {

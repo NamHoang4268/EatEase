@@ -443,12 +443,12 @@ Bill reads handle an empty OPEN Bill with `orders: []`, `lines: []` and decimal-
 
 Permission `fulfillment.read`. Unified board có filters `KITCHEN|BAR|DIRECT`. Response không chứa payment/customer-sensitive fields.
 
-M2.10 introduced the read-only NEW queue; M3.3 extends it to NEW/PREPARING/READY and M3.4 adds SERVED visibility for both `QR_GUEST` and `STAFF_WAITER` submissions. Select exactly one persisted item status per request; `status` still defaults to `NEW` for existing callers. Other states are rejected. Omit `station` for all three stations, or filter by immutable `stationSnapshot`. Menu changes do not alter queue snapshots. No extra ACTIVE-session/OPEN-Bill filter is applied: fulfillment state is item-level and checkout does not cancel submitted work.
+M2.10 introduced the read-only NEW queue; M3.3 extends it to NEW/PREPARING/READY, M3.4 adds SERVED and M3.5 adds terminal CANCELLED visibility for both `QR_GUEST` and `STAFF_WAITER` submissions. Select exactly one persisted item status per request; `status` still defaults to `NEW` for existing callers. Other states are rejected. Omit `station` for all three stations, or filter by immutable `stationSnapshot`. Menu changes do not alter queue snapshots. No extra ACTIVE-session/OPEN-Bill filter is applied: fulfillment state is item-level and checkout does not cancel submitted work.
 
 - Valid StaffSession and `fulfillment.read` are required on each request. Restaurant/location come only from the authenticated membership; client scope parameters are rejected. Existing staff read guards revalidate session, membership, user and effective permissions against PostgreSQL. This GET uses the existing authenticated-read convention (no CSRF token or mandatory Origin); deployment CORS restrictions still apply.
-- Query parameters: `status=NEW|PREPARING|READY|SERVED` (default `NEW`), optional `station=KITCHEN|BAR|DIRECT`, `limit` (default `50`, integer `1–100`), optional opaque `cursor`. Unknown, repeated or malformed parameters return `400 FULFILLMENT_QUERY_INVALID`.
+- Query parameters: `status=NEW|PREPARING|READY|SERVED|CANCELLED` (default `NEW`), optional `station=KITCHEN|BAR|DIRECT`, `limit` (default `50`, integer `1–100`), optional opaque `cursor`. Unknown, repeated or malformed parameters return `400 FULFILLMENT_QUERY_INVALID`.
 - Oldest submission first, then OrderItem UUID ascending as stable tie-breaker. Keyset cursor encodes `(submittedAt, itemId)` and never changes authenticated scope. Each query fetches at most `limit + 1` items with batched related context, without per-item reads or a count query. Response: `{ data: { items, page: { limit, nextCursor } } }`; `nextCursor = null` ends pagination. This is a live queue, not a frozen snapshot; manual refresh restarts at the first page.
-- Each item exposes `id`, `nameSnapshot`, `quantity`, `note`, `stationSnapshot`, `status`, `version`, `tableSessionId`, `table: { code }`, and `order: { id, orderNumber, source, submittedAt }`. No current menu lookup, prices, Bill data, guest identity or credential fields are returned.
+- Each item exposes `id`, `nameSnapshot`, `quantity`, `note`, `stationSnapshot`, `status`, `version`, `tableSessionId`, `table: { code }`, `order: { id, orderNumber, source, submittedAt }`, and at most one current pending `cancellationRequest` with ID/status/version/reason/createdAt. It never exposes requester identity, current menu prices, Bill amounts or credentials.
 - `Cache-Control: no-store`. Empty queue returns `items: []`. GET performs no session refresh, business writes, outbox/audit writes or lazy transitions.
 - Existing `/staff/login` workspace shows the board only with `fulfillment.read`, including status/station filters, next page, loading/empty/error/expired states and manual refresh. Changing either filter resets pagination. With `fulfillment.transition` and recovered staff CSRF: KITCHEN/BAR NEW starts preparation, KITCHEN/BAR PREPARING marks ready, DIRECT NEW marks ready. M3.4 exposes READY → SERVED only with `serving.mark_served`; this permission neither requires nor grants `fulfillment.transition`. SERVED has no action. Waiter board/realtime access requires explicit `fulfillment.read`; no implicit role/permission upgrade occurs. Backend guards remain authoritative.
 - Actions POST through the existing same-origin proxy with credentials, CSRF, server-returned `expectedVersion` and an Idempotency-Key bound in volatile memory to item/action/version. An immediate in-flight guard blocks double submission. Network failures, all 5xx and CSRF recovery retain the same key; recovery retries once with the new CSRF token. Success and definitive conflicts clear that attempt and refetch the first authoritative page. HTTP 409 displays a non-destructive review/refetch message; 401 triggers existing staff session recovery; other 403/recovery failures remain retryable errors without inventing success. Attempts do not survive a page reload, and no session token is exposed to JavaScript.
@@ -486,6 +486,29 @@ Preserve preparingAt/readyAt, immutable Order/snapshots, BillLines and Bill tota
 
 Reuse the location-scoped `kitchen` audience requiring `fulfillment.read`; notifications/reconnect refetch the selected READY/SERVED filter through REST. No new room, ticket type or transport; manual refresh remains available offline. Production migration/deployment/public smoke remain pending.
 
+## Cancellation and full waiver (M3.5)
+
+All mutation bodies are strict, use UUID path IDs, trimmed reasons of 1–500 characters and integer `expectedVersion` in `0–2147483646`. A trimmed `Idempotency-Key` of 1–128 characters is required. Origin/CSRF and active Guest/Staff session checks use the existing guards. Client actor, restaurant, location, TableSession, Bill, status, amount or waiver fields are rejected. Same actor/operation/key with an identical payload replays the original sanitized response; changed target/payload returns `409 IDEMPOTENCY_KEY_REUSED`.
+
+### `POST /orders/items/:id/cancellation-requests`
+
+Requires an ORDER_ENABLED GuestSession bound to the active TableSession that owns the item. Body: `{ "expectedVersion": 0, "reason": "Đổi món" }`. Only current NEW or PREPARING items are eligible. The request creates `PENDING_WAITER`; it does not change item status/version, Bill or financial obligation. A second unresolved request for the item returns `409 CANCELLATION_REQUEST_PENDING`; stale item version returns `CANCELLATION_ITEM_VERSION_CONFLICT`; READY/SERVED/REJECTED/CANCELLED returns `CANCELLATION_ITEM_STATE_CONFLICT`.
+
+Success is `201`, no-store, with `data.cancellationRequest { id, orderItemId, status, version, decidedAt }`. Transaction locks TableSession → Bill → GuestSession → OrderItem, revalidates ownership/expiry/state, then writes request, `CANCELLATION_REQUESTED` audit, `cancellation.updated` outbox and completed `REQUEST_ITEM_CANCELLATION` idempotency atomically. The current consolidated session view includes each item's latest request and Bill `adjustments`; pending, approved and rejected states remain distinguishable.
+
+### Staff routing and decisions
+
+- `POST /staff/cancellation-requests/:id/waiter-decision`, permission `order.cancel_new`, body `{ expectedVersion, decision: "ACCEPT|REJECT", reason }`. ACCEPT requires `PENDING_WAITER` plus current NEW; REJECT closes the pending request without changing item/money.
+- `POST /staff/cancellation-requests/:id/forward-to-kitchen`, permission `cancellation.forward_to_kitchen`, body `{ expectedVersion, reason }`. Requires `PENDING_WAITER` plus current PREPARING KITCHEN/BAR and transitions only the request to `PENDING_KITCHEN`.
+- `POST /staff/cancellation-requests/:id/operational-decision`, permission `cancellation.decide_operational`, body `{ expectedVersion, decision: "ACCEPT|REJECT", reason }`. ACCEPT requires `PENDING_KITCHEN` plus current PREPARING KITCHEN/BAR; REJECT preserves PREPARING and the full charge.
+- `POST /staff/fulfillment/items/:id/reject`, permission `cancellation.decide_operational`, body `{ expectedVersion, reason }`. Requires current NEW KITCHEN/BAR. It approves an existing pending request or creates a terminal `STAFF_REJECTION` record, then applies the same full-waiver transaction. DIRECT and any non-NEW state return a conflict.
+
+Staff success is `200`, no-store. Every route requires trusted Origin, staff CSRF and current server-resolved location scope; transaction-time authorization is revalidated before replay/mutation. Stale request version returns `409 CANCELLATION_VERSION_CONFLICT`; invalid request/item state or station returns `CANCELLATION_STATE_CONFLICT`, `CANCELLATION_ITEM_STATE_CONFLICT` or `CANCELLATION_STATION_INVALID`. Missing/foreign resources use generic `403 CANCELLATION_SCOPE_DENIED`; invalid/revoked sessions return the existing 401 code.
+
+Accepted cancellation/direct rejection atomically changes the item to CANCELLED with version +1, finalizes the request, creates exactly one immutable `FULL_CANCELLATION_WAIVER` equal to negative BillLine `lineAmount`, updates Bill adjustment/total/balance and version, writes actor/reason audit, `cancellation.updated`, `fulfillment.item.updated`, `bill.updated`, and the completed idempotency response. Original Order, OrderItem snapshots and BillLine stay unchanged. Bill must remain OPEN with zero paid amount in M3.5. Lock order is TableSession → Bill → current actor authorization → OrderItem → CancellationRequest → BillLine → reliability writes. Distinct-key contenders serialize; readiness/serving wins make later approval ineligible, and duplicate waiver constraints fail closed.
+
+The existing board exposes only permission-appropriate controls, requires explicit decision reason, keeps retry keys for network/5xx/CSRF recovery, blocks parallel clicks and refetches REST on success/409/reconnect. `cancellation.updated` invalidates both scoped kitchen and owning Guest bill audiences; event payloads contain only IDs/version/scope, never reason or actor. CANCELLED is terminal and has no preparation/readiness/serving action. Production migration/deployment/public smoke remain pending.
+
 ## Realtime events
 
 Planned event names:
@@ -496,6 +519,7 @@ activation.updated
 order.submitted
 fulfillment.item.created
 fulfillment.item.updated
+cancellation.updated
 bill.updated
 table.session.updated
 ```

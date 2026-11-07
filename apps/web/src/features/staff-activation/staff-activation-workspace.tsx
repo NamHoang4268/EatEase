@@ -643,6 +643,11 @@ export function StaffActivationWorkspace() {
         <KitchenQueue
           canTransition={auth.staff.permissions.includes('fulfillment.transition')}
           canServe={auth.staff.permissions.includes('serving.mark_served')}
+          canCancelNew={auth.staff.permissions.includes('order.cancel_new')}
+          canForwardCancellation={auth.staff.permissions.includes(
+            'cancellation.forward_to_kitchen',
+          )}
+          canDecideCancellation={auth.staff.permissions.includes('cancellation.decide_operational')}
           csrfToken={csrfToken}
           recoverCsrf={recoverCsrf}
           allowed

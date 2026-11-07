@@ -18,6 +18,13 @@ const boardItem = {
     submittedAt: '2026-11-05T00:00:00.000Z',
   },
   table: { code: 'A01' },
+  cancellationRequest: null as null | {
+    id: string;
+    status: 'PENDING_WAITER' | 'PENDING_KITCHEN';
+    version: number;
+    requestReason: string;
+    createdAt: string;
+  },
 };
 const boardPage = (item = boardItem) => ({ ...empty, items: [item] });
 function response(data: unknown = empty, status = 200) {
@@ -398,5 +405,65 @@ describe('KitchenQueue', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Làm mới hàng chờ' }));
     await screen.findByText('Chưa có món ở trạng thái này tại trạm đã chọn.');
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('shows a pending Guest request and sends the Waiter decision with its request version', async () => {
+    const cancellationRequest = {
+      id: 'cancel-1',
+      status: 'PENDING_WAITER',
+      version: 2,
+      requestReason: 'Khách đổi món',
+      createdAt: '2026-11-07T00:00:00.000Z',
+    } as const;
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response(boardPage({ ...boardItem, cancellationRequest })))
+      .mockResolvedValueOnce(response({ cancellationRequest: { status: 'APPROVED' } }))
+      .mockResolvedValue(response());
+    vi.stubGlobal('fetch', fetchMock);
+    render(<KitchenQueue allowed canCancelNew csrfToken="csrf" onSessionInvalid={vi.fn()} />);
+    expect(await screen.findByText('Lý do khách: Khách đổi món')).toBeDefined();
+    fireEvent.change(screen.getByLabelText('Lý do quyết định'), {
+      target: { value: 'Món chưa bắt đầu' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Chấp nhận hủy và miễn 100%' }));
+    await screen.findByText('Chưa có món ở trạng thái này tại trạm đã chọn.');
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(
+      '/api/v1/staff/cancellation-requests/cancel-1/waiter-decision',
+    );
+    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
+      method: 'POST',
+      body: JSON.stringify({
+        expectedVersion: 2,
+        reason: 'Món chưa bắt đầu',
+        decision: 'ACCEPT',
+      }),
+      headers: { 'Idempotency-Key': expect.any(String), 'X-CSRF-Token': 'csrf' },
+    });
+  });
+
+  it('supports direct Kitchen rejection and renders CANCELLED as terminal', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response(boardPage({ ...boardItem, cancellationRequest: null })))
+      .mockResolvedValueOnce(response({ item: { status: 'CANCELLED' } }))
+      .mockResolvedValueOnce(response())
+      .mockResolvedValue(
+        response(boardPage({ ...boardItem, status: 'CANCELLED', cancellationRequest: null })),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+    render(
+      <KitchenQueue allowed canDecideCancellation csrfToken="csrf" onSessionInvalid={vi.fn()} />,
+    );
+    await screen.findByText('Bàn A01 · Cơm gà');
+    fireEvent.change(screen.getByLabelText('Lý do từ chối món'), {
+      target: { value: 'Hết nguyên liệu' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Từ chối món · miễn 100%' }));
+    await screen.findByText('Chưa có món ở trạng thái này tại trạm đã chọn.');
+    expect(fetchMock.mock.calls[1]?.[0]).toBe('/api/v1/staff/fulfillment/items/item/reject');
+    fireEvent.change(screen.getByLabelText('Trạng thái món'), { target: { value: 'CANCELLED' } });
+    expect(await screen.findByText('KITCHEN · Đã hủy · miễn 100%')).toBeDefined();
+    expect(screen.queryByRole('button', { name: /Đánh dấu|Bắt đầu|Từ chối món/ })).toBeNull();
   });
 });

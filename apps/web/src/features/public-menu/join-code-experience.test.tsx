@@ -65,6 +65,33 @@ function joinSuccess() {
   });
 }
 
+function consolidatedSessionView() {
+  return response({
+    data: {
+      session: {
+        id: 'session-1',
+        status: 'ACTIVE',
+        activatedAt: '2026-11-07T00:00:00.000Z',
+        version: 1,
+        table: { publicId, code: 'A01' },
+      },
+      orders: [],
+      bill: {
+        id: 'bill-1',
+        status: 'OPEN',
+        subtotalAmount: '0',
+        adjustmentAmount: '0',
+        totalAmount: '0',
+        paidAmount: '0',
+        balanceAmount: '0',
+        version: 0,
+        lines: [],
+        adjustments: [],
+      },
+    },
+  });
+}
+
 function joinScenario(joinReplies: Array<() => Promise<unknown>>) {
   let joinIndex = 0;
   return vi.fn().mockImplementation((url: string, init?: RequestInit) => {
@@ -114,9 +141,7 @@ describe('M2.7 Host and Join experience', () => {
         return Promise.resolve(response({ data: { status: 'NOT_REQUESTED' } }));
       if (url.endsWith('/join-code')) return Promise.resolve(response({}, 403));
       if (url === '/api/v1/table-sessions/current')
-        return Promise.resolve(
-          response({ data: { bill: { lines: [], totalAmount: '0', balanceAmount: '0' } } }),
-        );
+        return Promise.resolve(consolidatedSessionView());
       if (url === '/api/v1/orders')
         return Promise.resolve(response({ error: { code: 'GUEST_SESSION_INVALID' } }, 401));
       if (url === '/api/v1/table-sessions/join') return Promise.resolve(joinSuccess());
@@ -133,6 +158,7 @@ describe('M2.7 Host and Join experience', () => {
         false,
       ),
     );
+    await screen.findByRole('heading', { name: 'Món đã gửi' });
     fireEvent.click(screen.getByRole('button', { name: 'Gửi món' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Khôi phục phiên xem thực đơn' }));
     await waitFor(() => expect(bootstraps).toBe(2));

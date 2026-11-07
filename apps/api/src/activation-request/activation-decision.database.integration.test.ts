@@ -203,7 +203,9 @@ describe('staff activation approval and rejection database integration', () => {
       where: { id: { in: [ids.membershipAllowed, ids.membershipDenied] } },
     });
     await prisma.role.deleteMany({ where: { id: ids.role } });
-    await prisma.permission.deleteMany({ where: { id: ids.permission } });
+    await prisma.permission.deleteMany({
+      where: { id: ids.permission, roles: { none: {} } },
+    });
     await prisma.staffUser.deleteMany({
       where: { id: { in: [ids.staffAllowed, ids.staffDenied] } },
     });
@@ -298,11 +300,13 @@ describe('staff activation approval and rejection database integration', () => {
         name: 'Activation approver',
       },
     });
-    await prisma.permission.create({
-      data: { id: ids.permission, code: 'table.activation.approve' },
+    const permission = await prisma.permission.upsert({
+      where: { code: 'table.activation.approve' },
+      create: { id: ids.permission, code: 'table.activation.approve' },
+      update: {},
     });
     await prisma.rolePermission.create({
-      data: { roleId: ids.role, permissionId: ids.permission },
+      data: { roleId: ids.role, permissionId: permission.id },
     });
     await prisma.membershipRole.create({
       data: {
@@ -352,7 +356,9 @@ describe('staff activation approval and rejection database integration', () => {
       where: { id: { in: [ids.membershipAllowed, ids.membershipDenied] } },
     });
     await prisma.role.deleteMany({ where: { id: ids.role } });
-    await prisma.permission.deleteMany({ where: { id: ids.permission } });
+    await prisma.permission.deleteMany({
+      where: { id: ids.permission, roles: { none: {} } },
+    });
     await prisma.staffUser.deleteMany({
       where: { id: { in: [ids.staffAllowed, ids.staffDenied] } },
     });
@@ -402,9 +408,11 @@ describe('staff activation approval and rejection database integration', () => {
     });
     await expect(prisma.tableSession.count({ where: { tableId: ids.tableA } })).resolves.toBe(1);
     await expect(prisma.bill.count({ where: { restaurantId: ids.restaurantA } })).resolves.toBe(1);
-    await expect(prisma.auditLog.count({ where: { action: 'ACTIVATION_APPROVED' } })).resolves.toBe(
-      1,
-    );
+    await expect(
+      prisma.auditLog.count({
+        where: { restaurantId: ids.restaurantA, action: 'ACTIVATION_APPROVED' },
+      }),
+    ).resolves.toBe(1);
     await expect(
       prisma.outboxEvent.count({ where: { restaurantId: ids.restaurantA } }),
     ).resolves.toBe(2);
@@ -436,9 +444,11 @@ describe('staff activation approval and rejection database integration', () => {
     await expect(
       prisma.restaurantTable.findUniqueOrThrow({ where: { id: ids.tableA } }),
     ).resolves.toMatchObject({ physicalStatus: TablePhysicalStatus.AVAILABLE, version: 0 });
-    await expect(prisma.auditLog.count({ where: { action: 'ACTIVATION_REJECTED' } })).resolves.toBe(
-      1,
-    );
+    await expect(
+      prisma.auditLog.count({
+        where: { restaurantId: ids.restaurantA, action: 'ACTIVATION_REJECTED' },
+      }),
+    ).resolves.toBe(1);
     await expect(
       prisma.outboxEvent.count({ where: { restaurantId: ids.restaurantA } }),
     ).resolves.toBe(1);
@@ -483,9 +493,11 @@ describe('staff activation approval and rejection database integration', () => {
     const conflict = await approve(activation.id, 'approve-replay', 1).expect(409);
     expect((conflict.body as ErrorBody).error.code).toBe('IDEMPOTENCY_KEY_REUSED');
     await expect(prisma.tableSession.count({ where: { tableId: ids.tableA } })).resolves.toBe(1);
-    await expect(prisma.auditLog.count({ where: { action: 'ACTIVATION_APPROVED' } })).resolves.toBe(
-      1,
-    );
+    await expect(
+      prisma.auditLog.count({
+        where: { restaurantId: ids.restaurantA, action: 'ACTIVATION_APPROVED' },
+      }),
+    ).resolves.toBe(1);
   });
 
   it('persists write-side expiry before returning the conflict', async () => {

@@ -10,7 +10,7 @@ type QueueItem = {
   quantity: number;
   note: string | null;
   stationSnapshot: 'KITCHEN' | 'BAR' | 'DIRECT';
-  status: 'NEW' | 'PREPARING' | 'READY' | 'SERVED';
+  status: 'NEW' | 'PREPARING' | 'READY' | 'SERVED' | 'CANCELLED';
   version: number;
   order: {
     id: string;
@@ -19,6 +19,13 @@ type QueueItem = {
     submittedAt: string;
   };
   table: { code: string };
+  cancellationRequest: {
+    id: string;
+    status: 'PENDING_WAITER' | 'PENDING_KITCHEN';
+    version: number;
+    requestReason: string;
+    createdAt: string;
+  } | null;
 };
 type QueuePage = { items: QueueItem[]; page: { limit: number; nextCursor: string | null } };
 type QueueState =
@@ -31,6 +38,9 @@ type Props = {
   allowed: boolean;
   canTransition?: boolean;
   canServe?: boolean;
+  canCancelNew?: boolean;
+  canForwardCancellation?: boolean;
+  canDecideCancellation?: boolean;
   onSessionInvalid: () => void;
   csrfToken?: string | null;
   recoverCsrf?: () => Promise<string>;
@@ -41,6 +51,7 @@ const statusLabels = {
   PREPARING: 'Đang chuẩn bị',
   READY: 'Sẵn sàng',
   SERVED: 'Đã phục vụ',
+  CANCELLED: 'Đã hủy · miễn 100%',
 };
 function itemAction(item: QueueItem) {
   if (item.status === 'READY') return { endpoint: 'mark-served', label: 'Đánh dấu đã phục vụ' };
@@ -58,6 +69,9 @@ export function KitchenQueue({
   allowed,
   canTransition = false,
   canServe = false,
+  canCancelNew = false,
+  canForwardCancellation = false,
+  canDecideCancellation = false,
   onSessionInvalid,
   csrfToken,
   recoverCsrf,
@@ -67,6 +81,7 @@ export function KitchenQueue({
   const [status, setStatus] = useState('NEW');
   const [pending, setPending] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [decisionReasons, setDecisionReasons] = useState<Record<string, string>>({});
   const actionInFlight = useRef(false);
   const attempts = useRef(new Map<string, string>());
   const [refreshRevision, setRefreshRevision] = useState(0);
@@ -208,6 +223,113 @@ export function KitchenQueue({
     }
   };
 
+  const cancellationCommand = async (
+    item: QueueItem,
+    command:
+      | { kind: 'DIRECT_REJECT'; reasonKey: string }
+      | {
+          kind:
+            | 'WAITER_ACCEPT'
+            | 'WAITER_REJECT'
+            | 'FORWARD'
+            | 'OPERATIONAL_ACCEPT'
+            | 'OPERATIONAL_REJECT';
+          reasonKey: string;
+          request: NonNullable<QueueItem['cancellationRequest']>;
+        },
+  ) => {
+    if (actionInFlight.current || !csrfToken) return;
+    const reason = decisionReasons[command.reasonKey]?.trim() ?? '';
+    if (!reason) {
+      setMessage('Vui lòng nhập lý do trước khi xử lý yêu cầu.');
+      return;
+    }
+    const request = command.kind === 'DIRECT_REJECT' ? null : command.request;
+    const endpoint =
+      command.kind === 'DIRECT_REJECT'
+        ? `/api/v1/staff/fulfillment/items/${encodeURIComponent(item.id)}/reject`
+        : command.kind === 'FORWARD'
+          ? `/api/v1/staff/cancellation-requests/${encodeURIComponent(request!.id)}/forward-to-kitchen`
+          : command.kind.startsWith('WAITER_')
+            ? `/api/v1/staff/cancellation-requests/${encodeURIComponent(request!.id)}/waiter-decision`
+            : `/api/v1/staff/cancellation-requests/${encodeURIComponent(request!.id)}/operational-decision`;
+    const version = request?.version ?? item.version;
+    const identity = `${command.kind}:${request?.id ?? item.id}:${version}:${reason}`;
+    const key = attempts.current.get(identity) ?? crypto.randomUUID();
+    attempts.current.set(identity, key);
+    actionInFlight.current = true;
+    setPending(item.id);
+    setMessage(null);
+    const send = (token: string) =>
+      fetch(endpoint, {
+        method: 'POST',
+        credentials: 'include',
+        cache: 'no-store',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': token,
+          'Idempotency-Key': key,
+        },
+        body: JSON.stringify({
+          expectedVersion: version,
+          reason,
+          ...(command.kind.includes('ACCEPT')
+            ? { decision: 'ACCEPT' }
+            : command.kind.includes('REJECT') && command.kind !== 'DIRECT_REJECT'
+              ? { decision: 'REJECT' }
+              : {}),
+        }),
+      });
+    const readCode = async (response: Response) => {
+      const body = (await response.json().catch(() => null)) as {
+        error?: { code?: string };
+      } | null;
+      return body?.error?.code;
+    };
+    try {
+      let response = await send(csrfToken);
+      let code = response.ok ? undefined : await readCode(response);
+      if (response.status === 403 && code === 'STAFF_CSRF_INVALID' && recoverCsrf) {
+        response = await send(await recoverCsrf());
+        code = response.ok ? undefined : await readCode(response);
+      }
+      if (response.status === 401) {
+        attempts.current.clear();
+        onSessionInvalidRef.current();
+        return;
+      }
+      if (response.ok) {
+        attempts.current.delete(identity);
+        setDecisionReasons((current) => ({ ...current, [command.reasonKey]: '' }));
+        setMessage('Đã ghi nhận quyết định. Đang tải trạng thái authoritative từ máy chủ.');
+        setState({ status: 'loading' });
+        setRefreshRevision((value) => value + 1);
+      } else if (response.status === 409) {
+        attempts.current.delete(identity);
+        setMessage('Yêu cầu hoặc món đã thay đổi. Dữ liệu mới nhất đang được tải lại.');
+        setState({ status: 'loading' });
+        setRefreshRevision((value) => value + 1);
+      } else {
+        if (
+          response.status < 500 &&
+          ![408, 429].includes(response.status) &&
+          code !== 'STAFF_CSRF_INVALID'
+        )
+          attempts.current.delete(identity);
+        setMessage(
+          response.status === 403 && code !== 'STAFF_CSRF_INVALID'
+            ? 'Bạn không còn quyền xử lý yêu cầu này.'
+            : 'Chưa thể xác nhận quyết định. Thử lại sẽ dùng cùng Idempotency-Key.',
+        );
+      }
+    } catch {
+      setMessage('Kết nối bị gián đoạn. Thử lại sẽ dùng cùng Idempotency-Key.');
+    } finally {
+      actionInFlight.current = false;
+      setPending(null);
+    }
+  };
+
   const realtime = useRealtime({
     actor: 'staff',
     audience: 'kitchen',
@@ -262,6 +384,7 @@ export function KitchenQueue({
               <option value="PREPARING">Đang chuẩn bị</option>
               <option value="READY">Sẵn sàng</option>
               <option value="SERVED">Đã phục vụ</option>
+              <option value="CANCELLED">Đã hủy</option>
             </select>
           </label>
           <label>
@@ -329,6 +452,159 @@ export function KitchenQueue({
                   </p>
                   <p className="kitchen-order-reference">Order: {item.order.orderNumber}</p>
                   {item.note ? <p className="kitchen-item-note">Ghi chú: {item.note}</p> : null}
+                  {item.cancellationRequest ? (
+                    <div className="decision-panel">
+                      <p>
+                        <strong>
+                          {item.cancellationRequest.status === 'PENDING_WAITER'
+                            ? 'Khách yêu cầu hủy · chờ Waiter'
+                            : 'Khách yêu cầu hủy · chờ Kitchen/Bar'}
+                        </strong>
+                      </p>
+                      <p>Lý do khách: {item.cancellationRequest.requestReason}</p>
+                      {(item.cancellationRequest.status === 'PENDING_WAITER' &&
+                        (canCancelNew ||
+                          (item.status === 'PREPARING' && canForwardCancellation))) ||
+                      (item.cancellationRequest.status === 'PENDING_KITCHEN' &&
+                        canDecideCancellation) ? (
+                        <>
+                          <label htmlFor={`decision-reason-${item.cancellationRequest.id}`}>
+                            Lý do quyết định
+                          </label>
+                          <input
+                            id={`decision-reason-${item.cancellationRequest.id}`}
+                            maxLength={500}
+                            value={decisionReasons[`request:${item.cancellationRequest.id}`] ?? ''}
+                            onChange={(event) =>
+                              setDecisionReasons((current) => ({
+                                ...current,
+                                [`request:${item.cancellationRequest!.id}`]: event.target.value,
+                              }))
+                            }
+                          />
+                        </>
+                      ) : null}
+                      <div className="kitchen-queue-actions">
+                        {item.cancellationRequest.status === 'PENDING_WAITER' &&
+                        item.status === 'NEW' &&
+                        canCancelNew ? (
+                          <button
+                            className="danger-button"
+                            disabled={pending !== null || !csrfToken}
+                            type="button"
+                            onClick={() =>
+                              void cancellationCommand(item, {
+                                kind: 'WAITER_ACCEPT',
+                                reasonKey: `request:${item.cancellationRequest!.id}`,
+                                request: item.cancellationRequest!,
+                              })
+                            }
+                          >
+                            Chấp nhận hủy và miễn 100%
+                          </button>
+                        ) : null}
+                        {item.cancellationRequest.status === 'PENDING_WAITER' &&
+                        item.status === 'PREPARING' &&
+                        canForwardCancellation ? (
+                          <button
+                            className="primary-button"
+                            disabled={pending !== null || !csrfToken}
+                            type="button"
+                            onClick={() =>
+                              void cancellationCommand(item, {
+                                kind: 'FORWARD',
+                                reasonKey: `request:${item.cancellationRequest!.id}`,
+                                request: item.cancellationRequest!,
+                              })
+                            }
+                          >
+                            Chuyển Kitchen/Bar quyết định
+                          </button>
+                        ) : null}
+                        {item.cancellationRequest.status === 'PENDING_WAITER' && canCancelNew ? (
+                          <button
+                            className="secondary-button"
+                            disabled={pending !== null || !csrfToken}
+                            type="button"
+                            onClick={() =>
+                              void cancellationCommand(item, {
+                                kind: 'WAITER_REJECT',
+                                reasonKey: `request:${item.cancellationRequest!.id}`,
+                                request: item.cancellationRequest!,
+                              })
+                            }
+                          >
+                            Từ chối yêu cầu
+                          </button>
+                        ) : null}
+                        {item.cancellationRequest.status === 'PENDING_KITCHEN' &&
+                        canDecideCancellation ? (
+                          <>
+                            <button
+                              className="danger-button"
+                              disabled={pending !== null || !csrfToken}
+                              type="button"
+                              onClick={() =>
+                                void cancellationCommand(item, {
+                                  kind: 'OPERATIONAL_ACCEPT',
+                                  reasonKey: `request:${item.cancellationRequest!.id}`,
+                                  request: item.cancellationRequest!,
+                                })
+                              }
+                            >
+                              Có thể dừng · miễn 100%
+                            </button>
+                            <button
+                              className="secondary-button"
+                              disabled={pending !== null || !csrfToken}
+                              type="button"
+                              onClick={() =>
+                                void cancellationCommand(item, {
+                                  kind: 'OPERATIONAL_REJECT',
+                                  reasonKey: `request:${item.cancellationRequest!.id}`,
+                                  request: item.cancellationRequest!,
+                                })
+                              }
+                            >
+                              Không thể dừng
+                            </button>
+                          </>
+                        ) : null}
+                      </div>
+                    </div>
+                  ) : null}
+                  {!item.cancellationRequest &&
+                  item.status === 'NEW' &&
+                  ['KITCHEN', 'BAR'].includes(item.stationSnapshot) &&
+                  canDecideCancellation ? (
+                    <div className="rejection-form">
+                      <label htmlFor={`direct-reject-${item.id}`}>Lý do từ chối món</label>
+                      <input
+                        id={`direct-reject-${item.id}`}
+                        maxLength={500}
+                        value={decisionReasons[`direct:${item.id}:${item.version}`] ?? ''}
+                        onChange={(event) =>
+                          setDecisionReasons((current) => ({
+                            ...current,
+                            [`direct:${item.id}:${item.version}`]: event.target.value,
+                          }))
+                        }
+                      />
+                      <button
+                        className="danger-button"
+                        disabled={pending !== null || !csrfToken}
+                        type="button"
+                        onClick={() =>
+                          void cancellationCommand(item, {
+                            kind: 'DIRECT_REJECT',
+                            reasonKey: `direct:${item.id}:${item.version}`,
+                          })
+                        }
+                      >
+                        Từ chối món · miễn 100%
+                      </button>
+                    </div>
+                  ) : null}
                   {(item.status === 'READY' ? canServe : canTransition) && itemAction(item) ? (
                     <button
                       type="button"

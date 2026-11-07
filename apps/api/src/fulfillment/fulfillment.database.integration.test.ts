@@ -39,6 +39,8 @@ type Fixture = {
   itemId: string;
   token: string;
   csrf: string;
+  guestToken: string;
+  guestCsrf: string;
   permissionId: string;
   categoryId: string;
 };
@@ -59,6 +61,8 @@ describe('M2.10 read-only fulfillment queue on PostgreSQL', () => {
     const roleId = randomUUID();
     const token = randomUUID();
     const csrf = randomUUID();
+    const guestToken = randomUUID();
+    const guestCsrf = randomUUID();
     await prisma.restaurant.create({ data: { id: restaurantId, name: 'M2.10 synthetic' } });
     await prisma.location.create({
       data: { id: locationId, restaurantId, code: 'M210', name: 'M2.10', isActive: true },
@@ -83,6 +87,9 @@ describe('M2.10 read-only fulfillment queue on PostgreSQL', () => {
       'fulfillment.transition',
       'serving.mark_served',
       'order.create_for_table',
+      'order.cancel_new',
+      'cancellation.forward_to_kitchen',
+      'cancellation.decide_operational',
     ]) {
       const permission = await prisma.permission.upsert({
         where: { code },
@@ -110,8 +117,8 @@ describe('M2.10 read-only fulfillment queue on PostgreSQL', () => {
         restaurantId,
         locationId,
         tableId: table.id,
-        tokenHash: hashToken(randomUUID()),
-        csrfTokenHash: hashToken(randomUUID()),
+        tokenHash: hashToken(guestToken),
+        csrfTokenHash: hashToken(guestCsrf),
         idleExpiresAt: new Date(Date.now() + 1_800_000),
         absoluteExpiresAt: new Date(Date.now() + 3_600_000),
       },
@@ -168,6 +175,8 @@ describe('M2.10 read-only fulfillment queue on PostgreSQL', () => {
       itemId: item.id,
       token,
       csrf,
+      guestToken,
+      guestCsrf,
       permissionId,
       categoryId: category.id,
     };
@@ -285,7 +294,7 @@ describe('M2.10 read-only fulfillment queue on PostgreSQL', () => {
       '?limit=101',
       '?cursor=bad',
       '?locationId=foreign',
-      '?status=CANCELLED',
+      '?status=NOT_A_STATUS',
     ]) {
       await read(local, query).expect(400);
     }
@@ -302,7 +311,7 @@ describe('M2.10 read-only fulfillment queue on PostgreSQL', () => {
       expect(result((await read().expect(200)).body).items.map((item) => item.id)).not.toContain(
         first.id,
       );
-      if (status === 'PREPARING' || status === 'READY') {
+      if (status === 'PREPARING' || status === 'READY' || status === 'CANCELLED') {
         const selected = result(
           (await read(local, `?status=${status}&station=KITCHEN`).expect(200)).body,
         );
@@ -1329,5 +1338,158 @@ describe('M2.10 read-only fulfillment queue on PostgreSQL', () => {
       readyAt: futurePreparation,
       version: 2,
     });
+  });
+
+  function guestCancellation(
+    context: Fixture,
+    itemId: string,
+    version: number,
+    key: string = randomUUID(),
+    reason = 'Khách đổi món',
+  ) {
+    return request(server)
+      .post(`/api/v1/orders/items/${itemId}/cancellation-requests`)
+      .set('Cookie', `eatease_guest_session=${context.guestToken}`)
+      .set('Origin', 'http://localhost:3000')
+      .set('X-CSRF-Token', context.guestCsrf)
+      .set('Idempotency-Key', key)
+      .send({ expectedVersion: version, reason });
+  }
+
+  function cancellationCommand(
+    context: Fixture,
+    requestId: string,
+    endpoint: 'waiter-decision' | 'forward-to-kitchen' | 'operational-decision',
+    expectedVersion: number,
+    body: { decision?: 'ACCEPT' | 'REJECT'; reason: string },
+    key: string = randomUUID(),
+  ) {
+    return request(server)
+      .post(`/api/v1/staff/cancellation-requests/${requestId}/${endpoint}`)
+      .set('Cookie', `eatease_staff_session=${context.token}`)
+      .set('Origin', 'http://localhost:3000')
+      .set('X-CSRF-Token', context.csrf)
+      .set('Idempotency-Key', key)
+      .send({ expectedVersion, ...body });
+  }
+
+  it('M3.5 accepts a NEW Guest request exactly once and records an immutable full waiver', async () => {
+    const f = await preparationFixture('KITCHEN');
+    const billBefore = await prisma.bill.findUniqueOrThrow({
+      where: { tableSessionId: f.tableSessionId },
+    });
+    const line = await prisma.billLine.findUniqueOrThrow({ where: { orderItemId: f.targetId } });
+    const guestKey = randomUUID();
+    const requested = await guestCancellation(f, f.targetId, 0, guestKey).expect(201);
+    expect((await guestCancellation(f, f.targetId, 0, guestKey).expect(201)).body).toEqual(
+      requested.body,
+    );
+    const cancellation = (requested.body as { data: { cancellationRequest: { id: string } } }).data
+      .cancellationRequest;
+    const decisionKey = randomUUID();
+    const accepted = await cancellationCommand(
+      f,
+      cancellation.id,
+      'waiter-decision',
+      0,
+      { decision: 'ACCEPT', reason: 'Xác nhận hủy món chưa bắt đầu' },
+      decisionKey,
+    ).expect(200);
+    expect(
+      (
+        await cancellationCommand(
+          f,
+          cancellation.id,
+          'waiter-decision',
+          0,
+          { decision: 'ACCEPT', reason: 'Xác nhận hủy món chưa bắt đầu' },
+          decisionKey,
+        ).expect(200)
+      ).body,
+    ).toEqual(accepted.body);
+    expect(await prisma.orderItem.findUniqueOrThrow({ where: { id: f.targetId } })).toMatchObject({
+      status: 'CANCELLED',
+      version: 1,
+      nameSnapshot: 'Historical kitchen snapshot',
+      unitPriceAmount: 42_000n,
+    });
+    expect(await prisma.billAdjustment.findMany({ where: { orderItemId: f.targetId } })).toEqual([
+      expect.objectContaining({
+        kind: 'FULL_CANCELLATION_WAIVER',
+        amount: -line.lineAmount,
+        cancellationRequestId: cancellation.id,
+      }),
+    ]);
+    expect(await prisma.billLine.findUniqueOrThrow({ where: { orderItemId: f.targetId } })).toEqual(
+      line,
+    );
+    expect(await prisma.bill.findUniqueOrThrow({ where: { id: billBefore.id } })).toMatchObject({
+      subtotalAmount: billBefore.subtotalAmount,
+      adjustmentAmount: -line.lineAmount,
+      totalAmount: billBefore.totalAmount - line.lineAmount,
+      balanceAmount: billBefore.balanceAmount - line.lineAmount,
+      version: billBefore.version + 1,
+    });
+    expect(
+      await prisma.idempotencyRecord.count({
+        where: { actorId: f.membershipId, operation: 'DECIDE_WAITER_CANCELLATION' },
+      }),
+    ).toBe(1);
+    expect(
+      await prisma.outboxEvent.count({
+        where: { aggregateId: f.targetId, eventType: 'fulfillment.item.updated' },
+      }),
+    ).toBe(1);
+  });
+
+  it('M3.5 forwards PREPARING to Kitchen and rejection preserves item and financial obligation', async () => {
+    const f = await preparationFixture('BAR');
+    await start(f, f.targetId).expect(200);
+    const billBefore = await prisma.bill.findUniqueOrThrow({
+      where: { tableSessionId: f.tableSessionId },
+    });
+    const requested = await guestCancellation(f, f.targetId, 1).expect(201);
+    const requestId = (requested.body as { data: { cancellationRequest: { id: string } } }).data
+      .cancellationRequest.id;
+    await cancellationCommand(f, requestId, 'forward-to-kitchen', 0, {
+      reason: 'Chuyển đúng trạm Bar',
+    }).expect(200);
+    await cancellationCommand(f, requestId, 'operational-decision', 1, {
+      decision: 'REJECT',
+      reason: 'Không thể dừng sau khi pha chế',
+    }).expect(200);
+    expect(
+      await prisma.cancellationRequest.findUniqueOrThrow({ where: { id: requestId } }),
+    ).toMatchObject({
+      status: 'REJECTED',
+      version: 2,
+      decidedByMembershipId: f.membershipId,
+    });
+    expect(await prisma.orderItem.findUniqueOrThrow({ where: { id: f.targetId } })).toMatchObject({
+      status: 'PREPARING',
+      version: 1,
+    });
+    expect(await prisma.billAdjustment.count({ where: { orderItemId: f.targetId } })).toBe(0);
+    expect(await prisma.bill.findUniqueOrThrow({ where: { id: billBefore.id } })).toEqual(
+      billBefore,
+    );
+  });
+
+  it('M3.5 serializes direct Kitchen rejection and prevents duplicate waivers', async () => {
+    const f = await preparationFixture('KITCHEN');
+    const key = randomUUID();
+    const send = () =>
+      request(server)
+        .post(`/api/v1/staff/fulfillment/items/${f.targetId}/reject`)
+        .set('Cookie', `eatease_staff_session=${f.token}`)
+        .set('Origin', 'http://localhost:3000')
+        .set('X-CSRF-Token', f.csrf)
+        .set('Idempotency-Key', key)
+        .send({ expectedVersion: 0, reason: 'Hết nguyên liệu' });
+    const replies = await Promise.all([send(), send()]);
+    expect(replies.map((reply) => reply.status)).toEqual([200, 200]);
+    expect(replies[0].body).toEqual(replies[1].body);
+    expect(await prisma.billAdjustment.count({ where: { orderItemId: f.targetId } })).toBe(1);
+    expect(await prisma.cancellationRequest.count({ where: { orderItemId: f.targetId } })).toBe(1);
   });
 });

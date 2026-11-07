@@ -593,4 +593,128 @@ describe('PublicMenuExperience', () => {
       });
     }
   });
+
+  it('keeps one cancellation retry identity and never presents a pending request as completed', async () => {
+    vi.stubGlobal('crypto', { randomUUID: () => 'cancel-retry-key' });
+    let cancellationAttempts = 0;
+    let requestAccepted = false;
+    const sessionView = () => ({
+      data: {
+        session: {
+          id: 'table-session-1',
+          status: 'ACTIVE',
+          table: { publicId: tableResponse.data.publicId, code: 'A01' },
+        },
+        orders: [
+          {
+            id: 'order-1',
+            orderNumber: 'ORDER-1',
+            source: 'QR_GUEST',
+            status: 'SUBMITTED',
+            submittedAt: '2026-11-07T00:00:00.000Z',
+            items: [
+              {
+                id: 'item-1',
+                nameSnapshot: 'Cơm gà lá chanh',
+                quantity: 1,
+                unitPriceAmount: '79000',
+                lineAmount: '79000',
+                status: 'NEW',
+                stationSnapshot: 'KITCHEN',
+                note: null,
+                version: 0,
+                cancellationRequest: requestAccepted
+                  ? {
+                      id: 'cancel-1',
+                      status: 'PENDING_WAITER',
+                      version: 0,
+                      requestReason: 'Đổi món',
+                      decisionReason: null,
+                      createdAt: '2026-11-07T00:01:00.000Z',
+                      decidedAt: null,
+                    }
+                  : null,
+              },
+            ],
+          },
+        ],
+        bill: {
+          id: 'bill-1',
+          status: 'OPEN',
+          subtotalAmount: '79000',
+          adjustmentAmount: '0',
+          totalAmount: '79000',
+          paidAmount: '0',
+          balanceAmount: '79000',
+          version: 1,
+          lines: [
+            {
+              id: 'line-1',
+              orderItemId: 'item-1',
+              descriptionSnapshot: 'Cơm gà lá chanh',
+              quantity: 1,
+              unitAmount: '79000',
+              lineAmount: '79000',
+            },
+          ],
+          adjustments: [],
+        },
+      },
+    });
+    const fetchMock = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (url.includes('/api/v1/public/tables/'))
+        return Promise.resolve(mockResponse(tableResponse));
+      if (url.includes('/api/v1/public/menu')) return Promise.resolve(mockResponse(menuResponse));
+      if (url === '/api/v1/guest-sessions')
+        return Promise.resolve(
+          mockResponse({
+            data: {
+              table: tableResponse.data,
+              activationState: 'NOT_REQUESTED',
+              session: {
+                accessLevel: 'ORDER_ENABLED',
+                idleExpiresAt: new Date(Date.now() + 1_800_000).toISOString(),
+                absoluteExpiresAt: new Date(Date.now() + 28_800_000).toISOString(),
+              },
+              csrfToken: 'guest-csrf',
+            },
+          }),
+        );
+      if (url === '/api/v1/activation-requests/current')
+        return Promise.resolve(mockResponse({ data: { status: 'NOT_REQUESTED' } }));
+      if (url === '/api/v1/table-sessions/current/join-code')
+        return Promise.resolve(mockResponse({ error: { code: 'HOST_REQUIRED' } }, 403));
+      if (url === '/api/v1/table-sessions/current')
+        return Promise.resolve(mockResponse(sessionView()));
+      if (url === '/api/v1/orders/items/item-1/cancellation-requests' && init?.method === 'POST') {
+        cancellationAttempts += 1;
+        if (cancellationAttempts === 1) return Promise.reject(new Error('response lost'));
+        requestAccepted = true;
+        return Promise.resolve(
+          mockResponse({ data: { cancellationRequest: { id: 'cancel-1' } } }, 201),
+        );
+      }
+      return Promise.reject(new Error(`Unhandled url: ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    render(<PublicMenuExperience publicId={tableResponse.data.publicId} />);
+    await screen.findByText('Món đã gửi');
+    fireEvent.change(screen.getByLabelText('Lý do yêu cầu hủy'), {
+      target: { value: 'Đổi món' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Yêu cầu hủy món' }));
+    expect(await screen.findByText(/Kết nối bị gián đoạn/)).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: 'Yêu cầu hủy món' }));
+    expect(await screen.findByText('Đang chờ nhân viên xem xét')).toBeDefined();
+    expect(screen.queryByText(/Đã chấp nhận/)).toBeNull();
+    const calls = fetchMock.mock.calls.filter(
+      ([url]) => url === '/api/v1/orders/items/item-1/cancellation-requests',
+    );
+    expect(calls).toHaveLength(2);
+    expect(new Set(calls.map(([, init]) => init.headers['Idempotency-Key'])).size).toBe(1);
+    expect(calls[0]?.[1]).toMatchObject({
+      body: JSON.stringify({ expectedVersion: 0, reason: 'Đổi món' }),
+      headers: { 'X-CSRF-Token': 'guest-csrf' },
+    });
+  });
 });

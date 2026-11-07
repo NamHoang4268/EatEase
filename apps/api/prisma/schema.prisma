@@ -148,6 +148,29 @@ enum OrderItemStatus {
   @@map("order_item_status")
 }
 
+enum CancellationRequestStatus {
+  PENDING_WAITER
+  PENDING_KITCHEN
+  APPROVED
+  REJECTED
+  WITHDRAWN
+
+  @@map("cancellation_request_status")
+}
+
+enum CancellationRequestSource {
+  GUEST_REQUEST
+  STAFF_REJECTION
+
+  @@map("cancellation_request_source")
+}
+
+enum BillAdjustmentKind {
+  FULL_CANCELLATION_WAIVER
+
+  @@map("bill_adjustment_kind")
+}
+
 model Restaurant {
   id                 String              @id @default(uuid()) @db.Uuid
   name               String              @db.VarChar(160)
@@ -163,6 +186,8 @@ model Restaurant {
   outboxEvents       OutboxEvent[]
   auditLogs          AuditLog[]
   sessionJoinCodes   SessionJoinCode[]
+  cancellationRequests CancellationRequest[]
+  billAdjustments      BillAdjustment[]
 
   realtimeTickets RealtimeTicket[]
 
@@ -188,6 +213,8 @@ model Location {
   auditLogs          AuditLog[]
   sessionJoinCodes   SessionJoinCode[]
   realtimeTickets    RealtimeTicket[]
+  cancellationRequests CancellationRequest[]
+  billAdjustments      BillAdjustment[]
 
   @@unique([id, restaurantId], map: "location_id_restaurant_id_key")
   @@unique([restaurantId, code], map: "location_restaurant_id_code_key")
@@ -224,6 +251,9 @@ model StaffMembership {
   closedTableSessions       TableSession[]        @relation("TableSessionClosedBy")
   createdSessionJoinCodes   SessionJoinCode[]
   orders                    Order[]
+  requestedCancellations    CancellationRequest[] @relation("CancellationRequestedByMembership")
+  decidedCancellations      CancellationRequest[] @relation("CancellationDecidedByMembership")
+  billAdjustments           BillAdjustment[]
 
   @@unique([staffUserId, locationId], map: "staff_membership_user_location_key")
   @@unique([id, staffUserId], map: "staff_membership_id_user_key")
@@ -374,6 +404,7 @@ model GuestSession {
   activationRequests      ActivationRequest[]
   createdSessionJoinCodes SessionJoinCode[]
   orders                  Order[]
+  cancellationRequests    CancellationRequest[]
 
   @@unique([id, restaurantId, locationId, tableId], map: "guest_session_id_scope_key")
   @@unique([id, restaurantId, locationId, tableSessionId], map: "guest_session_id_order_scope_key")
@@ -456,6 +487,7 @@ model TableSession {
   joinCodes               SessionJoinCode[]
   joinAttemptRateLimits   JoinAttemptRateLimit[]
   orders                  Order[]
+  cancellationRequests    CancellationRequest[]
 
   @@unique([id, restaurantId, locationId], map: "table_session_id_location_scope_key")
   @@unique([id, restaurantId, locationId, tableId], map: "table_session_id_table_scope_key")
@@ -525,6 +557,8 @@ model Bill {
   tableSession     TableSession @relation(fields: [tableSessionId, restaurantId, locationId], references: [id, restaurantId, locationId], onDelete: Restrict, onUpdate: Cascade, map: "bill_table_session_scope_fkey")
   orders           Order[]
   lines            BillLine[]
+  cancellationRequests CancellationRequest[]
+  adjustments          BillAdjustment[]
 
   @@unique([tableSessionId, restaurantId, locationId], map: "bill_table_session_scope_key")
   @@unique([id, restaurantId, locationId], map: "bill_id_scope_key")
@@ -580,6 +614,8 @@ model OrderItem {
   order             Order              @relation(fields: [orderId, billId, restaurantId, locationId], references: [id, billId, restaurantId, locationId], onDelete: Restrict, onUpdate: Restrict, map: "order_item_order_bill_scope_fkey")
   menuItem          MenuItem           @relation(fields: [menuItemId, restaurantId, locationId], references: [id, restaurantId, locationId], onDelete: Restrict, onUpdate: Restrict, map: "order_item_menu_scope_fkey")
   billLine          BillLine?
+  cancellationRequests CancellationRequest[]
+  billAdjustments      BillAdjustment[]
 
   @@unique([id, billId, restaurantId, locationId], map: "order_item_id_bill_scope_key")
   @@index([orderId], map: "order_item_order_idx")
@@ -604,6 +640,66 @@ model BillLine {
   @@unique([orderItemId, billId, restaurantId, locationId], map: "bill_line_item_bill_scope_key")
   @@index([billId], map: "bill_line_bill_idx")
   @@map("bill_line")
+}
+
+model CancellationRequest {
+  id                      String                    @id @default(uuid()) @db.Uuid
+  restaurantId            String                    @map("restaurant_id") @db.Uuid
+  locationId              String                    @map("location_id") @db.Uuid
+  tableSessionId          String                    @map("table_session_id") @db.Uuid
+  billId                  String                    @map("bill_id") @db.Uuid
+  orderItemId             String                    @map("order_item_id") @db.Uuid
+  source                  CancellationRequestSource
+  status                  CancellationRequestStatus
+  requesterGuestSessionId String?                   @map("requester_guest_session_id") @db.Uuid
+  requestedByMembershipId String?                   @map("requested_by_membership_id") @db.Uuid
+  requestReason           String                    @map("request_reason") @db.VarChar(500)
+  decidedByMembershipId   String?                   @map("decided_by_membership_id") @db.Uuid
+  decidedAt               DateTime?                 @map("decided_at") @db.Timestamptz(3)
+  decisionReason          String?                   @map("decision_reason") @db.VarChar(500)
+  version                 Int                       @default(0)
+  createdAt               DateTime                  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt               DateTime                  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  restaurant              Restaurant                @relation(fields: [restaurantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  location                Location                  @relation(fields: [locationId, restaurantId], references: [id, restaurantId], onDelete: Restrict, onUpdate: Cascade)
+  tableSession            TableSession              @relation(fields: [tableSessionId, restaurantId, locationId], references: [id, restaurantId, locationId], onDelete: Restrict, onUpdate: Restrict)
+  bill                    Bill                      @relation(fields: [billId, restaurantId, locationId], references: [id, restaurantId, locationId], onDelete: Restrict, onUpdate: Restrict)
+  orderItem               OrderItem                 @relation(fields: [orderItemId, billId, restaurantId, locationId], references: [id, billId, restaurantId, locationId], onDelete: Restrict, onUpdate: Restrict)
+  requesterGuestSession   GuestSession?             @relation(fields: [requesterGuestSessionId, restaurantId, locationId, tableSessionId], references: [id, restaurantId, locationId, tableSessionId], onDelete: Restrict, onUpdate: Restrict)
+  requestedByMembership   StaffMembership?          @relation("CancellationRequestedByMembership", fields: [requestedByMembershipId, restaurantId, locationId], references: [id, restaurantId, locationId], onDelete: Restrict, onUpdate: Restrict)
+  decidedByMembership     StaffMembership?          @relation("CancellationDecidedByMembership", fields: [decidedByMembershipId, restaurantId, locationId], references: [id, restaurantId, locationId], onDelete: Restrict, onUpdate: Restrict)
+  adjustment              BillAdjustment?
+
+  @@unique([id, billId, restaurantId, locationId], map: "cancellation_request_id_bill_scope_key")
+  @@index([orderItemId, status, createdAt], map: "cancellation_request_item_status_created_idx")
+  @@index([locationId, status, createdAt], map: "cancellation_request_location_status_created_idx")
+  @@index([requesterGuestSessionId, createdAt], map: "cancellation_request_guest_created_idx")
+  @@map("cancellation_request")
+}
+
+model BillAdjustment {
+  id                      String             @id @default(uuid()) @db.Uuid
+  restaurantId            String             @map("restaurant_id") @db.Uuid
+  locationId              String             @map("location_id") @db.Uuid
+  billId                  String             @map("bill_id") @db.Uuid
+  orderItemId             String             @map("order_item_id") @db.Uuid
+  cancellationRequestId   String             @unique(map: "bill_adjustment_cancellation_request_key") @map("cancellation_request_id") @db.Uuid
+  kind                    BillAdjustmentKind
+  amount                  BigInt
+  reason                  String             @db.VarChar(500)
+  createdByMembershipId   String             @map("created_by_membership_id") @db.Uuid
+  createdAt               DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  restaurant              Restaurant         @relation(fields: [restaurantId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  location                Location           @relation(fields: [locationId, restaurantId], references: [id, restaurantId], onDelete: Restrict, onUpdate: Cascade)
+  bill                    Bill               @relation(fields: [billId, restaurantId, locationId], references: [id, restaurantId, locationId], onDelete: Restrict, onUpdate: Restrict)
+  orderItem               OrderItem          @relation(fields: [orderItemId, billId, restaurantId, locationId], references: [id, billId, restaurantId, locationId], onDelete: Restrict, onUpdate: Restrict)
+  cancellationRequest     CancellationRequest @relation(fields: [cancellationRequestId, billId, restaurantId, locationId], references: [id, billId, restaurantId, locationId], onDelete: Restrict, onUpdate: Restrict)
+  createdByMembership     StaffMembership    @relation(fields: [createdByMembershipId, restaurantId, locationId], references: [id, restaurantId, locationId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([cancellationRequestId, billId, restaurantId, locationId], map: "bill_adjustment_cancellation_scope_key")
+  @@index([billId, createdAt], map: "bill_adjustment_bill_created_idx")
+  @@index([orderItemId, createdAt], map: "bill_adjustment_item_created_idx")
+  @@map("bill_adjustment")
 }
 
 model OutboxEvent {
