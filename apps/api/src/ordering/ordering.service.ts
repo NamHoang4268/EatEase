@@ -106,6 +106,19 @@ export class OrderingService {
                 note: true,
                 version: true,
                 billLine: { select: { lineAmount: true } },
+                cancellationRequests: {
+                  orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+                  take: 1,
+                  select: {
+                    id: true,
+                    status: true,
+                    version: true,
+                    requestReason: true,
+                    decisionReason: true,
+                    createdAt: true,
+                    decidedAt: true,
+                  },
+                },
               },
             },
           },
@@ -131,6 +144,17 @@ export class OrderingService {
                 lineAmount: true,
               },
             },
+            adjustments: {
+              orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+              select: {
+                id: true,
+                orderItemId: true,
+                kind: true,
+                amount: true,
+                reason: true,
+                createdAt: true,
+              },
+            },
           },
         },
       },
@@ -154,11 +178,20 @@ export class OrderingService {
         ...order,
         status: 'SUBMITTED',
         submittedAt: order.submittedAt.toISOString(),
-        items: order.items.map(({ billLine, unitPriceAmount, ...item }) => ({
-          ...item,
-          unitPriceAmount: unitPriceAmount.toString(),
-          lineAmount: billLine?.lineAmount.toString() ?? '0',
-        })),
+        items: order.items.map(
+          ({ billLine, cancellationRequests = [], unitPriceAmount, ...item }) => ({
+            ...item,
+            unitPriceAmount: unitPriceAmount.toString(),
+            lineAmount: billLine?.lineAmount.toString() ?? '0',
+            cancellationRequest: cancellationRequests[0]
+              ? {
+                  ...cancellationRequests[0],
+                  createdAt: cancellationRequests[0].createdAt.toISOString(),
+                  decidedAt: cancellationRequests[0].decidedAt?.toISOString() ?? null,
+                }
+              : null,
+          }),
+        ),
       })),
       bill: {
         ...session.bill,
@@ -171,6 +204,11 @@ export class OrderingService {
           ...line,
           unitAmount: line.unitAmount.toString(),
           lineAmount: line.lineAmount.toString(),
+        })),
+        adjustments: (session.bill.adjustments ?? []).map((adjustment) => ({
+          ...adjustment,
+          amount: adjustment.amount.toString(),
+          createdAt: adjustment.createdAt.toISOString(),
         })),
       },
     };

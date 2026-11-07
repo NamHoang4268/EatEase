@@ -43,6 +43,15 @@ export type ConsolidatedSessionView = {
       stationSnapshot: string;
       note: string | null;
       version: number;
+      cancellationRequest: {
+        id: string;
+        status: 'PENDING_WAITER' | 'PENDING_KITCHEN' | 'APPROVED' | 'REJECTED' | 'WITHDRAWN';
+        version: number;
+        requestReason: string;
+        decisionReason: string | null;
+        createdAt: string;
+        decidedAt: string | null;
+      } | null;
     }>;
   }>;
   bill: {
@@ -61,6 +70,14 @@ export type ConsolidatedSessionView = {
       quantity: number;
       unitAmount: string;
       lineAmount: string;
+    }>;
+    adjustments: Array<{
+      id: string;
+      orderItemId: string;
+      kind: 'FULL_CANCELLATION_WAIVER';
+      amount: string;
+      reason: string;
+      createdAt: string;
     }>;
   };
 };

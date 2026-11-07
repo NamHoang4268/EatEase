@@ -1,6 +1,6 @@
 # Relational data model
 
-Status: **APPROVED baseline; M2 and M3.1–M3.3 DONE; M3.4 and M3 overall IN_PROGRESS**. Physical schema/migrations hiện gồm restaurant/location/table/menu, staff identity/RBAC/session, guest session, activation request, TableSession, Bill, claim/join recovery hashes, Join Code/rate-limit state, idempotency, outbox, realtime tickets và audit persistence. M2.8 bổ sung Order/OrderItem/BillLine; M3.1/M3.2 add preparation/readiness metadata and M3.4 adds serving metadata pending owner validation. Other M3 domain tables remain logical baseline for their assigned tasks. Production migration/deployment and public smoke testing remain pending.
+Status: **APPROVED baseline; M2 and M3.1–M3.5 DONE; M3 overall IN_PROGRESS**. Physical schema/migrations hiện gồm restaurant/location/table/menu, staff identity/RBAC/session, guest session, activation request, TableSession, Bill, claim/join recovery hashes, Join Code/rate-limit state, idempotency, outbox, realtime tickets và audit persistence. M2.8 bổ sung Order/OrderItem/BillLine; M3.1–M3.4 add fulfillment timestamps and M3.5 adds owner-validated cancellation/full-waiver persistence. M3.6 remains pending; production migration/deployment and public smoke testing remain pending.
 
 ## ERD
 
@@ -177,12 +177,12 @@ Important constraints:
 - Scoped composite FKs enforce Bill thuộc đúng TableSession, guest creator đã bind vào chính TableSession đó, và staff creator cùng restaurant/location.
 - `item_count > 0` là immutable cardinality snapshot; deferred triggers yêu cầu đúng số OrderItems tại commit, đồng thời chặn append thêm item vào một Order đã submit.
 
-`order_item(id, order_id, menu_item_id, name_snapshot, unit_price_amount, quantity, modifiers_snapshot, note, station_snapshot, status, cancellation_reason, cancelled_by_membership_id, preparing_at, ready_at, served_at, cancelled_at, version)`
+`order_item(id, restaurant_id, location_id, order_id, bill_id, menu_item_id, name_snapshot, unit_price_amount, quantity, modifiers_snapshot, note, station_snapshot, status, version, preparing_at, ready_at, served_at)`
 
 - `quantity > 0`, price không âm.
 - Snapshot fields immutable sau submit.
 - Terminal operational records không bị xóa.
-- Physical M2.8 OrderItem thêm `restaurant_id`, `location_id`, `bill_id` cho composite Order/Bill/menu ownership. M3.1 adds nullable `preparing_at`, M3.2 adds nullable `ready_at`, M3.4 adds nullable `served_at`; cancellation metadata remains later M3 scope.
+- Physical M2.8 OrderItem thêm `restaurant_id`, `location_id`, `bill_id` cho composite Order/Bill/menu ownership. M3.1 adds nullable `preparing_at`, M3.2 adds nullable `ready_at`, M3.4 adds nullable `served_at`; M3.5 keeps cancellation actor/reason/decision data in dedicated records instead of rewriting the immutable item snapshot.
 - Database trigger chặn DELETE và mọi thay đổi submission snapshots, scope, menu reference, quantity và note. Operational status/version and first preparation/readiness timestamps are mutable only through authorized transitions; submitted snapshots remain immutable.
 - M3.1 forward-only migration adds `preparing_at TIMESTAMPTZ(3)` without backfill or invented historical times. Existing records retain NULL; a populated timestamp requires non-NEW status and positive version, and cannot be changed/cleared once recorded. Existing snapshot/financial constraints are preserved. ALTER TABLE takes a table lock; production migration/deployment remains pending and needs a reviewed low-traffic release window.
 - Start preparation records the membership actor in atomic `AuditLog` action `FULFILLMENT_PREPARATION_STARTED`, with item ID, TableSession ID, before/after state/version and `created_at` equal to `preparing_at`. Actor is not accepted from the client or exposed in realtime hints. This task does not add redundant actor fields to immutable submission snapshots.
@@ -193,11 +193,11 @@ Important constraints:
 
 ### Cancellation request
 
-`cancellation_request(id, restaurant_id, location_id, table_session_id, order_item_id, requested_by_guest_session_id, requested_by_membership_id, status, stage_at_request, reason, forwarded_by_membership_id, decided_by_membership_id, decision_reason, decided_at, version)`
+`cancellation_request(id, restaurant_id, location_id, table_session_id, bill_id, order_item_id, source, status, requester_guest_session_id, requested_by_membership_id, request_reason, decided_by_membership_id, decided_at, decision_reason, version, created_at, updated_at)`
 
-- Exactly one requester.
-- Partial unique unresolved request per item.
-- Kitchen decision chỉ hợp lệ với request được forward và item `PREPARING`.
+- `source = GUEST_REQUEST` requires exactly one Guest requester; `STAFF_REJECTION` requires exactly one staff requester. Scope FKs bind request, item, Bill, TableSession and actor to the same restaurant/location.
+- Partial unique index permits at most one `PENDING_WAITER|PENDING_KITCHEN` request per item. Request origin/reason are immutable; only `PENDING_WAITER → PENDING_KITCHEN|APPROVED|REJECTED|WITHDRAWN` and `PENDING_KITCHEN → APPROVED|REJECTED|WITHDRAWN` with version +1 are accepted. Terminal records cannot change.
+- Guest requests always begin `PENDING_WAITER`. Kitchen decision chỉ hợp lệ với a forwarded request and a currently PREPARING KITCHEN/BAR item. Direct operational rejection creates or approves one record only for a currently NEW KITCHEN/BAR item.
 
 ### Bill and adjustments
 
@@ -216,11 +216,12 @@ Important constraints:
 - Deferred constraints enforce đúng một matching BillLine cho mỗi OrderItem và Bill subtotal bằng tổng immutable lines. Existing `total = subtotal + adjustment` và `balance = total - paid` checks vẫn giữ nguyên.
 - M2.8 migration additive, không backfill; fail closed nếu existing Bill có subtotal khác `0` trước khi có financial lines. New indexes trên existing Bill/GuestSession có thể block writes trong migration transaction; rollout cần low-traffic window và preflight. Không thay applied migrations.
 
-`bill_adjustment(id, bill_id, order_item_id, type, amount, reason, policy_code, approved_by_membership_id, created_at)`
+`bill_adjustment(id, restaurant_id, location_id, bill_id, order_item_id, cancellation_request_id, kind, amount, reason, created_by_membership_id, created_at)`
 
-- Waiver amount âm.
-- MVP chỉ có full waiver; correction tạo record đối ứng thay vì update lịch sử.
-- Policy waiver cho approved cancellation phải reference item và cancellation reason/record.
+- M3.5 `kind = FULL_CANCELLATION_WAIVER`; amount is non-positive and must equal the negative immutable BillLine amount. Exactly one waiver may reference a cancellation request and a partial unique index prevents more than one full cancellation waiver per item.
+- Adjustment rows are immutable. Deferred database checks require Bill `adjustment_amount` to equal the sum of adjustment records; existing total/balance consistency checks remain authoritative. Approval updates item/request, adjustment, Bill aggregates/version, audit, outbox and idempotency in one transaction.
+- M3.6 Manager correction will create separate auditable records rather than update M3.5 history; it is not implemented here.
+- Forward-only migration `20261107150000_m3_5_guest_cancellation` adds enums, two empty tables, scoped FKs, partial unique indexes and triggers; it does not rewrite Order, OrderItem, BillLine or existing item state. It fails closed before table creation if any existing Bill has non-zero `adjustment_amount`, because no pre-M3.5 adjustment rows exist; production preflight must still verify this invariant before deployment. DDL/index creation may take locks and remains subject to a reviewed production migration window; deployment/public smoke are pending.
 
 ### Payment and settlement
 
@@ -286,4 +287,5 @@ M2.11 also writes `activation.requested` once with a newly created activation re
 - Prisma migrations phải được review; custom SQL được dùng khi schema DSL không biểu đạt đủ constraint.
 - M2.8 internal persistence locks TableSession → Bill → guest/membership actor → sorted menu rows (shared). Parent scope/state and active menu/category/location/restaurant are revalidated in transaction. Bill writes serialize on the same Bill row; snapshots use native `bigint` and reject BIGINT overflow before insertion.
 - M3.1 uses TableSession → Bill → staff authorization rows → OrderItem → audit/outbox/idempotency. Parent locks serialize with submission without changing money or imposing ordering eligibility on submitted work. Revalidate staff/session/permission and item scope/state/version under locks; same-key replay occurs before state/version rejection but after authorization. See [start-preparation contract](api-contracts.md#post-stafffulfillmentitemsidstart-preparation-m31).
+- M3.5 financial commands use TableSession → Bill → current actor/session/permission → OrderItem → CancellationRequest → immutable BillLine → adjustment/audit/outbox/idempotency. Guest request creation uses the same parent/item order but performs no financial write. All relationships, status/version and permission are revalidated after locks; accepted cancellation or direct rejection cannot race readiness/serving into a duplicate waiver.
 - The existing idempotency unique key is the final cross-session race guard. A unique-key loser rolls back every financial/outbox write and re-enters the same scoped locks/actor checks to replay or reject the winner. Order/Items/Lines, Bill totals/version, outbox and completed idempotency result commit atomically; no in-progress or separate idempotency framework is introduced.

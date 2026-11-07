@@ -69,6 +69,8 @@ Guest capabilities không được lưu như staff roles; chúng được derive
 
 M3.4 serving uses `serving.mark_served`, separate from `fulfillment.transition`. Waiter/Manager use the existing board and kitchen realtime audience only when explicitly granted `fulfillment.read`; serving permission alone does not grant read access or preparation/readiness commands. No implicit role grant or migration of existing memberships occurs.
 
+M3.5 preserves the prepared permission split: `order.cancel_new` decides a Guest request while the item is NEW and may decline a `PENDING_WAITER` request; `cancellation.forward_to_kitchen` forwards a PREPARING KITCHEN/BAR request; `cancellation.decide_operational` accepts/rejects a forwarded PREPARING request and may directly reject an unstarted KITCHEN/BAR item. Every staff mutation still requires `fulfillment.read` only for board visibility; mutation permissions do not implicitly grant read access or another transition capability. Guest cancellation authorization is relationship-based and limited to an ORDER_ENABLED GuestSession bound to the item's active TableSession.
+
 ## Enforcement tests
 
 Mỗi protected command phải có test cho:

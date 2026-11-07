@@ -2,7 +2,7 @@
 
 Status values: `TODO`, `IN_PROGRESS`, `BLOCKED`, `DONE`.
 
-Planning completion và implementation completion là hai việc khác nhau. M1/M2 và M3.1 đã hoàn tất, được owner verify; phần còn lại của M3 đang `IN_PROGRESS`, M4–M5 chưa bắt đầu.
+Planning completion và implementation completion là hai việc khác nhau. M1/M2 và M3.1–M3.5 đã hoàn tất, được owner verify; M3 vẫn `IN_PROGRESS` với M3.6 đang chờ, M4–M5 chưa bắt đầu.
 
 ## M0 — Repository and documentation bootstrap
 
@@ -224,20 +224,20 @@ M2.9 verification: owner-executed final validation passed `99/99` API unit tests
 
 ## M3 — Fulfillment, cancellation and serving
 
-**Status:** `IN_PROGRESS` — M3.1–M3.4 are `DONE` after owner validation. M3.5 and M3.6 remain `TODO`, pending separate owner authorization; remaining workflows are not complete.
+**Status:** `IN_PROGRESS` — M3.1–M3.5 are `DONE` after owner validation. M3.6 remains `TODO` pending separate authorization.
 
 Dependency: M2.
 
-| Status      | Task                                                     |
-| ----------- | -------------------------------------------------------- |
-| DONE        | Reuse KITCHEN/BAR/DIRECT queue filters verified in M2.10 |
-| IN_PROGRESS | Implement versioned item transitions                     |
-| TODO        | Implement guest cancellation request and waiter routing  |
-| TODO        | Implement Kitchen PREPARING decision                     |
-| TODO        | Implement automatic full-waiver adjustments              |
-| TODO        | Implement Manager exceptional full correction            |
-| DONE        | Implement waiter serving workflow                        |
-| TODO        | Implement realtime/reconnect behavior and audit tests    |
+| Status | Task                                                     |
+| ------ | -------------------------------------------------------- |
+| DONE   | Reuse KITCHEN/BAR/DIRECT queue filters verified in M2.10 |
+| DONE   | Implement versioned item transitions                     |
+| DONE   | Implement guest cancellation request and waiter routing  |
+| DONE   | Implement Kitchen PREPARING decision                     |
+| DONE   | Implement automatic full-waiver adjustments              |
+| TODO   | Implement Manager exceptional full correction            |
+| DONE   | Implement waiter serving workflow                        |
+| DONE   | Implement realtime/reconnect behavior and audit tests    |
 
 ### M3.1 — Atomic start preparation
 
@@ -270,13 +270,23 @@ Dependency: M2.
 
 ### M3.4 — Waiter serving
 
-- **Status:** `DONE`; implementation and owner-confirmed local validation complete. M3 remains `IN_PROGRESS`, with M3.5 and M3.6 remaining.
+- **Status:** `DONE`; implementation and owner-confirmed local validation complete. M3 remains `IN_PROGRESS`, with M3.6 remaining after the separately completed M3.5.
 - **Scope:** READY → SERVED for KITCHEN/BAR/DIRECT through `POST /staff/fulfillment/items/:id/mark-served`; dedicated `serving.mark_served`, existing staff session/Origin/CSRF and transaction-time scope/permission revalidation.
 - **Artifacts:** shared transition transaction with operation-scoped `MARK_SERVED` replay, servedAt/version/audit/outbox; additive nullable timestamp migration `20261107100000_m3_4_waiter_serving`; existing board exposes authorized serving and terminal SERVED filter. Explicit `fulfillment.read` remains required for board/realtime; no implicit grants.
 - **Acceptance:** one serving effect under retries/races; stale versions, wrong state/scope/permission and revoked sessions denied; late failures roll back; prior timestamps, Order/snapshots/BillLines/Bill totals unchanged; UI preserves retry identity, refetches success/conflicts and reconnects through existing scoped realtime.
 - **Verification:** owner-confirmed local validation: PostgreSQL migrations `12/12` applied and schema up to date; Prisma validate/generate PASS; PostgreSQL integration `78/78`, API unit `167/167`, Web unit `108/108` and Playwright E2E `5/5` PASS (`358/358` total). API/Web lint, typecheck and production builds, `pnpm format:check` and `git diff --check` PASS. No new browser E2E scenario was added; the existing suite passed.
 - **Unresolved intermittent E2E issues:** the Next.js `/staff/login` navigation loop stopped operationally after backing up `.next/dev`; one expired-Guest scenario failed and passed on subsequent runs. Neither root cause is confirmed, and passing reruns/cache recovery do not establish a verified fix. If either recurs, prioritize root-cause investigation and a verified fix rather than repeated reruns or cache clearing.
-- **Release/checkpoint:** production migration execution/deployment/public smoke remain pending; completed local migrations/tests/builds do not establish production validation. No rejection/cancellation/waiver, payment, settlement or table closure is included. Do not proceed to M3.5/M3.6 without separate owner authorization.
+- **Release/checkpoint:** production migration execution/deployment/public smoke remain pending; completed local migrations/tests/builds do not establish production validation. No rejection/cancellation/waiver, payment, settlement or table closure is included in M3.4. M3.5 proceeded under separate authorization; do not proceed to M3.6 without the same explicit gate.
+
+### M3.5 — Guest cancellation and Kitchen decision
+
+- **Status:** `DONE`; implementation and owner-confirmed local validation complete. M3 remains `IN_PROGRESS`; M3.6 is `TODO` pending separate authorization.
+- **Scope:** Guest request for NEW/PREPARING without immediate cancellation; Waiter NEW decision or PREPARING routing; Kitchen/Bar forwarded PREPARING decision; direct operational rejection of NEW KITCHEN/BAR. Accepted paths produce CANCELLED plus a policy-fixed 100% waiver; rejected requests preserve item state and charge.
+- **Artifacts:** forward-only migration `20261107150000_m3_5_guest_cancellation`; scoped CancellationRequest and immutable BillAdjustment persistence/constraints; Guest and staff APIs; transaction-time actor/permission/state revalidation; operation-scoped idempotency; audit and `cancellation.updated`/fulfillment/Bill outbox; consolidated Guest Bill and existing board UI/realtime extensions.
+- **Acceptance:** at most one pending request and one full cancellation waiver per item; retries/races never duplicate decisions, adjustments or events; request/item/Bill/waiver/audit/outbox/idempotency commit atomically; immutable Order/snapshots/BillLines remain unchanged; correct Guest/staff/location/station permission boundaries; pending/accepted/rejected UI and original charge/full waiver/payable amount remain explicit.
+- **Validation:** owner-confirmed local validation applied all `13/13` migrations and passed Prisma validate/generate, PostgreSQL integration `149/149`, API unit `188/188`, Web unit `111/111` and Playwright E2E `5/5` (`453/453` tests total). Full workspace lint/typecheck, API/Web production builds, `pnpm format:check` and `git diff --check` PASS.
+- **Regression fixes during validation:** activation integration fixtures now reuse global permission codes and clean up only fixture-owned unreferenced records; activation audit/idempotency assertions are scoped to their fixture restaurant/actor; fulfillment contract tests accept the M3.5 CANCELLED filter while retaining an invalid-status case; the expired-Guest recovery test now returns the required consolidated session shape and verifies draft retention plus explicit rejoin without masking malformed authenticated responses.
+- **Release/checkpoint:** production migration execution, deployment and hosted/public smoke remain pending; local migration/tests/builds do not establish production validation. The approved simple full-waiver policy remains unchanged. Do not begin M3.6 without separate owner authorization.
 
 ## M4 — Checkout and table lifecycle
 

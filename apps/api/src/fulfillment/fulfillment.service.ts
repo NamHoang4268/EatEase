@@ -46,19 +46,39 @@ export class FulfillmentService {
             },
           },
         },
+        cancellationRequests: {
+          where: { status: { in: ['PENDING_WAITER', 'PENDING_KITCHEN'] } },
+          orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+          take: 1,
+          select: {
+            id: true,
+            status: true,
+            version: true,
+            requestReason: true,
+            createdAt: true,
+          },
+        },
       },
     });
-    const items = rows.slice(0, query.limit).map(({ order, ...item }) => ({
-      ...item,
-      order: {
-        id: order.id,
-        orderNumber: order.orderNumber,
-        source: order.source,
-        submittedAt: order.submittedAt.toISOString(),
-      },
-      tableSessionId: order.tableSession.id,
-      table: order.tableSession.table,
-    }));
+    const items = rows
+      .slice(0, query.limit)
+      .map(({ order, cancellationRequests = [], ...item }) => ({
+        ...item,
+        order: {
+          id: order.id,
+          orderNumber: order.orderNumber,
+          source: order.source,
+          submittedAt: order.submittedAt.toISOString(),
+        },
+        tableSessionId: order.tableSession.id,
+        table: order.tableSession.table,
+        cancellationRequest: cancellationRequests[0]
+          ? {
+              ...cancellationRequests[0],
+              createdAt: cancellationRequests[0].createdAt.toISOString(),
+            }
+          : null,
+      }));
     const last = items.at(-1);
     return {
       items,

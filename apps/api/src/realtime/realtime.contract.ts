@@ -38,6 +38,7 @@ export function notification(event: { id: string; eventType: string; payload: un
     'order.submitted',
     'fulfillment.item.created',
     'fulfillment.item.updated',
+    'cancellation.updated',
     'bill.updated',
     'activation.requested',
     'activation.updated',
@@ -50,6 +51,7 @@ export function notification(event: { id: string; eventType: string; payload: un
       'order.submitted',
       'fulfillment.item.created',
       'fulfillment.item.updated',
+      'cancellation.updated',
       'bill.updated',
     ].includes(event.eventType) &&
     !payload.tableSessionId
@@ -89,7 +91,11 @@ export function matches(
     return false;
   switch (subscription.audience) {
     case 'kitchen':
-      return ['fulfillment.item.created', 'fulfillment.item.updated'].includes(event.eventType);
+      return [
+        'fulfillment.item.created',
+        'fulfillment.item.updated',
+        'cancellation.updated',
+      ].includes(event.eventType);
     case 'activation':
       return (
         ['activation.requested', 'activation.updated'].includes(event.eventType) &&
@@ -99,7 +105,8 @@ export function matches(
       return event.eventType === 'table.session.updated';
     case 'bill':
       return (
-        event.eventType === 'bill.updated' && payload.tableSessionId === subscription.resourceId
+        ['bill.updated', 'cancellation.updated'].includes(event.eventType) &&
+        payload.tableSessionId === subscription.resourceId
       );
   }
 }

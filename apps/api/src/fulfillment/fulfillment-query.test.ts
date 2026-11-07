@@ -26,7 +26,7 @@ describe('fulfillment query contract', () => {
     { limit: '-1' },
     { limit: '2.5' },
     { limit: ['1', '2'] },
-    { status: 'CANCELLED' },
+    { status: 'REJECTED' },
     { status: ['NEW', 'READY'] },
     { station: 'OTHER' },
     { locationId: 'client-scope' },

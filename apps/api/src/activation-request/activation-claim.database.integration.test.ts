@@ -53,6 +53,24 @@ describe('guest activation claim database integration', () => {
 
   const cookie = (token: string) => `${GUEST_SESSION_COOKIE}=${encodeURIComponent(token)}`;
 
+  const claimAuditCount = () =>
+    prisma.auditLog.count({
+      where: {
+        restaurantId: ids.restaurant,
+        actorId: ids.requester,
+        action: 'GUEST_ACTIVATION_CLAIMED',
+      },
+    });
+
+  const claimIdempotencyCount = () =>
+    prisma.idempotencyRecord.count({
+      where: {
+        restaurantId: ids.restaurant,
+        actorId: ids.requester,
+        operation: 'CLAIM_ACTIVATION',
+      },
+    });
+
   function responseCookieToken(response: request.Response): string {
     const header = response.headers['set-cookie'] as unknown;
     const value =
@@ -326,9 +344,7 @@ describe('guest activation claim database integration', () => {
     });
     expect(stored.previousTokenValidUntil!.getTime() - stored.lastSeenAt.getTime()).toBe(120_000);
     expect(stored.idleExpiresAt.getTime() - stored.lastSeenAt.getTime()).toBe(30 * 60_000);
-    await expect(
-      prisma.auditLog.count({ where: { action: 'GUEST_ACTIVATION_CLAIMED' } }),
-    ).resolves.toBe(1);
+    await expect(claimAuditCount()).resolves.toBe(1);
     await expect(prisma.tableSession.count({ where: { id: tableSession.id } })).resolves.toBe(1);
     await expect(prisma.bill.count({ where: { tableSessionId: tableSession.id } })).resolves.toBe(
       1,
@@ -358,9 +374,7 @@ describe('guest activation claim database integration', () => {
     expect((currentReplay.body as { data: { csrfToken: string } }).data.csrfToken).toBe(
       replacementCsrf,
     );
-    await expect(
-      prisma.auditLog.count({ where: { action: 'GUEST_ACTIVATION_CLAIMED' } }),
-    ).resolves.toBe(1);
+    await expect(claimAuditCount()).resolves.toBe(1);
 
     await request(server)
       .get('/api/v1/guest-sessions/current')
@@ -417,9 +431,7 @@ describe('guest activation claim database integration', () => {
     });
     expect(afterRecovery.previousTokenValidUntil).toEqual(originalDeadline);
     expect(afterRecovery.version).toBe(1);
-    await expect(
-      prisma.auditLog.count({ where: { action: 'GUEST_ACTIVATION_CLAIMED' } }),
-    ).resolves.toBe(1);
+    await expect(claimAuditCount()).resolves.toBe(1);
     await request(server)
       .get('/api/v1/guest-sessions/current')
       .set('Cookie', cookie(firstCurrentToken))
@@ -475,12 +487,8 @@ describe('guest activation claim database integration', () => {
       claim(requesterToken, requesterCsrf, 'claim-race-b'),
     ]);
     expect(responses.map(({ status }) => status).sort()).toEqual([200, 401]);
-    await expect(
-      prisma.auditLog.count({ where: { action: 'GUEST_ACTIVATION_CLAIMED' } }),
-    ).resolves.toBe(1);
-    await expect(
-      prisma.idempotencyRecord.count({ where: { operation: 'CLAIM_ACTIVATION' } }),
-    ).resolves.toBe(1);
+    await expect(claimAuditCount()).resolves.toBe(1);
+    await expect(claimIdempotencyCount()).resolves.toBe(1);
   });
 
   it('rolls back credential rotation and access upgrade when audit persistence fails', async () => {
@@ -514,9 +522,7 @@ describe('guest activation claim database integration', () => {
       previousTokenHash: null,
       version: 0,
     });
-    await expect(
-      prisma.idempotencyRecord.count({ where: { operation: 'CLAIM_ACTIVATION' } }),
-    ).resolves.toBe(0);
+    await expect(claimIdempotencyCount()).resolves.toBe(0);
     await expect(
       prisma.activationRequest.findUniqueOrThrow({ where: { id: activation.id } }),
     ).resolves.toMatchObject({ version: 1 });

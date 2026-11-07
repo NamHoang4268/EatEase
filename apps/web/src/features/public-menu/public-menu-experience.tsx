@@ -37,6 +37,14 @@ const availabilityCopy = {
   UNAVAILABLE: 'Bàn hiện chưa sẵn sàng · Chỉ xem thực đơn',
 } as const;
 
+const cancellationStatusCopy = {
+  PENDING_WAITER: 'Đang chờ nhân viên xem xét',
+  PENDING_KITCHEN: 'Đang chờ Kitchen/Bar quyết định',
+  APPROVED: 'Đã chấp nhận · món được miễn 100%',
+  REJECTED: 'Đã từ chối · món vẫn được tính phí',
+  WITHDRAWN: 'Đã rút yêu cầu',
+} as const;
+
 const CLAIM_RECOVERY_TTL_MS = 120_000;
 
 type StoredClaimAttempt = {
@@ -113,12 +121,16 @@ export function PublicMenuExperience({ publicId }: { publicId: string }) {
   const [billError, setBillError] = useState<string | null>(null);
   const [submitBusy, setSubmitBusy] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [cancellationReasons, setCancellationReasons] = useState<Record<string, string>>({});
+  const [cancellationPending, setCancellationPending] = useState<string | null>(null);
+  const [cancellationNotice, setCancellationNotice] = useState<string | null>(null);
   const bootstrappedTableRef = useRef<string | null>(null);
   const activationKeyRef = useRef<string | null>(null);
   const claimAttemptRef = useRef<StoredClaimAttempt | null>(null);
   const joinAttemptKeyRef = useRef<string | null>(null);
   const inviteAttemptKeyRef = useRef<string | null>(null);
   const orderAttemptRef = useRef<{ key: string; payload: string } | null>(null);
+  const cancellationAttemptsRef = useRef(new Map<string, string>());
 
   const refreshActivation = useCallback(async (signal?: AbortSignal) => {
     const response = await fetch('/api/v1/activation-requests/current', {
@@ -398,6 +410,91 @@ export function PublicMenuExperience({ publicId }: { publicId: string }) {
       setSubmitError('Kết nối bị gián đoạn. Thử lại sẽ dùng cùng mã yêu cầu để tránh gửi trùng.');
     } finally {
       setSubmitBusy(false);
+    }
+  };
+
+  const requestCancellation = async (
+    item: ConsolidatedSessionView['orders'][number]['items'][number],
+  ) => {
+    if (
+      cancellationPending ||
+      !['NEW', 'PREPARING'].includes(item.status) ||
+      item.cancellationRequest?.status === 'PENDING_WAITER' ||
+      item.cancellationRequest?.status === 'PENDING_KITCHEN'
+    )
+      return;
+    const reason = cancellationReasons[item.id]?.trim() ?? '';
+    if (!reason) {
+      setCancellationNotice('Vui lòng nhập lý do trước khi gửi yêu cầu hủy món.');
+      return;
+    }
+    const identity = `${item.id}:${item.version}:${reason}`;
+    const key = cancellationAttemptsRef.current.get(identity) ?? crypto.randomUUID();
+    cancellationAttemptsRef.current.set(identity, key);
+    setCancellationPending(item.id);
+    setCancellationNotice(null);
+    const send = (token: string) =>
+      fetch(`/api/v1/orders/items/${encodeURIComponent(item.id)}/cancellation-requests`, {
+        method: 'POST',
+        credentials: 'include',
+        cache: 'no-store',
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': key,
+          'X-CSRF-Token': token,
+        },
+        body: JSON.stringify({ expectedVersion: item.version, reason }),
+      });
+    try {
+      let token = csrfToken ?? (await recoverCsrfToken());
+      let response = await send(token);
+      let payload = (await response
+        .clone()
+        .json()
+        .catch(() => null)) as {
+        error?: { code?: string };
+      } | null;
+      if (response.status === 403 && payload?.error?.code === 'GUEST_CSRF_INVALID') {
+        token = await recoverCsrfToken();
+        response = await send(token);
+        payload = (await response
+          .clone()
+          .json()
+          .catch(() => null)) as {
+          error?: { code?: string };
+        } | null;
+      }
+      if (response.status === 401) {
+        cancellationAttemptsRef.current.clear();
+        setSessionEstablished(false);
+        setGuestAccess('BROWSE_ONLY');
+        setCancellationNotice('Phiên gọi món đã hết hạn. Hãy tham gia lại bàn trước khi thử lại.');
+        return;
+      }
+      if (response.ok) {
+        cancellationAttemptsRef.current.delete(identity);
+        setCancellationReasons((current) => ({ ...current, [item.id]: '' }));
+        setCancellationNotice('Yêu cầu hủy đã được gửi và đang chờ nhân viên quyết định.');
+        await loadSessionView();
+        return;
+      }
+      if (response.status === 409) {
+        cancellationAttemptsRef.current.delete(identity);
+        setCancellationNotice('Trạng thái món đã thay đổi. Dữ liệu mới nhất đã được tải lại.');
+        await loadSessionView();
+        return;
+      }
+      if (response.status < 500 && ![408, 429].includes(response.status))
+        cancellationAttemptsRef.current.delete(identity);
+      setCancellationNotice(
+        response.status === 403
+          ? 'Bạn không thể yêu cầu hủy món này.'
+          : 'Chưa thể xác nhận yêu cầu. Thử lại sẽ tiếp tục cùng một lần gửi.',
+      );
+    } catch {
+      setCancellationNotice('Kết nối bị gián đoạn. Thử lại sẽ tiếp tục cùng một lần gửi.');
+    } finally {
+      setCancellationPending(null);
     }
   };
 
@@ -1116,6 +1213,71 @@ export function PublicMenuExperience({ publicId }: { publicId: string }) {
           {billError ? <p className="activation-error">{billError}</p> : null}
           {sessionView ? (
             <>
+              <section aria-labelledby="submitted-items-heading">
+                <h3 id="submitted-items-heading">Món đã gửi</h3>
+                <ul className="bill-lines">
+                  {sessionView.orders.flatMap((order) =>
+                    order.items.map((item) => {
+                      const pendingRequest =
+                        item.cancellationRequest?.status === 'PENDING_WAITER' ||
+                        item.cancellationRequest?.status === 'PENDING_KITCHEN';
+                      const eligible =
+                        ['NEW', 'PREPARING'].includes(item.status) && !pendingRequest;
+                      return (
+                        <li key={item.id}>
+                          <div>
+                            <strong>
+                              {item.nameSnapshot} × {item.quantity}
+                            </strong>
+                            <p>
+                              {item.stationSnapshot} · {item.status}
+                            </p>
+                            {item.cancellationRequest ? (
+                              <p role="status">
+                                {cancellationStatusCopy[item.cancellationRequest.status]}
+                              </p>
+                            ) : null}
+                          </div>
+                          {eligible ? (
+                            <div className="rejection-form">
+                              <label htmlFor={`cancel-reason-${item.id}`}>Lý do yêu cầu hủy</label>
+                              <input
+                                id={`cancel-reason-${item.id}`}
+                                maxLength={500}
+                                value={cancellationReasons[item.id] ?? ''}
+                                onChange={(event) =>
+                                  setCancellationReasons((current) => ({
+                                    ...current,
+                                    [item.id]: event.target.value,
+                                  }))
+                                }
+                              />
+                              <button
+                                className="danger-button"
+                                disabled={
+                                  cancellationPending !== null ||
+                                  (cancellationReasons[item.id]?.trim().length ?? 0) === 0
+                                }
+                                type="button"
+                                onClick={() => void requestCancellation(item)}
+                              >
+                                {cancellationPending === item.id
+                                  ? 'Đang gửi yêu cầu…'
+                                  : 'Yêu cầu hủy món'}
+                              </button>
+                            </div>
+                          ) : null}
+                        </li>
+                      );
+                    }),
+                  )}
+                </ul>
+                {cancellationNotice ? (
+                  <p className="queue-notice" role="status">
+                    {cancellationNotice}
+                  </p>
+                ) : null}
+              </section>
               {sessionView.bill.lines.length === 0 ? (
                 <div className="empty-panel">
                   <h3>Chưa có món đã gửi</h3>
@@ -1133,8 +1295,22 @@ export function PublicMenuExperience({ publicId }: { publicId: string }) {
                   ))}
                 </ul>
               )}
+              {(sessionView.bill.adjustments ?? []).length > 0 ? (
+                <ul className="bill-lines" aria-label="Miễn giảm">
+                  {(sessionView.bill.adjustments ?? []).map((adjustment) => (
+                    <li key={adjustment.id}>
+                      <span>Miễn 100% món đã hủy</span>
+                      <strong>{formatVnd(BigInt(adjustment.amount))}</strong>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
               <div className="bill-totals">
-                <span>Tổng cộng</span>
+                <span>Tiền món gốc</span>
+                <strong>{formatVnd(BigInt(sessionView.bill.subtotalAmount))}</strong>
+                <span>Miễn giảm</span>
+                <strong>{formatVnd(BigInt(sessionView.bill.adjustmentAmount))}</strong>
+                <span>Phải trả</span>
                 <strong>{formatVnd(BigInt(sessionView.bill.totalAmount))}</strong>
                 <span>Còn lại</span>
                 <strong>{formatVnd(BigInt(sessionView.bill.balanceAmount))}</strong>

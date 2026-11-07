@@ -80,7 +80,9 @@ describe('activation request database integration', () => {
       where: { id: { in: [ids.membershipAllowed, ids.membershipDenied] } },
     });
     await prisma.role.deleteMany({ where: { id: ids.role } });
-    await prisma.permission.deleteMany({ where: { id: ids.permission } });
+    await prisma.permission.deleteMany({
+      where: { id: ids.permission, roles: { none: {} } },
+    });
     await prisma.staffUser.deleteMany({
       where: { id: { in: [ids.staffAllowed, ids.staffDenied] } },
     });
@@ -237,9 +239,13 @@ describe('activation request database integration', () => {
         name: 'Activation reader',
       },
     });
-    await prisma.permission.create({ data: { id: ids.permission, code: 'table.activation.read' } });
+    const permission = await prisma.permission.upsert({
+      where: { code: 'table.activation.read' },
+      create: { id: ids.permission, code: 'table.activation.read' },
+      update: {},
+    });
     await prisma.rolePermission.create({
-      data: { roleId: ids.role, permissionId: ids.permission },
+      data: { roleId: ids.role, permissionId: permission.id },
     });
     await prisma.membershipRole.create({
       data: {
