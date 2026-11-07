@@ -9,13 +9,15 @@ import {
 import { PrismaService } from '../database/prisma.service.js';
 import type { StaffPrincipal } from '../staff-auth/staff-auth.types.js';
 
-type Operation = 'START_PREPARATION' | 'MARK_READY';
+type Operation = 'START_PREPARATION' | 'MARK_READY' | 'MARK_SERVED';
 const denied = () => new ForbiddenException({ code: 'STAFF_AUTHORIZATION_DENIED' });
 const conflict = (code: string) => new ConflictException({ code });
 type Input = { itemId: string; expectedVersion: number; idempotencyKey: string };
 type Result = {
   item: { id: string; version: number } & (
-    { status: 'PREPARING'; preparingAt: string } | { status: 'READY'; readyAt: string }
+    | { status: 'PREPARING'; preparingAt: string }
+    | { status: 'READY'; readyAt: string }
+    | { status: 'SERVED'; servedAt: string }
   );
 };
 
@@ -31,12 +33,18 @@ export class FulfillmentTransitionService {
     return this.execute(principal, input, 'MARK_READY');
   }
 
+  async served(principal: StaffPrincipal, input: Input): Promise<Result> {
+    return this.execute(principal, input, 'MARK_SERVED');
+  }
+
   private async execute(
     principal: StaffPrincipal,
     input: Input,
     operation: Operation,
   ): Promise<Result> {
     const scope = { restaurantId: principal.restaurantId, locationId: principal.locationId };
+    const permission =
+      operation === 'MARK_SERVED' ? 'serving.mark_served' : 'fulfillment.transition';
     const target = await this.prisma.orderItem.findFirst({
       where: { id: input.itemId, ...scope },
       select: { order: { select: { tableSessionId: true } } },
@@ -81,7 +89,7 @@ export class FulfillmentTransitionService {
         JOIN "role_permission" rp ON rp."role_id" = mr."role_id"
         JOIN "permission" p ON p."id" = rp."permission_id"
         WHERE mr."membership_id" = ${principal.membershipId}::uuid AND mr."restaurant_id" = ${scope.restaurantId}::uuid
-          AND p."code" = 'fulfillment.transition' FOR SHARE OF mr, rp, p`;
+          AND p."code" = ${permission} FOR SHARE OF mr, rp, p`;
         if (!permissions[0]) throw denied();
         const items = await tx.$queryRaw<
           Array<{
@@ -90,9 +98,10 @@ export class FulfillmentTransitionService {
             station: string;
             version: number;
             preparingAt: Date | null;
+            readyAt: Date | null;
           }>
         >`
-        SELECT "id", "status", "station_snapshot" AS "station", "version", "preparing_at" AS "preparingAt" FROM "order_item"
+        SELECT "id", "status", "station_snapshot" AS "station", "version", "preparing_at" AS "preparingAt", "ready_at" AS "readyAt" FROM "order_item"
         WHERE "id" = ${input.itemId}::uuid AND "restaurant_id" = ${scope.restaurantId}::uuid
           AND "location_id" = ${scope.locationId}::uuid FOR UPDATE`;
         const item = items[0];
@@ -113,37 +122,58 @@ export class FulfillmentTransitionService {
         }
         if (item.version !== input.expectedVersion) throw conflict('FULFILLMENT_VERSION_CONFLICT');
         const markingReady = operation === 'MARK_READY';
-        const expectedState = markingReady && item.station !== 'DIRECT' ? 'PREPARING' : 'NEW';
+        const markingServed = operation === 'MARK_SERVED';
+        const expectedState = markingServed
+          ? 'READY'
+          : markingReady && item.station !== 'DIRECT'
+            ? 'PREPARING'
+            : 'NEW';
         if (item.status !== expectedState) throw conflict('FULFILLMENT_STATE_CONFLICT');
         if (
-          !(markingReady ? ['KITCHEN', 'BAR', 'DIRECT'] : ['KITCHEN', 'BAR']).includes(item.station)
+          !(
+            markingReady || markingServed ? ['KITCHEN', 'BAR', 'DIRECT'] : ['KITCHEN', 'BAR']
+          ).includes(item.station)
         )
           throw conflict('FULFILLMENT_STATION_INVALID');
-        // Keep readiness monotonic if the process clock moved backwards since preparation.
+        // Preserve recorded lifecycle chronology even if the process clock moved backwards.
         const now = new Date(
-          Math.max(Date.now(), markingReady ? (item.preparingAt?.getTime() ?? 0) : 0),
+          Math.max(
+            Date.now(),
+            markingReady || markingServed ? (item.preparingAt?.getTime() ?? 0) : 0,
+            markingServed ? (item.readyAt?.getTime() ?? 0) : 0,
+          ),
         );
-        const status = markingReady ? 'READY' : 'PREPARING';
+        const status = markingServed ? 'SERVED' : markingReady ? 'READY' : 'PREPARING';
         const updated = await tx.orderItem.update({
           where: { id: item.id, status: expectedState, version: input.expectedVersion },
           data: {
             status,
             version: { increment: 1 },
-            ...(markingReady ? { readyAt: now } : { preparingAt: now }),
+            ...(markingServed
+              ? { servedAt: now }
+              : markingReady
+                ? { readyAt: now }
+                : { preparingAt: now }),
           },
           select: { id: true, version: true },
         });
         const result: Result = {
-          item: markingReady
-            ? { ...updated, status: 'READY', readyAt: now.toISOString() }
-            : { ...updated, status: 'PREPARING', preparingAt: now.toISOString() },
+          item: markingServed
+            ? { ...updated, status: 'SERVED', servedAt: now.toISOString() }
+            : markingReady
+              ? { ...updated, status: 'READY', readyAt: now.toISOString() }
+              : { ...updated, status: 'PREPARING', preparingAt: now.toISOString() },
         };
         await tx.auditLog.create({
           data: {
             ...scope,
             actorType: 'STAFF_MEMBERSHIP',
             actorId: principal.membershipId,
-            action: markingReady ? 'FULFILLMENT_ITEM_READY' : 'FULFILLMENT_PREPARATION_STARTED',
+            action: markingServed
+              ? 'FULFILLMENT_ITEM_SERVED'
+              : markingReady
+                ? 'FULFILLMENT_ITEM_READY'
+                : 'FULFILLMENT_PREPARATION_STARTED',
             resourceType: 'OrderItem',
             resourceId: item.id,
             createdAt: now,

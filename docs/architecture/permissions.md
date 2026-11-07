@@ -67,6 +67,8 @@ audit.read
 
 Guest capabilities không được lưu như staff roles; chúng được derive từ access level và relationship của guest session.
 
+M3.4 serving uses `serving.mark_served`, separate from `fulfillment.transition`. Waiter/Manager use the existing board and kitchen realtime audience only when explicitly granted `fulfillment.read`; serving permission alone does not grant read access or preparation/readiness commands. No implicit role grant or migration of existing memberships occurs.
+
 ## Enforcement tests
 
 Mỗi protected command phải có test cho:

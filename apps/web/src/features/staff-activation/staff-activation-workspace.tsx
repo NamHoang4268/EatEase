@@ -642,6 +642,7 @@ export function StaffActivationWorkspace() {
       {canReadFulfillment ? (
         <KitchenQueue
           canTransition={auth.staff.permissions.includes('fulfillment.transition')}
+          canServe={auth.staff.permissions.includes('serving.mark_served')}
           csrfToken={csrfToken}
           recoverCsrf={recoverCsrf}
           allowed

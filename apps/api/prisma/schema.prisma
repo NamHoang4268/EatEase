@@ -576,6 +576,7 @@ model OrderItem {
   version           Int                @default(0)
   preparingAt       DateTime?          @map("preparing_at") @db.Timestamptz(3)
   readyAt           DateTime?          @map("ready_at") @db.Timestamptz(3)
+  servedAt          DateTime?          @map("served_at") @db.Timestamptz(3)
   order             Order              @relation(fields: [orderId, billId, restaurantId, locationId], references: [id, billId, restaurantId, locationId], onDelete: Restrict, onUpdate: Restrict, map: "order_item_order_bill_scope_fkey")
   menuItem          MenuItem           @relation(fields: [menuItemId, restaurantId, locationId], references: [id, restaurantId, locationId], onDelete: Restrict, onUpdate: Restrict, map: "order_item_menu_scope_fkey")
   billLine          BillLine?

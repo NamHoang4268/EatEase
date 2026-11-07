@@ -64,28 +64,62 @@ describe('StaffActivationWorkspace', () => {
     });
   });
 
-  it('opens the kitchen queue for kitchen-only staff without fetching unauthorized activation data', async () => {
-    const fetchMock = vi.fn().mockImplementation((url: string) => {
-      if (url === '/api/v1/staff/auth/me')
-        return Promise.resolve(
-          mockResponse({ data: { staff: { ...staff, permissions: ['fulfillment.read'] } } }),
-        );
-      if (url === '/api/v1/staff/auth/csrf-token')
-        return Promise.resolve(mockResponse({ data: { csrfToken: 'staff-csrf' } }));
-      if (url.startsWith('/api/v1/staff/fulfillment/items?'))
-        return Promise.resolve(
-          mockResponse({ data: { items: [], page: { limit: 50, nextCursor: null } } }),
-        );
-      return Promise.reject(new Error(`Unexpected request: ${url}`));
-    });
-    vi.stubGlobal('fetch', fetchMock);
-    render(<StaffActivationWorkspace />);
-    await screen.findByText('Chưa có món ở trạng thái này tại trạm đã chọn.');
-    expect(screen.queryByRole('heading', { name: 'Yêu cầu kích hoạt bàn' })).toBeNull();
-    expect(
-      fetchMock.mock.calls.some(([url]) => String(url).includes('/staff/activation-requests')),
-    ).toBe(false);
-  });
+  it.each([false, true])(
+    'opens the scoped board without unauthorized activation data (serving %s)',
+    async (canServe) => {
+      const fetchMock = vi.fn().mockImplementation((url: string) => {
+        if (url === '/api/v1/staff/auth/me')
+          return Promise.resolve(
+            mockResponse({
+              data: {
+                staff: {
+                  ...staff,
+                  permissions: ['fulfillment.read', ...(canServe ? ['serving.mark_served'] : [])],
+                },
+              },
+            }),
+          );
+        if (url === '/api/v1/staff/auth/csrf-token')
+          return Promise.resolve(mockResponse({ data: { csrfToken: 'staff-csrf' } }));
+        if (url.startsWith('/api/v1/staff/fulfillment/items?'))
+          return Promise.resolve(
+            mockResponse({
+              data: {
+                items: [
+                  {
+                    id: 'ready-item',
+                    version: 2,
+                    status: 'READY',
+                    stationSnapshot: 'KITCHEN',
+                    nameSnapshot: 'Món sẵn sàng',
+                    quantity: 1,
+                    note: null,
+                    table: { code: 'A01' },
+                    order: {
+                      id: 'order',
+                      orderNumber: 'ORDER-1',
+                      source: 'QR_GUEST',
+                      submittedAt: '2026-11-07T00:00:00.000Z',
+                    },
+                  },
+                ],
+                page: { limit: 50, nextCursor: null },
+              },
+            }),
+          );
+        return Promise.reject(new Error(`Unexpected request: ${url}`));
+      });
+      vi.stubGlobal('fetch', fetchMock);
+      render(<StaffActivationWorkspace />);
+      await screen.findByText('Bàn A01 · Món sẵn sàng');
+      expect(screen.queryByRole('button', { name: 'Đánh dấu đã phục vụ' }) !== null).toBe(canServe);
+      expect(screen.queryByRole('button', { name: 'Bắt đầu chuẩn bị' })).toBeNull();
+      expect(screen.queryByRole('heading', { name: 'Yêu cầu kích hoạt bàn' })).toBeNull();
+      expect(
+        fetchMock.mock.calls.some(([url]) => String(url).includes('/staff/activation-requests')),
+      ).toBe(false);
+    },
+  );
 
   it.each([403, 500, 503, 'network'])(
     'blocks protected actions and retries restoration after CSRF recovery failure %s',

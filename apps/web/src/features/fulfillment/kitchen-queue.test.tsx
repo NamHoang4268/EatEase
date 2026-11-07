@@ -29,6 +29,42 @@ afterEach(() => {
 });
 
 describe('KitchenQueue', () => {
+  it.each(['KITCHEN', 'BAR', 'DIRECT'])(
+    'allows serving %s READY with serving permission and shows SERVED as terminal',
+    async (stationSnapshot) => {
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(
+          response(boardPage({ ...boardItem, stationSnapshot, status: 'READY' })),
+        )
+        .mockResolvedValue(
+          response(boardPage({ ...boardItem, stationSnapshot, status: 'SERVED' })),
+        );
+      vi.stubGlobal('fetch', fetchMock);
+      render(<KitchenQueue allowed canServe csrfToken="csrf" onSessionInvalid={vi.fn()} />);
+      expect(await screen.findByRole('button', { name: 'Đánh dấu đã phục vụ' })).toBeDefined();
+      expect(screen.queryByRole('button', { name: 'Bắt đầu chuẩn bị' })).toBeNull();
+      fireEvent.change(screen.getByLabelText('Trạng thái món'), { target: { value: 'SERVED' } });
+      await screen.findByText(`${stationSnapshot} · Đã phục vụ`);
+      expect(String(fetchMock.mock.lastCall?.[0])).toContain('status=SERVED');
+      expect(screen.queryByRole('button', { name: /Đánh dấu|Bắt đầu/ })).toBeNull();
+    },
+  );
+
+  it.each([false, true])(
+    'requires serving permission and recovered CSRF for READY (permission %s)',
+    async (canServe) => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue(response(boardPage({ ...boardItem, status: 'READY' }))),
+      );
+      render(<KitchenQueue allowed canTransition canServe={canServe} onSessionInvalid={vi.fn()} />);
+      await screen.findByText('Bàn A01 · Cơm gà');
+      const button = screen.queryByRole('button', { name: 'Đánh dấu đã phục vụ' });
+      if (canServe) expect((button as HTMLButtonElement).disabled).toBe(true);
+      else expect(button).toBeNull();
+    },
+  );
   it.each([
     ['KITCHEN', 'NEW', 'Bắt đầu chuẩn bị'],
     ['BAR', 'NEW', 'Bắt đầu chuẩn bị'],
@@ -71,6 +107,7 @@ describe('KitchenQueue', () => {
     ['KITCHEN', 'NEW', 'start-preparation', 'Bắt đầu chuẩn bị'],
     ['BAR', 'PREPARING', 'mark-ready', 'Đánh dấu sẵn sàng'],
     ['DIRECT', 'NEW', 'mark-ready', 'Đánh dấu sẵn sàng'],
+    ['KITCHEN', 'READY', 'mark-served', 'Đánh dấu đã phục vụ'],
   ])(
     'sends %s/%s with the server version, prevents double clicks and refetches',
     async (stationSnapshot, status, endpoint, label) => {
@@ -88,7 +125,15 @@ describe('KitchenQueue', () => {
         )
         .mockResolvedValue(response());
       vi.stubGlobal('fetch', fetchMock);
-      render(<KitchenQueue allowed canTransition csrfToken="csrf" onSessionInvalid={vi.fn()} />);
+      render(
+        <KitchenQueue
+          allowed
+          canTransition={endpoint !== 'mark-served'}
+          canServe={endpoint === 'mark-served'}
+          csrfToken="csrf"
+          onSessionInvalid={vi.fn()}
+        />,
+      );
       const button = await screen.findByRole('button', { name: label! });
       fireEvent.click(button);
       fireEvent.click(button);
@@ -108,62 +153,87 @@ describe('KitchenQueue', () => {
     },
   );
 
-  it('retains the same key through network/5xx failures and CSRF recovery', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(response(boardPage()))
-      .mockRejectedValueOnce(new Error('network'))
-      .mockResolvedValueOnce(response(null, 503))
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ error: { code: 'STAFF_CSRF_INVALID' } }), { status: 403 }),
-      )
-      .mockResolvedValueOnce(response())
-      .mockResolvedValue(response());
-    const recoverCsrf = vi.fn().mockResolvedValue('replacement');
-    vi.stubGlobal('fetch', fetchMock);
-    render(
-      <KitchenQueue
-        allowed
-        canTransition
-        csrfToken="csrf"
-        recoverCsrf={recoverCsrf}
-        onSessionInvalid={vi.fn()}
-      />,
-    );
-    fireEvent.click(await screen.findByRole('button', { name: 'Bắt đầu chuẩn bị' }));
-    await screen.findByText(/Kết nối bị gián đoạn/);
-    fireEvent.click(screen.getByRole('button', { name: 'Bắt đầu chuẩn bị' }));
-    await screen.findByText(/Chưa thể xác nhận thao tác/);
-    fireEvent.click(screen.getByRole('button', { name: 'Bắt đầu chuẩn bị' }));
-    await screen.findByText('Chưa có món ở trạng thái này tại trạm đã chọn.');
-    const posts = fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST');
-    expect(posts).toHaveLength(4);
-    expect(new Set(posts.map(([, init]) => init.headers['Idempotency-Key'])).size).toBe(1);
-    expect(posts[3]?.[1].headers['X-CSRF-Token']).toBe('replacement');
-    expect(recoverCsrf).toHaveBeenCalledOnce();
-  });
-
-  it.each([401, 403, 409])('handles mutation HTTP %s without inventing success', async (status) => {
-    const onSessionInvalid = vi.fn();
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(response(boardPage()))
-      .mockResolvedValueOnce(response(null, status))
-      .mockResolvedValue(response());
-    vi.stubGlobal('fetch', fetchMock);
-    render(
-      <KitchenQueue allowed canTransition csrfToken="csrf" onSessionInvalid={onSessionInvalid} />,
-    );
-    fireEvent.click(await screen.findByRole('button', { name: 'Bắt đầu chuẩn bị' }));
-    if (status === 401) await waitFor(() => expect(onSessionInvalid).toHaveBeenCalledOnce());
-    if (status === 403) await screen.findByText(/Bạn không còn quyền thực hiện/);
-    if (status === 409) {
-      await screen.findByText(/Trạng thái món hoặc lần thao tác đã thay đổi/);
+  it.each(['NEW', 'READY'])(
+    'retains the same %s key through network/5xx failures and CSRF recovery',
+    async (status) => {
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(response(boardPage({ ...boardItem, status })))
+        .mockRejectedValueOnce(new Error('network'))
+        .mockResolvedValueOnce(response(null, 503))
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ error: { code: 'STAFF_CSRF_INVALID' } }), { status: 403 }),
+        )
+        .mockResolvedValueOnce(response())
+        .mockResolvedValue(response());
+      const recoverCsrf = vi.fn().mockResolvedValue('replacement');
+      vi.stubGlobal('fetch', fetchMock);
+      render(
+        <KitchenQueue
+          allowed
+          canTransition={status === 'NEW'}
+          canServe={status === 'READY'}
+          csrfToken="csrf"
+          recoverCsrf={recoverCsrf}
+          onSessionInvalid={vi.fn()}
+        />,
+      );
+      const label = status === 'NEW' ? 'Bắt đầu chuẩn bị' : 'Đánh dấu đã phục vụ';
+      fireEvent.click(await screen.findByRole('button', { name: label }));
+      await screen.findByText(/Kết nối bị gián đoạn/);
+      fireEvent.click(screen.getByRole('button', { name: label }));
+      await screen.findByText(/Chưa thể xác nhận thao tác/);
+      fireEvent.click(screen.getByRole('button', { name: label }));
       await screen.findByText('Chưa có món ở trạng thái này tại trạm đã chọn.');
-      expect(fetchMock).toHaveBeenCalledTimes(3);
-    }
-    expect(screen.queryByText(/Đã cập nhật món/)).toBeNull();
-  });
+      const posts = fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST');
+      expect(posts).toHaveLength(4);
+      expect(new Set(posts.map(([, init]) => init.headers['Idempotency-Key'])).size).toBe(1);
+      expect(posts[3]?.[1].headers['X-CSRF-Token']).toBe('replacement');
+      expect(recoverCsrf).toHaveBeenCalledOnce();
+    },
+  );
+
+  it.each([
+    [401, 'NEW'],
+    [403, 'NEW'],
+    [409, 'NEW'],
+    [401, 'READY'],
+    [403, 'READY'],
+    [409, 'READY'],
+  ] as const)(
+    'handles mutation HTTP %s for %s without inventing success',
+    async (status, itemStatus) => {
+      const onSessionInvalid = vi.fn();
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(response(boardPage({ ...boardItem, status: itemStatus })))
+        .mockResolvedValueOnce(response(null, status))
+        .mockResolvedValue(response());
+      vi.stubGlobal('fetch', fetchMock);
+      render(
+        <KitchenQueue
+          allowed
+          canTransition={itemStatus === 'NEW'}
+          canServe={itemStatus === 'READY'}
+          csrfToken="csrf"
+          onSessionInvalid={onSessionInvalid}
+        />,
+      );
+      fireEvent.click(
+        await screen.findByRole('button', {
+          name: itemStatus === 'NEW' ? 'Bắt đầu chuẩn bị' : 'Đánh dấu đã phục vụ',
+        }),
+      );
+      if (status === 401) await waitFor(() => expect(onSessionInvalid).toHaveBeenCalledOnce());
+      if (status === 403) await screen.findByText(/Bạn không còn quyền thực hiện/);
+      if (status === 409) {
+        await screen.findByText(/Trạng thái món hoặc lần thao tác đã thay đổi/);
+        await screen.findByText('Chưa có món ở trạng thái này tại trạm đã chọn.');
+        expect(fetchMock).toHaveBeenCalledTimes(3);
+      }
+      expect(screen.queryByText(/Đã cập nhật món/)).toBeNull();
+    },
+  );
 
   it('keeps the retry key after CSRF recovery fails and expires only on a confirmed invalid session', async () => {
     const fetchMock = vi

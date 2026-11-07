@@ -55,7 +55,7 @@ Nếu reference tạm thời không truy cập được, tiếp tục theo các 
 - Queue ordering và state transition phải dễ dự đoán; visual design không được tạo transition ngoài approved lifecycle.
 - Ưu tiên stable layout để realtime update không làm staff mất vị trí hoặc context.
 
-M3.3 extends the existing staff fulfillment board with status and station filters. Show textual status beside station and only the permitted operational action; READY items have no serving action yet. Disable actions while a command is pending or staff CSRF restoration is incomplete. Keep failures actionable, refetch on version conflicts, and render confirmed REST state after mutations/realtime reconnect rather than optimistic transitions. See the [board API and interaction contract](../architecture/api-contracts.md#get-stafffulfillmentitemsstatusnewstationkitchen).
+M3.3 extends the existing staff fulfillment board with status and station filters; M3.4 adds an authorized READY serving action and read-only SERVED visibility. Show textual status beside station and only the permitted operational action. Disable actions while a command is pending or staff CSRF restoration is incomplete. Keep failures actionable, refetch on version conflicts, and render confirmed REST state after mutations/realtime reconnect rather than optimistic transitions. See the [board API and interaction contract](../architecture/api-contracts.md#get-stafffulfillmentitemsstatusnewstationkitchen).
 
 ## Color system
 

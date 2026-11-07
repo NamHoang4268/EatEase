@@ -4,7 +4,7 @@ import type { StaffPrincipal } from '../staff-auth/staff-auth.types.js';
 import { FulfillmentService } from './fulfillment.service.js';
 
 describe('FulfillmentService', () => {
-  it.each(['NEW', 'PREPARING', 'READY'] as const)(
+  it.each(['NEW', 'PREPARING', 'READY', 'SERVED'] as const)(
     'scopes a bounded %s query and returns operational snapshots with a stable next cursor',
     async (status) => {
       const findMany = vi.fn().mockResolvedValue(

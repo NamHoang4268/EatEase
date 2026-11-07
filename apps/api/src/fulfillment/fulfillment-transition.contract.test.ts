@@ -8,6 +8,7 @@ import type { StaffRequest } from '../staff-auth/staff-auth.types.js';
 import { Test } from '@nestjs/testing';
 import { PrismaService } from '../database/prisma.service.js';
 import { FulfillmentModule } from './fulfillment.module.js';
+import { REQUIRED_PERMISSIONS } from '../staff-auth/auth.constants.js';
 
 const id = '31000000-0000-4000-8000-000000000001';
 describe('fulfillment transition contract', () => {
@@ -54,16 +55,29 @@ describe('fulfillment transition contract', () => {
       BadRequestException,
     );
   });
-  it.each(['startPreparation', 'markReady'] as const)(
+  it('requires the dedicated serving permission rather than preparation permission', () => {
+    const handler: unknown = Object.getOwnPropertyDescriptor(
+      FulfillmentController.prototype,
+      'markServed',
+    )?.value;
+    if (typeof handler !== 'function') throw new Error('Serving handler is missing');
+    expect(Reflect.getMetadata(REQUIRED_PERMISSIONS, handler)).toEqual(['serving.mark_served']);
+  });
+  it.each(['startPreparation', 'markReady', 'markServed'] as const)(
     'forwards normalized %s input and authenticated principal in the existing data envelope',
     async (method) => {
       const result = {
-        item: { id, status: method === 'markReady' ? 'READY' : 'PREPARING', version: 1 },
+        item: {
+          id,
+          status:
+            method === 'markServed' ? 'SERVED' : method === 'markReady' ? 'READY' : 'PREPARING',
+          version: 1,
+        },
       };
       const start = vi.fn().mockResolvedValue(result);
       const controller = new FulfillmentController(
         {} as FulfillmentService,
-        { start, ready: start } as unknown as FulfillmentTransitionService,
+        { start, ready: start, served: start } as unknown as FulfillmentTransitionService,
       );
       const principal = { membershipId: id };
       expect(
