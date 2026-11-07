@@ -10,7 +10,7 @@ type QueueItem = {
   quantity: number;
   note: string | null;
   stationSnapshot: 'KITCHEN' | 'BAR' | 'DIRECT';
-  status: 'NEW' | 'PREPARING' | 'READY';
+  status: 'NEW' | 'PREPARING' | 'READY' | 'SERVED';
   version: number;
   order: {
     id: string;
@@ -30,13 +30,20 @@ type QueueState =
 type Props = {
   allowed: boolean;
   canTransition?: boolean;
+  canServe?: boolean;
   onSessionInvalid: () => void;
   csrfToken?: string | null;
   recoverCsrf?: () => Promise<string>;
 };
 
-const statusLabels = { NEW: 'Mới gửi', PREPARING: 'Đang chuẩn bị', READY: 'Sẵn sàng' };
+const statusLabels = {
+  NEW: 'Mới gửi',
+  PREPARING: 'Đang chuẩn bị',
+  READY: 'Sẵn sàng',
+  SERVED: 'Đã phục vụ',
+};
 function itemAction(item: QueueItem) {
+  if (item.status === 'READY') return { endpoint: 'mark-served', label: 'Đánh dấu đã phục vụ' };
   if (item.status === 'NEW' && ['KITCHEN', 'BAR'].includes(item.stationSnapshot))
     return { endpoint: 'start-preparation', label: 'Bắt đầu chuẩn bị' };
   if (
@@ -50,6 +57,7 @@ function itemAction(item: QueueItem) {
 export function KitchenQueue({
   allowed,
   canTransition = false,
+  canServe = false,
   onSessionInvalid,
   csrfToken,
   recoverCsrf,
@@ -117,7 +125,14 @@ export function KitchenQueue({
 
   const transition = async (item: QueueItem) => {
     const action = itemAction(item);
-    if (!allowed || !canTransition || !action || actionInFlight.current || !csrfToken) return;
+    if (
+      !allowed ||
+      !(item.status === 'READY' ? canServe : canTransition) ||
+      !action ||
+      actionInFlight.current ||
+      !csrfToken
+    )
+      return;
     // Bind retries to the exact item/action/version, even after a refresh or filter change.
     const identity = `${item.id}:${action.endpoint}:${item.version}`;
     const key = attempts.current.get(identity) ?? crypto.randomUUID();
@@ -230,7 +245,7 @@ export function KitchenQueue({
         <div>
           <p className="eyebrow">Kitchen · Bar · Direct</p>
           <h2 id="kitchen-queue-heading">Hàng chờ phục vụ</h2>
-          <p>Theo dõi món mới, đang chuẩn bị và sẵn sàng</p>
+          <p>Theo dõi món mới, đang chuẩn bị, sẵn sàng và đã phục vụ</p>
         </div>
         <div className="kitchen-queue-actions">
           <label>
@@ -246,6 +261,7 @@ export function KitchenQueue({
               <option value="NEW">Mới gửi</option>
               <option value="PREPARING">Đang chuẩn bị</option>
               <option value="READY">Sẵn sàng</option>
+              <option value="SERVED">Đã phục vụ</option>
             </select>
           </label>
           <label>
@@ -313,7 +329,7 @@ export function KitchenQueue({
                   </p>
                   <p className="kitchen-order-reference">Order: {item.order.orderNumber}</p>
                   {item.note ? <p className="kitchen-item-note">Ghi chú: {item.note}</p> : null}
-                  {canTransition && itemAction(item) ? (
+                  {(item.status === 'READY' ? canServe : canTransition) && itemAction(item) ? (
                     <button
                       type="button"
                       className="primary-button"

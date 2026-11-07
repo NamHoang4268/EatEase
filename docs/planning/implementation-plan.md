@@ -224,7 +224,7 @@ M2.9 verification: owner-executed final validation passed `99/99` API unit tests
 
 ## M3 — Fulfillment, cancellation and serving
 
-**Status:** `IN_PROGRESS` — M3.1, M3.2 and M3.3 are `DONE` after owner validation. Remaining transitions and workflows are not complete.
+**Status:** `IN_PROGRESS` — M3.1–M3.4 are `DONE` after owner validation. M3.5 and M3.6 remain `TODO`, pending separate owner authorization; remaining workflows are not complete.
 
 Dependency: M2.
 
@@ -236,7 +236,7 @@ Dependency: M2.
 | TODO        | Implement Kitchen PREPARING decision                     |
 | TODO        | Implement automatic full-waiver adjustments              |
 | TODO        | Implement Manager exceptional full correction            |
-| TODO        | Implement waiter serving workflow                        |
+| DONE        | Implement waiter serving workflow                        |
 | TODO        | Implement realtime/reconnect behavior and audit tests    |
 
 ### M3.1 — Atomic start preparation
@@ -267,6 +267,16 @@ Dependency: M2.
 - **Verification:** owner-confirmed local validation: PostgreSQL integration `63/63`, API unit `161/161`, Web unit `96/96` and Playwright E2E `5/5` PASS (`325/325` total). API/Web lint, typecheck and production builds, `pnpm format:check` and `git diff --check` PASS. No M3.3 migration was required.
 - **E2E note:** the successful suite logged Next dev-server `ECONNRESET` at teardown. Focused investigation confirmed no application defect and required no code changes; the exact request/socket was not identified. This does not invalidate the owner-confirmed passing assertions or establish production behavior.
 - **Release/checkpoint:** production migrations/deployment/public smoke remain pending; local validation does not establish production behavior. No serving, rejection, cancellation, waiver or payment workflow is included. Do not begin the next task before separate owner authorization.
+
+### M3.4 — Waiter serving
+
+- **Status:** `DONE`; implementation and owner-confirmed local validation complete. M3 remains `IN_PROGRESS`, with M3.5 and M3.6 remaining.
+- **Scope:** READY → SERVED for KITCHEN/BAR/DIRECT through `POST /staff/fulfillment/items/:id/mark-served`; dedicated `serving.mark_served`, existing staff session/Origin/CSRF and transaction-time scope/permission revalidation.
+- **Artifacts:** shared transition transaction with operation-scoped `MARK_SERVED` replay, servedAt/version/audit/outbox; additive nullable timestamp migration `20261107100000_m3_4_waiter_serving`; existing board exposes authorized serving and terminal SERVED filter. Explicit `fulfillment.read` remains required for board/realtime; no implicit grants.
+- **Acceptance:** one serving effect under retries/races; stale versions, wrong state/scope/permission and revoked sessions denied; late failures roll back; prior timestamps, Order/snapshots/BillLines/Bill totals unchanged; UI preserves retry identity, refetches success/conflicts and reconnects through existing scoped realtime.
+- **Verification:** owner-confirmed local validation: PostgreSQL migrations `12/12` applied and schema up to date; Prisma validate/generate PASS; PostgreSQL integration `78/78`, API unit `167/167`, Web unit `108/108` and Playwright E2E `5/5` PASS (`358/358` total). API/Web lint, typecheck and production builds, `pnpm format:check` and `git diff --check` PASS. No new browser E2E scenario was added; the existing suite passed.
+- **Unresolved intermittent E2E issues:** the Next.js `/staff/login` navigation loop stopped operationally after backing up `.next/dev`; one expired-Guest scenario failed and passed on subsequent runs. Neither root cause is confirmed, and passing reruns/cache recovery do not establish a verified fix. If either recurs, prioritize root-cause investigation and a verified fix rather than repeated reruns or cache clearing.
+- **Release/checkpoint:** production migration execution/deployment/public smoke remain pending; completed local migrations/tests/builds do not establish production validation. No rejection/cancellation/waiver, payment, settlement or table closure is included. Do not proceed to M3.5/M3.6 without separate owner authorization.
 
 ## M4 — Checkout and table lifecycle
 

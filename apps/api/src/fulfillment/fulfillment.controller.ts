@@ -71,6 +71,26 @@ export class FulfillmentController {
     };
   }
 
+  @Post(':id/mark-served')
+  @HttpCode(200)
+  @UseGuards(StaffSessionGuard, StaffCsrfGuard, StaffAuthorizationGuard)
+  @RequirePermissions('serving.mark_served')
+  @Header('Cache-Control', 'no-store')
+  async markServed(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Headers('idempotency-key') key: string | undefined,
+    @Req() request: StaffRequest,
+  ) {
+    if (!request.staffPrincipal) throw new UnauthorizedException({ code: 'STAFF_SESSION_INVALID' });
+    return {
+      data: await this.transitions.served(
+        request.staffPrincipal,
+        parseFulfillmentTransition(id, body, key),
+      ),
+    };
+  }
+
   @Get()
   @UseGuards(StaffSessionGuard, StaffAuthorizationGuard)
   @RequirePermissions('fulfillment.read')

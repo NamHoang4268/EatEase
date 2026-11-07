@@ -67,7 +67,7 @@ afterEach(() => {
 });
 
 describe('realtime view invalidation', () => {
-  it.each(['NEW', 'PREPARING', 'READY'])(
+  it.each(['NEW', 'PREPARING', 'READY', 'SERVED'])(
     'refetches the selected %s board on kitchen invalidation without mutating',
     async (status) => {
       const fetchMock = vi

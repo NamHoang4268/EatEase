@@ -26,7 +26,7 @@ describe('fulfillment query contract', () => {
     { limit: '-1' },
     { limit: '2.5' },
     { limit: ['1', '2'] },
-    { status: 'SERVED' },
+    { status: 'CANCELLED' },
     { status: ['NEW', 'READY'] },
     { station: 'OTHER' },
     { locationId: 'client-scope' },
@@ -40,7 +40,7 @@ describe('fulfillment query contract', () => {
     expect(() => parseFulfillmentQuery(query)).toThrow(BadRequestException);
   });
 
-  it.each(['NEW', 'PREPARING', 'READY'])('accepts board status %s', (status) => {
+  it.each(['NEW', 'PREPARING', 'READY', 'SERVED'])('accepts board status %s', (status) => {
     expect(parseFulfillmentQuery({ status, station: 'DIRECT' })).toEqual({
       status,
       station: 'DIRECT',
