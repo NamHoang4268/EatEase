@@ -74,7 +74,7 @@ Owner-approved M2.8 contract (`2026-11-04`): `OrderStatus = SUBMITTED` only. Ord
 | `PREPARING` | Approve stop request | `CANCELLED` | Kitchen via request          |
 | `READY`     | Mark served          | `SERVED`    | Waiter                       |
 
-`REJECTED`, `CANCELLED`, `SERVED` là terminal. Manager financial correction cho `READY/SERVED` không đổi operational state.
+`REJECTED`, `CANCELLED`, `SERVED` là terminal for ordinary fulfillment commands. M3.6 Manager exceptional correction changes NEW/PREPARING/READY to CANCELLED with a full waiver; a SERVED item remains SERVED and receives only a separate immutable full financial waiver. Preparation/readiness/serving history is never cleared.
 
 M3.1 implements `NEW → PREPARING` for KITCHEN/BAR snapshots. M3.2 adds KITCHEN/BAR `PREPARING → READY` and DIRECT `NEW → READY`, requiring `fulfillment.transition`. DIRECT cannot start preparation; KITCHEN/BAR cannot skip it. M3.3 exposes these actions on the staff board. M3.4 adds READY → SERVED for all stations with the separate `serving.mark_served` permission; SERVED is terminal and has no further UI action. These commands share expectedVersion, atomic membership audit/outbox/idempotency and preserve immutable snapshots. M3.5 adds the cancellation workflow below and Kitchen/Bar direct rejection of eligible NEW items; both accepted paths end in CANCELLED with a policy-fixed full waiver. See the [fulfillment and cancellation API contracts](api-contracts.md#fulfillment-queue).
 
@@ -94,6 +94,8 @@ M3.1 implements `NEW → PREPARING` for KITCHEN/BAR snapshots. M3.2 adds KITCHEN
 Approved `NEW`/`PREPARING` cancellation atomically creates automatic full-waiver adjustment. Kitchen chỉ kích hoạt predefined policy, không được nhập adjustment tùy ý.
 
 M3.5 persists every Guest request initially as `PENDING_WAITER`; requesting never changes the item or Bill. A Waiter/Manager may approve a still-NEW item, reject the request, or forward a still-PREPARING KITCHEN/BAR item. Only `PENDING_KITCHEN` may receive the Kitchen/Bar stop decision. Kitchen/Bar direct rejection of a NEW KITCHEN/BAR item creates an already-approved `STAFF_REJECTION` record. Approval/direct rejection atomically changes the item to CANCELLED, increments its version, creates exactly one immutable full-waiver adjustment and updates Bill aggregates. Rejection changes only the request lifecycle. READY, SERVED, REJECTED and CANCELLED cannot be approved through this ordinary workflow.
+
+M3.6 uses a separate approved `MANAGER_CORRECTION` record. If a Guest request is pending, it transitions to WITHDRAWN before the correction is recorded. The Manager command does not reopen terminal request records and cannot create a second waiver. SERVED remains operationally terminal even after its financial obligation is fully waived.
 
 ## Bill
 

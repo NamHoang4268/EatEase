@@ -54,11 +54,13 @@ describe('FulfillmentService', () => {
         quantity: 2,
         note: 'Không hành',
         table: { code: 'A01' },
+        fullWaiver: null,
       });
       expect(result.page.nextCursor).toBeTypeOf('string');
       const select = findMany.mock.calls[0]?.[0] as { select: Record<string, unknown> };
       expect(select.select).not.toHaveProperty('unitPriceAmount');
       expect(select.select).not.toHaveProperty('billLine');
+      expect(select.select).toHaveProperty('billAdjustments');
     },
   );
 });

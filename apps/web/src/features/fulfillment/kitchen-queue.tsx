@@ -26,6 +26,12 @@ type QueueItem = {
     requestReason: string;
     createdAt: string;
   } | null;
+  fullWaiver: {
+    kind: 'FULL_CANCELLATION_WAIVER' | 'FULL_MANAGER_WAIVER';
+    amount: string;
+    reason: string;
+    createdAt: string;
+  } | null;
 };
 type QueuePage = { items: QueueItem[]; page: { limit: number; nextCursor: string | null } };
 type QueueState =
@@ -41,6 +47,7 @@ type Props = {
   canCancelNew?: boolean;
   canForwardCancellation?: boolean;
   canDecideCancellation?: boolean;
+  canAdjustBill?: boolean;
   onSessionInvalid: () => void;
   csrfToken?: string | null;
   recoverCsrf?: () => Promise<string>;
@@ -72,6 +79,7 @@ export function KitchenQueue({
   canCancelNew = false,
   canForwardCancellation = false,
   canDecideCancellation = false,
+  canAdjustBill = false,
   onSessionInvalid,
   csrfToken,
   recoverCsrf,
@@ -226,7 +234,7 @@ export function KitchenQueue({
   const cancellationCommand = async (
     item: QueueItem,
     command:
-      | { kind: 'DIRECT_REJECT'; reasonKey: string }
+      | { kind: 'DIRECT_REJECT' | 'MANAGER_CORRECTION'; reasonKey: string }
       | {
           kind:
             | 'WAITER_ACCEPT'
@@ -244,15 +252,17 @@ export function KitchenQueue({
       setMessage('Vui lòng nhập lý do trước khi xử lý yêu cầu.');
       return;
     }
-    const request = command.kind === 'DIRECT_REJECT' ? null : command.request;
+    const request = 'request' in command ? command.request : null;
     const endpoint =
-      command.kind === 'DIRECT_REJECT'
-        ? `/api/v1/staff/fulfillment/items/${encodeURIComponent(item.id)}/reject`
-        : command.kind === 'FORWARD'
-          ? `/api/v1/staff/cancellation-requests/${encodeURIComponent(request!.id)}/forward-to-kitchen`
-          : command.kind.startsWith('WAITER_')
-            ? `/api/v1/staff/cancellation-requests/${encodeURIComponent(request!.id)}/waiter-decision`
-            : `/api/v1/staff/cancellation-requests/${encodeURIComponent(request!.id)}/operational-decision`;
+      command.kind === 'MANAGER_CORRECTION'
+        ? `/api/v1/staff/fulfillment/items/${encodeURIComponent(item.id)}/manager-correction`
+        : command.kind === 'DIRECT_REJECT'
+          ? `/api/v1/staff/fulfillment/items/${encodeURIComponent(item.id)}/reject`
+          : command.kind === 'FORWARD'
+            ? `/api/v1/staff/cancellation-requests/${encodeURIComponent(request!.id)}/forward-to-kitchen`
+            : command.kind.startsWith('WAITER_')
+              ? `/api/v1/staff/cancellation-requests/${encodeURIComponent(request!.id)}/waiter-decision`
+              : `/api/v1/staff/cancellation-requests/${encodeURIComponent(request!.id)}/operational-decision`;
     const version = request?.version ?? item.version;
     const identity = `${command.kind}:${request?.id ?? item.id}:${version}:${reason}`;
     const key = attempts.current.get(identity) ?? crypto.randomUUID();
@@ -452,6 +462,22 @@ export function KitchenQueue({
                   </p>
                   <p className="kitchen-order-reference">Order: {item.order.orderNumber}</p>
                   {item.note ? <p className="kitchen-item-note">Ghi chú: {item.note}</p> : null}
+                  {item.fullWaiver ? (
+                    <div className="decision-panel">
+                      <p>
+                        <strong>
+                          {item.fullWaiver.kind === 'FULL_MANAGER_WAIVER'
+                            ? 'Manager đã miễn toàn bộ phí'
+                            : 'Đã miễn toàn bộ phí do hủy món'}
+                        </strong>
+                      </p>
+                      <p>Lý do: {item.fullWaiver.reason}</p>
+                      <p>
+                        Giá trị miễn:{' '}
+                        {Math.abs(Number(item.fullWaiver.amount)).toLocaleString('vi-VN')} ₫
+                      </p>
+                    </div>
+                  ) : null}
                   {item.cancellationRequest ? (
                     <div className="decision-panel">
                       <p>
@@ -602,6 +628,48 @@ export function KitchenQueue({
                         }
                       >
                         Từ chối món · miễn 100%
+                      </button>
+                    </div>
+                  ) : null}
+                  {canAdjustBill &&
+                  !item.fullWaiver &&
+                  ['NEW', 'PREPARING', 'READY', 'SERVED'].includes(item.status) ? (
+                    <div className="rejection-form">
+                      <label htmlFor={`manager-correction-${item.id}`}>
+                        Lý do điều chỉnh ngoại lệ
+                      </label>
+                      <input
+                        id={`manager-correction-${item.id}`}
+                        maxLength={500}
+                        value={decisionReasons[`manager:${item.id}:${item.version}`] ?? ''}
+                        onChange={(event) =>
+                          setDecisionReasons((current) => ({
+                            ...current,
+                            [`manager:${item.id}:${item.version}`]: event.target.value,
+                          }))
+                        }
+                      />
+                      <button
+                        className="danger-button"
+                        disabled={pending !== null || !csrfToken}
+                        type="button"
+                        onClick={() => {
+                          const isServed = item.status === 'SERVED';
+                          const confirmed = window.confirm(
+                            isServed
+                              ? 'Miễn toàn bộ phí nhưng giữ nguyên trạng thái Đã phục vụ?'
+                              : 'Hủy món ngoại lệ và miễn toàn bộ phí?',
+                          );
+                          if (confirmed)
+                            void cancellationCommand(item, {
+                              kind: 'MANAGER_CORRECTION',
+                              reasonKey: `manager:${item.id}:${item.version}`,
+                            });
+                        }}
+                      >
+                        {item.status === 'SERVED'
+                          ? 'Miễn toàn bộ phí · giữ trạng thái đã phục vụ'
+                          : 'Hủy ngoại lệ · miễn 100%'}
                       </button>
                     </div>
                   ) : null}

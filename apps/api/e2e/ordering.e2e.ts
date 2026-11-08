@@ -280,4 +280,45 @@ test.describe('M2 complete local browser flow', () => {
       await member.page.getByRole('button', { name: 'Gửi món', exact: true }).click();
       await expect.poll(() => f.prisma.order.count({ where: f.scope })).toBe(1);
     });
+
+  test('Manager preserves SERVED history while applying the exceptional full waiver', async ({
+    browser,
+  }) => {
+    const manager = await open(browser, contexts),
+      host = await open(browser, contexts);
+    await login(manager.page, f, 'manager');
+    await activate(host.page, manager.page, f);
+    await host.page.getByRole('button', { name: 'Gửi món', exact: true }).click();
+    await expect(manager.page.getByRole('button', { name: 'Bắt đầu chuẩn bị' })).toBeVisible();
+    await manager.page.getByRole('button', { name: 'Bắt đầu chuẩn bị' }).click();
+    await manager.page.getByLabel('Trạng thái món').selectOption('PREPARING');
+    await expect(manager.page.getByRole('button', { name: 'Đánh dấu sẵn sàng' })).toBeVisible();
+    await manager.page.getByRole('button', { name: 'Đánh dấu sẵn sàng' }).click();
+    await manager.page.getByLabel('Trạng thái món').selectOption('READY');
+    await expect(manager.page.getByRole('button', { name: 'Đánh dấu đã phục vụ' })).toBeVisible();
+    await manager.page.getByRole('button', { name: 'Đánh dấu đã phục vụ' }).click();
+    await manager.page.getByLabel('Trạng thái món').selectOption('SERVED');
+    await expect(
+      manager.page.getByRole('button', {
+        name: 'Miễn toàn bộ phí · giữ trạng thái đã phục vụ',
+      }),
+    ).toBeVisible();
+    await manager.page
+      .getByLabel('Lý do điều chỉnh ngoại lệ')
+      .fill('E2E xác nhận phục vụ nhầm bàn');
+    manager.page.once('dialog', (dialog) => void dialog.accept());
+    await manager.page
+      .getByRole('button', { name: 'Miễn toàn bộ phí · giữ trạng thái đã phục vụ' })
+      .click();
+    await expect(manager.page.getByText('Manager đã miễn toàn bộ phí')).toBeVisible();
+    const item = await f.prisma.orderItem.findFirstOrThrow({
+      where: { ...f.scope, order: { tableSession: { tableId: f.tables[0]!.id } } },
+      include: { billAdjustments: true },
+    });
+    expect(item.status).toBe('SERVED');
+    expect(item.servedAt).toBeInstanceOf(Date);
+    expect(item.billAdjustments).toEqual([
+      expect.objectContaining({ kind: 'FULL_MANAGER_WAIVER', amount: -42_000n }),
+    ]);
+  });
 });

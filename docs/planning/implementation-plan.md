@@ -2,7 +2,7 @@
 
 Status values: `TODO`, `IN_PROGRESS`, `BLOCKED`, `DONE`.
 
-Planning completion và implementation completion là hai việc khác nhau. M1/M2 và M3.1–M3.5 đã hoàn tất, được owner verify; M3 vẫn `IN_PROGRESS` với M3.6 đang chờ, M4–M5 chưa bắt đầu.
+Planning completion và implementation completion là hai việc khác nhau. M1, M2 và M3 đã hoàn tất trong locally validated development scope; production release verification của M3 vẫn pending, M4–M5 chưa bắt đầu.
 
 ## M0 — Repository and documentation bootstrap
 
@@ -224,7 +224,7 @@ M2.9 verification: owner-executed final validation passed `99/99` API unit tests
 
 ## M3 — Fulfillment, cancellation and serving
 
-**Status:** `IN_PROGRESS` — M3.1–M3.5 are `DONE` after owner validation. M3.6 remains `TODO` pending separate authorization.
+**Status:** `DONE` for the locally validated development scope — M3.1–M3.6 đều đã hoàn tất và được owner validate. Production migration/deployment và hosted/public smoke verification vẫn pending riêng, không được suy diễn từ local closure.
 
 Dependency: M2.
 
@@ -235,7 +235,7 @@ Dependency: M2.
 | DONE   | Implement guest cancellation request and waiter routing  |
 | DONE   | Implement Kitchen PREPARING decision                     |
 | DONE   | Implement automatic full-waiver adjustments              |
-| TODO   | Implement Manager exceptional full correction            |
+| DONE   | Implement Manager exceptional full correction            |
 | DONE   | Implement waiter serving workflow                        |
 | DONE   | Implement realtime/reconnect behavior and audit tests    |
 
@@ -251,7 +251,7 @@ Dependency: M2.
 
 ### M3.2 — Atomic ready transitions
 
-- **Status:** `DONE`; implementation and owner validation complete. M3 overall remains `IN_PROGRESS` because later transitions and workflows are still pending.
+- **Status:** `DONE`; implementation and owner validation complete. At this checkpoint, later M3 transitions and workflows were still pending.
 - **Scope:** KITCHEN/BAR `PREPARING → READY` and DIRECT `NEW → READY`; one shared command transaction with M3.1, unchanged staff security/version/idempotency/scope rules, actor audit and existing realtime routing. No UI, serving/cancellation/rejection or financial work.
 - **Artifacts:** reviewed additive `ready_at` migration, shared FulfillmentTransitionService/parser, `POST /staff/fulfillment/items/:id/mark-ready`, focused unit and PostgreSQL cases. See [API contract](../architecture/api-contracts.md#post-stafffulfillmentitemsidmark-ready-m32).
 - **Acceptance:** allowed station/state matrix, one version/timestamp/audit/event under retries/races, operation-scoped replay/conflicts, authorization and rollback consistency; preparingAt/snapshots/Order/BillLines/Bill totals unchanged.
@@ -260,7 +260,7 @@ Dependency: M2.
 
 ### M3.3 — Interactive fulfillment board
 
-- **Status:** `DONE`; implementation and owner validation complete. M3 overall remains `IN_PROGRESS` because later transitions and workflows are still pending.
+- **Status:** `DONE`; implementation and owner validation complete. At this checkpoint, later M3 transitions and workflows were still pending.
 - **Scope:** extend the existing authenticated staff board with NEW/PREPARING/READY status filters and existing station filters/pagination. Expose only M3.1/M3.2 actions allowed by station/state and `fulfillment.transition`; preserve `fulfillment.read`, server-derived scope and snapshots.
 - **Artifacts:** backward-compatible query status extension (default NEW), existing KitchenQueue/workspace action integration, in-memory item/action/version retry keys, CSRF recovery, double-submit protection, 409 refetch, existing kitchen realtime invalidation/reconnect and manual refresh fallback. No migration or new transition command.
 - **Acceptance:** operational state/station queries remain scoped and deterministically paginated; actions send latest server version, retain retry identity on ambiguous failures, and refetch authoritative state; permission/session errors fail closed; no financial changes or raw staff credentials in JavaScript.
@@ -270,7 +270,7 @@ Dependency: M2.
 
 ### M3.4 — Waiter serving
 
-- **Status:** `DONE`; implementation and owner-confirmed local validation complete. M3 remains `IN_PROGRESS`, with M3.6 remaining after the separately completed M3.5.
+- **Status:** `DONE`; implementation and owner-confirmed local validation complete. At this checkpoint, M3.5–M3.6 were still pending.
 - **Scope:** READY → SERVED for KITCHEN/BAR/DIRECT through `POST /staff/fulfillment/items/:id/mark-served`; dedicated `serving.mark_served`, existing staff session/Origin/CSRF and transaction-time scope/permission revalidation.
 - **Artifacts:** shared transition transaction with operation-scoped `MARK_SERVED` replay, servedAt/version/audit/outbox; additive nullable timestamp migration `20261107100000_m3_4_waiter_serving`; existing board exposes authorized serving and terminal SERVED filter. Explicit `fulfillment.read` remains required for board/realtime; no implicit grants.
 - **Acceptance:** one serving effect under retries/races; stale versions, wrong state/scope/permission and revoked sessions denied; late failures roll back; prior timestamps, Order/snapshots/BillLines/Bill totals unchanged; UI preserves retry identity, refetches success/conflicts and reconnects through existing scoped realtime.
@@ -280,13 +280,24 @@ Dependency: M2.
 
 ### M3.5 — Guest cancellation and Kitchen decision
 
-- **Status:** `DONE`; implementation and owner-confirmed local validation complete. M3 remains `IN_PROGRESS`; M3.6 is `TODO` pending separate authorization.
+- **Status:** `DONE`; implementation and owner-confirmed local validation complete. At this checkpoint, M3.6 was still pending separate authorization.
 - **Scope:** Guest request for NEW/PREPARING without immediate cancellation; Waiter NEW decision or PREPARING routing; Kitchen/Bar forwarded PREPARING decision; direct operational rejection of NEW KITCHEN/BAR. Accepted paths produce CANCELLED plus a policy-fixed 100% waiver; rejected requests preserve item state and charge.
 - **Artifacts:** forward-only migration `20261107150000_m3_5_guest_cancellation`; scoped CancellationRequest and immutable BillAdjustment persistence/constraints; Guest and staff APIs; transaction-time actor/permission/state revalidation; operation-scoped idempotency; audit and `cancellation.updated`/fulfillment/Bill outbox; consolidated Guest Bill and existing board UI/realtime extensions.
 - **Acceptance:** at most one pending request and one full cancellation waiver per item; retries/races never duplicate decisions, adjustments or events; request/item/Bill/waiver/audit/outbox/idempotency commit atomically; immutable Order/snapshots/BillLines remain unchanged; correct Guest/staff/location/station permission boundaries; pending/accepted/rejected UI and original charge/full waiver/payable amount remain explicit.
 - **Validation:** owner-confirmed local validation applied all `13/13` migrations and passed Prisma validate/generate, PostgreSQL integration `149/149`, API unit `188/188`, Web unit `111/111` and Playwright E2E `5/5` (`453/453` tests total). Full workspace lint/typecheck, API/Web production builds, `pnpm format:check` and `git diff --check` PASS.
 - **Regression fixes during validation:** activation integration fixtures now reuse global permission codes and clean up only fixture-owned unreferenced records; activation audit/idempotency assertions are scoped to their fixture restaurant/actor; fulfillment contract tests accept the M3.5 CANCELLED filter while retaining an invalid-status case; the expired-Guest recovery test now returns the required consolidated session shape and verifies draft retention plus explicit rejoin without masking malformed authenticated responses.
 - **Release/checkpoint:** production migration execution, deployment and hosted/public smoke remain pending; local migration/tests/builds do not establish production validation. The approved simple full-waiver policy remains unchanged. Do not begin M3.6 without separate owner authorization.
+
+### M3.6 — Manager exceptional correction and end-to-end workflow
+
+- **Status:** `DONE`; implementation and owner-confirmed local validation complete. This closes M3 for the locally validated development scope.
+- **Scope:** Manager/Admin-only `bill.adjust` correction for NEW/PREPARING/READY/SERVED. NEW/PREPARING/READY becomes CANCELLED with a full waiver; SERVED remains SERVED and receives only a separate full financial waiver. Pending Guest requests are atomically withdrawn. No partial waiver, refund/payment, session closure or M4 behavior.
+- **Artifacts:** forward-only migrations `20261107190000_m3_6_manager_exceptional_correction` and `20261108123000_m3_6_ready_cancellation_history`; `MANAGER_CORRECTION`/`FULL_MANAGER_WAIVER` constraints; protected manager command, transaction-time authorization/version/idempotency, audit/outbox; sanitized waiver in the fulfillment read model; reason/confirmation/retry/refetch UI; focused API, PostgreSQL, Web and an additional end-to-end workflow scenario.
+- **Acceptance:** one correction/waiver under replay and races; no negative payable or duplicate waiver; stale/wrong-state/wrong-scope/unauthorized commands fail closed; cancellation and financial writes commit atomically; Order, snapshots, BillLine and all fulfillment timestamps remain unchanged; SERVED never transitions backward; existing realtime continues to trigger authoritative REST refetch.
+- **Validation:** owner-confirmed local validation: all `15/15` PostgreSQL migrations applied and schema up to date; PostgreSQL integration `158/158`, API unit `189/189`, Web unit/component `114/114` and Playwright E2E `6/6` PASS (`467/467` full-suite tests). Full workspace lint/typecheck, API/Web production builds, `pnpm format:check` and `git diff --check` PASS. An additional focused Playwright reproduction passed `1/1`.
+- **Regression fixes:** Manager correction integration assertions now prove exactly one new `bill.updated` event relative to the pre-correction count, rather than counting the legitimate earlier order-submission event. Forward-only migration `20261108123000_m3_6_ready_cancellation_history` preserves immutable `ready_at` when READY transitions to CANCELLED; it does not rewrite existing rows or modify an applied migration.
+- **E2E diagnostic note:** the successful full Playwright run emitted intermittent Next.js `ECONNRESET` / `Error: aborted` messages near teardown. A targeted `1/1` reproduction completed without the message. No application defect was confirmed and the root cause remains unconfirmed; this is not recorded as fixed. If it recurs, collect detailed request/server teardown tracing before changing code.
+- **Milestone closure:** the approved M3 acceptance criteria are satisfied for the locally validated development scope: actor/state/version enforcement, immutable historical Order/item/BillLine data, auditable cancellation/full waivers, concurrency/idempotency/authorization coverage and REST-refetch realtime behavior all passed their relevant automated validation. Production migration execution, deployment and hosted/public smoke remain pending and require separate evidence. Do not begin M4 without explicit owner authorization.
 
 ## M4 — Checkout and table lifecycle
 

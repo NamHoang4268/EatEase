@@ -11,6 +11,7 @@ import {
   parseCancellationForward,
   parseDirectRejection,
   parseGuestCancellation,
+  parseManagerCorrection,
 } from './cancellation.contract.js';
 import { CancellationController } from './cancellation.controller.js';
 import { CancellationModule } from './cancellation.module.js';
@@ -86,6 +87,14 @@ describe('M3.5 cancellation transport contract', () => {
       reason: 'Hết món',
       idempotencyKey: 'k',
     });
+    expect(
+      parseManagerCorrection(id, { expectedVersion: 4, reason: ' Phục vụ nhầm ' }, 'k'),
+    ).toEqual({
+      itemId: id,
+      expectedVersion: 4,
+      reason: 'Phục vụ nhầm',
+      idempotencyKey: 'k',
+    });
   });
 
   it.each([
@@ -93,6 +102,7 @@ describe('M3.5 cancellation transport contract', () => {
     ['forward', ['cancellation.forward_to_kitchen']],
     ['decideOperational', ['cancellation.decide_operational']],
     ['rejectItem', ['cancellation.decide_operational']],
+    ['correctItem', ['bill.adjust']],
   ] as const)('requires the dedicated permission on %s', (method, permissions) => {
     const handler: unknown = Object.getOwnPropertyDescriptor(
       CancellationController.prototype,
@@ -108,9 +118,11 @@ describe('M3.5 cancellation transport contract', () => {
     };
     const requestGuest = vi.fn().mockResolvedValue(result);
     const decideWaiter = vi.fn().mockResolvedValue(result);
+    const correctItem = vi.fn().mockResolvedValue(result);
     const controller = new CancellationController({
       requestGuest,
       decideWaiter,
+      correctItem,
     } as unknown as CancellationService);
     const guestPrincipal = { sessionId: id };
     const staffPrincipal = { membershipId: id };
@@ -138,6 +150,17 @@ describe('M3.5 cancellation transport contract', () => {
       expectedVersion: 0,
       decision: 'REJECT',
       reason: 'Tiếp tục món',
+      idempotencyKey: 'key',
+    });
+    expect(
+      await controller.correctItem(id, { expectedVersion: 3, reason: ' Phục vụ nhầm ' }, ' key ', {
+        staffPrincipal,
+      } as StaffRequest),
+    ).toEqual({ data: result });
+    expect(correctItem).toHaveBeenCalledWith(staffPrincipal, {
+      itemId: id,
+      expectedVersion: 3,
+      reason: 'Phục vụ nhầm',
       idempotencyKey: 'key',
     });
   });

@@ -79,6 +79,10 @@ export async function createFixture() {
       'table.session.read',
       'table.join_code.manage',
       'order.create_for_table',
+      'fulfillment.read',
+      'fulfillment.transition',
+      'serving.mark_served',
+      'bill.adjust',
     ],
     ['bill.read', 'table.session.read'],
   ]);

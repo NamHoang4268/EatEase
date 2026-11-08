@@ -20,6 +20,9 @@ const forwardBodySchema = z
 const directRejectionBodySchema = z
   .object({ expectedVersion: versionSchema, reason: reasonSchema })
   .strict();
+const managerCorrectionBodySchema = z
+  .object({ expectedVersion: versionSchema, reason: reasonSchema })
+  .strict();
 
 function invalid(): BadRequestException {
   return new BadRequestException({ code: 'CANCELLATION_REQUEST_INVALID' });
@@ -63,7 +66,16 @@ export function parseDirectRejection(itemId: unknown, body: unknown, key: unknow
   };
 }
 
+export function parseManagerCorrection(itemId: unknown, body: unknown, key: unknown) {
+  return {
+    itemId: parse(idSchema, itemId),
+    ...parse(managerCorrectionBodySchema, body),
+    idempotencyKey: parse(keySchema, key),
+  };
+}
+
 export type GuestCancellationInput = ReturnType<typeof parseGuestCancellation>;
 export type CancellationDecisionInput = ReturnType<typeof parseCancellationDecision>;
 export type CancellationForwardInput = ReturnType<typeof parseCancellationForward>;
 export type DirectRejectionInput = ReturnType<typeof parseDirectRejection>;
+export type ManagerCorrectionInput = ReturnType<typeof parseManagerCorrection>;

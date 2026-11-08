@@ -90,6 +90,7 @@ describe('M2.10 read-only fulfillment queue on PostgreSQL', () => {
       'order.cancel_new',
       'cancellation.forward_to_kitchen',
       'cancellation.decide_operational',
+      'bill.adjust',
     ]) {
       const permission = await prisma.permission.upsert({
         where: { code },
@@ -1373,6 +1374,22 @@ describe('M2.10 read-only fulfillment queue on PostgreSQL', () => {
       .send({ expectedVersion, ...body });
   }
 
+  function managerCorrection(
+    context: Fixture,
+    itemId: string,
+    expectedVersion: number,
+    key: string = randomUUID(),
+    reason = 'Manager xác nhận điều chỉnh ngoại lệ',
+  ) {
+    return request(server)
+      .post(`/api/v1/staff/fulfillment/items/${itemId}/manager-correction`)
+      .set('Cookie', `eatease_staff_session=${context.token}`)
+      .set('Origin', 'http://localhost:3000')
+      .set('X-CSRF-Token', context.csrf)
+      .set('Idempotency-Key', key)
+      .send({ expectedVersion, reason });
+  }
+
   it('M3.5 accepts a NEW Guest request exactly once and records an immutable full waiver', async () => {
     const f = await preparationFixture('KITCHEN');
     const billBefore = await prisma.bill.findUniqueOrThrow({
@@ -1491,5 +1508,257 @@ describe('M2.10 read-only fulfillment queue on PostgreSQL', () => {
     expect(replies[0].body).toEqual(replies[1].body);
     expect(await prisma.billAdjustment.count({ where: { orderItemId: f.targetId } })).toBe(1);
     expect(await prisma.cancellationRequest.count({ where: { orderItemId: f.targetId } })).toBe(1);
+  });
+
+  it.each(['NEW', 'PREPARING', 'READY', 'SERVED'] as const)(
+    'M3.6 applies one Manager full correction to %s while preserving immutable history',
+    async (status) => {
+      const f = await preparationFixture('KITCHEN');
+      if (status !== 'NEW') await start(f, f.targetId).expect(200);
+      if (status === 'READY' || status === 'SERVED') await ready(f, f.targetId, 1).expect(200);
+      if (status === 'SERVED') await served(f, f.targetId, 2).expect(200);
+      const before = await prisma.orderItem.findUniqueOrThrow({ where: { id: f.targetId } });
+      const orderBefore = await prisma.order.findUniqueOrThrow({ where: { id: before.orderId } });
+      const lineBefore = await prisma.billLine.findUniqueOrThrow({
+        where: { orderItemId: f.targetId },
+      });
+      const billBefore = await prisma.bill.findUniqueOrThrow({ where: { id: before.billId } });
+      const billEventsBefore = await prisma.outboxEvent.findMany({
+        where: { aggregateId: before.billId, eventType: 'bill.updated' },
+        orderBy: [{ occurredAt: 'asc' }, { id: 'asc' }],
+      });
+      const response = await managerCorrection(f, f.targetId, before.version)
+        .expect(200)
+        .expect('Cache-Control', 'no-store');
+      const after = await prisma.orderItem.findUniqueOrThrow({ where: { id: f.targetId } });
+      expect(after).toMatchObject({
+        ...before,
+        status: status === 'SERVED' ? 'SERVED' : 'CANCELLED',
+        version: before.version + (status === 'SERVED' ? 0 : 1),
+      });
+      expect(after.preparingAt).toEqual(before.preparingAt);
+      expect(after.readyAt).toEqual(before.readyAt);
+      expect(after.servedAt).toEqual(before.servedAt);
+      expect(await prisma.order.findUniqueOrThrow({ where: { id: before.orderId } })).toEqual(
+        orderBefore,
+      );
+      expect(
+        await prisma.billLine.findUniqueOrThrow({ where: { orderItemId: f.targetId } }),
+      ).toEqual(lineBefore);
+      const correction = await prisma.cancellationRequest.findFirstOrThrow({
+        where: { orderItemId: f.targetId, source: 'MANAGER_CORRECTION' },
+      });
+      expect(correction).toMatchObject({
+        status: 'APPROVED',
+        requestedByMembershipId: f.membershipId,
+        decidedByMembershipId: f.membershipId,
+      });
+      const adjustments = await prisma.billAdjustment.findMany({
+        where: { orderItemId: f.targetId },
+      });
+      expect(adjustments).toEqual([
+        expect.objectContaining({
+          kind: 'FULL_MANAGER_WAIVER',
+          amount: -lineBefore.lineAmount,
+          cancellationRequestId: correction.id,
+          createdByMembershipId: f.membershipId,
+        }),
+      ]);
+      expect(await prisma.bill.findUniqueOrThrow({ where: { id: before.billId } })).toMatchObject({
+        subtotalAmount: billBefore.subtotalAmount,
+        adjustmentAmount: billBefore.adjustmentAmount - lineBefore.lineAmount,
+        totalAmount: billBefore.totalAmount - lineBefore.lineAmount,
+        balanceAmount: billBefore.balanceAmount - lineBefore.lineAmount,
+        version: billBefore.version + 1,
+      });
+      expect(response.body).toMatchObject({
+        data: {
+          item: { id: f.targetId, status: status === 'SERVED' ? 'SERVED' : 'CANCELLED' },
+          adjustment: { kind: 'FULL_MANAGER_WAIVER', amount: (-lineBefore.lineAmount).toString() },
+        },
+      });
+      const board = result(
+        (
+          await read(
+            f,
+            `?status=${status === 'SERVED' ? 'SERVED' : 'CANCELLED'}&station=KITCHEN`,
+          ).expect(200)
+        ).body,
+      );
+      expect(board.items.find((candidate) => candidate.id === f.targetId)).toMatchObject({
+        status: status === 'SERVED' ? 'SERVED' : 'CANCELLED',
+        fullWaiver: {
+          kind: 'FULL_MANAGER_WAIVER',
+          amount: (-lineBefore.lineAmount).toString(),
+          reason: 'Manager xác nhận điều chỉnh ngoại lệ',
+        },
+      });
+      expect(
+        await prisma.auditLog.count({
+          where: { resourceId: correction.id, action: 'MANAGER_ITEM_CORRECTED' },
+        }),
+      ).toBe(1);
+      expect(
+        await prisma.outboxEvent.count({
+          where: { aggregateId: correction.id, eventType: 'cancellation.updated' },
+        }),
+      ).toBe(1);
+      const billEventsAfter = await prisma.outboxEvent.findMany({
+        where: { aggregateId: before.billId, eventType: 'bill.updated' },
+        orderBy: [{ occurredAt: 'asc' }, { id: 'asc' }],
+      });
+      const previousEventIds = new Set(billEventsBefore.map((event) => event.id));
+      const correctionBillEvents = billEventsAfter.filter(
+        (event) => !previousEventIds.has(event.id),
+      );
+      expect(correctionBillEvents).toHaveLength(1);
+      expect(correctionBillEvents[0]).toMatchObject({
+        restaurantId: f.restaurantId,
+        locationId: f.locationId,
+        aggregateId: before.billId,
+        eventType: 'bill.updated',
+        occurredAt: adjustments[0]!.createdAt,
+        payload: {
+          id: before.billId,
+          tableSessionId: f.tableSessionId,
+          version: (response.body as { data: { bill: { version: number } } }).data.bill.version,
+        },
+      });
+      expect(
+        await prisma.outboxEvent.count({
+          where: {
+            aggregateId: f.targetId,
+            eventType: 'fulfillment.item.updated',
+            payload: { path: ['status'], equals: 'CANCELLED' },
+          },
+        }),
+      ).toBe(status === 'SERVED' ? 0 : 1);
+    },
+  );
+
+  it('M3.6 atomically withdraws a pending Guest request before the Manager correction', async () => {
+    const f = await preparationFixture('BAR');
+    await start(f, f.targetId).expect(200);
+    const requested = await guestCancellation(f, f.targetId, 1).expect(201);
+    const pendingId = (requested.body as { data: { cancellationRequest: { id: string } } }).data
+      .cancellationRequest.id;
+    const corrected = await managerCorrection(f, f.targetId, 1).expect(200);
+    expect(corrected.body).toMatchObject({
+      data: {
+        supersededCancellationRequest: { id: pendingId, status: 'WITHDRAWN', version: 1 },
+      },
+    });
+    expect(
+      await prisma.cancellationRequest.findUniqueOrThrow({ where: { id: pendingId } }),
+    ).toMatchObject({
+      status: 'WITHDRAWN',
+      version: 1,
+      decidedByMembershipId: f.membershipId,
+    });
+    expect(
+      await prisma.outboxEvent.count({
+        where: { aggregateId: pendingId, eventType: 'cancellation.updated' },
+      }),
+    ).toBe(2);
+  });
+
+  it('M3.6 replays one correction, serializes contenders and rejects duplicate waivers', async () => {
+    const f = await preparationFixture();
+    const key = randomUUID();
+    const replies = await Promise.all([
+      managerCorrection(f, f.targetId, 0, key),
+      managerCorrection(f, f.targetId, 0, key),
+    ]);
+    expect(replies.map((reply) => reply.status)).toEqual([200, 200]);
+    expect(replies[0].body).toEqual(replies[1].body);
+    expect(errorCode((await managerCorrection(f, f.targetId, 1, key).expect(409)).body)).toBe(
+      'IDEMPOTENCY_KEY_REUSED',
+    );
+    expect(
+      errorCode((await managerCorrection(f, f.targetId, 1, randomUUID()).expect(409)).body),
+    ).toBe('CORRECTION_ALREADY_APPLIED');
+    expect(await prisma.billAdjustment.count({ where: { orderItemId: f.targetId } })).toBe(1);
+    expect(
+      await prisma.idempotencyRecord.count({
+        where: { actorId: f.membershipId, operation: 'MANAGER_EXCEPTIONAL_CORRECTION' },
+      }),
+    ).toBe(1);
+
+    const contender = await preparationFixture();
+    const races = await Promise.all([
+      managerCorrection(contender, contender.targetId, 0),
+      managerCorrection(contender, contender.targetId, 0),
+    ]);
+    expect(races.map((reply) => reply.status).sort()).toEqual([200, 409]);
+    expect(await prisma.billAdjustment.count({ where: { orderItemId: contender.targetId } })).toBe(
+      1,
+    );
+  });
+
+  it('M3.6 denies missing permission and cross-location items without financial writes', async () => {
+    const f = await preparationFixture();
+    const other = await preparationFixture();
+    const bill = await prisma.bill.findUniqueOrThrow({
+      where: { tableSessionId: f.tableSessionId },
+    });
+    const permission = await prisma.permission.findUniqueOrThrow({
+      where: { code: 'bill.adjust' },
+    });
+    await prisma.rolePermission.delete({
+      where: { roleId_permissionId: { roleId: f.roleId, permissionId: permission.id } },
+    });
+    await managerCorrection(f, f.targetId, 0).expect(403);
+    await managerCorrection(f, other.targetId, 0).expect(403);
+    expect(await prisma.billAdjustment.count({ where: { orderItemId: f.targetId } })).toBe(0);
+    expect(await prisma.bill.findUniqueOrThrow({ where: { id: bill.id } })).toEqual(bill);
+  });
+
+  it('M3.6 enforces Origin, CSRF and current StaffSession before any correction write', async () => {
+    const f = await preparationFixture();
+    await managerCorrection(f, f.targetId, 0).unset('Origin').expect(403);
+    await managerCorrection(f, f.targetId, 0).unset('X-CSRF-Token').expect(403);
+    await request(server)
+      .post(`/api/v1/staff/fulfillment/items/${f.targetId}/manager-correction`)
+      .set('Origin', 'http://localhost:3000')
+      .set('X-CSRF-Token', f.csrf)
+      .set('Idempotency-Key', randomUUID())
+      .send({ expectedVersion: 0, reason: 'Không có phiên' })
+      .expect(401);
+    await prisma.staffSession.update({
+      where: { id: f.staffSessionId },
+      data: { revokedAt: new Date() },
+    });
+    await managerCorrection(f, f.targetId, 0).expect(401);
+    expect(await prisma.cancellationRequest.count({ where: { orderItemId: f.targetId } })).toBe(0);
+    expect(await prisma.billAdjustment.count({ where: { orderItemId: f.targetId } })).toBe(0);
+  });
+
+  it('M3.6 rejects invalid item/Bill states and rolls back all correction records', async () => {
+    const rejected = await preparationFixture();
+    await prisma.orderItem.update({
+      where: { id: rejected.targetId },
+      data: { status: 'REJECTED' },
+    });
+    expect(
+      errorCode((await managerCorrection(rejected, rejected.targetId, 0).expect(409)).body),
+    ).toBe('CANCELLATION_ITEM_STATE_CONFLICT');
+    expect(await prisma.billAdjustment.count({ where: { orderItemId: rejected.targetId } })).toBe(
+      0,
+    );
+
+    const lockedBill = await preparationFixture();
+    const bill = await prisma.bill.findUniqueOrThrow({
+      where: { tableSessionId: lockedBill.tableSessionId },
+    });
+    await prisma.bill.update({ where: { id: bill.id }, data: { status: 'PAYMENT_PENDING' } });
+    expect(
+      errorCode((await managerCorrection(lockedBill, lockedBill.targetId, 0).expect(409)).body),
+    ).toBe('CANCELLATION_FINANCIAL_STATE_INVALID');
+    expect(
+      await prisma.cancellationRequest.count({ where: { orderItemId: lockedBill.targetId } }),
+    ).toBe(0);
+    expect(await prisma.billAdjustment.count({ where: { orderItemId: lockedBill.targetId } })).toBe(
+      0,
+    );
   });
 });
