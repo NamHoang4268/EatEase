@@ -4,6 +4,8 @@ Last baseline update: 2026-10-30.
 
 ## APPROVED
 
+- 2026-11-08 — M3.6 owner authorization: Manager/Admin with `bill.adjust` may exceptionally correct NEW/PREPARING/READY by cancelling the item with a full waiver; SERVED remains SERVED and receives a separate immutable full waiver. Preserve all snapshots/timestamps, atomically withdraw any pending request, record actor/reason/audit/outbox/idempotency, and never create duplicate/partial waivers. Owner final local validation passed `467/467` full-suite tests plus a focused Playwright `1/1`; production migration/deployment and hosted/public smoke remain pending.
+
 - 2026-11-05 — M3.1 owner authorization: implement only KITCHEN/BAR `NEW → PREPARING`, with staff session/Origin/CSRF/`fulfillment.transition`, expectedVersion and atomic preparation metadata/audit/outbox/idempotency. Add `fulfillment.item.updated` routing through existing realtime infrastructure. No UI controls, other transitions or financial adjustments. See [API contract](../architecture/api-contracts.md#post-stafffulfillmentitemsidstart-preparation-m31). Owner final local validation completed: migration `10/10`, PostgreSQL integration `49/49`, API unit `154/154`, lint/typecheck/build, Prisma validate/generate, formatting and diff checks PASS; production release verification remains pending.
 
 - 2026-11-04 — M2.8 owner approval: `OrderStatus` contains only `SUBMITTED`. Order is an immutable submission record; fulfillment transitions belong exclusively to OrderItems. No aggregate `PREPARING` or `COMPLETED` Order state is introduced.
@@ -88,7 +90,7 @@ Last baseline update: 2026-10-30.
 - Production domain và exact reverse-proxy topology.
 - Future same-origin WebSocket reverse proxy; MVP uses approved direct Render ticket topology.
 - Menu modifiers chi tiết ngoài contract tối thiểu.
-- Manager force-close/correction procedure chi tiết.
+- Manager force-close procedure chi tiết; M3.6 item correction is approved above.
 - Retention/cleanup periods cho idempotency, outbox, audit và closed guest sessions.
 - Exact AWS topology/capacity/DR targets cho M5.
 

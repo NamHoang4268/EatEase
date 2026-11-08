@@ -52,7 +52,7 @@ Mỗi milestone chỉ bắt đầu khi dependency hoàn tất và có authorizat
 
 ## M3 — Fulfillment, cancellation and serving
 
-**Status:** `IN_PROGRESS` — M3.1–M3.5 are `DONE` after owner-confirmed local validation. M3.6 remains `TODO` pending separate authorization. Production migrations/deployment/public smoke remain pending separately.
+**Status:** `DONE` for the locally validated development scope — M3.1–M3.6 have passed owner validation. Production migrations/deployment and hosted/public smoke remain pending separately and are not implied by this milestone closure.
 
 **Goal:** complete item-level operational lifecycle.
 
@@ -65,6 +65,8 @@ M3.3 interactive fulfillment board is `DONE`: operational status filters, existi
 M3.4 waiter serving is `DONE`: READY → SERVED uses dedicated `serving.mark_served`, the shared transition transaction, servedAt migration, existing board and scoped realtime refetch. SERVED remains terminal. See [M3.4 validation and unresolved intermittent E2E evidence](implementation-plan.md#m34--waiter-serving). Login navigation-loop and expired-Guest failures have unconfirmed root causes; recurrence requires investigation and a verified fix rather than repeated reruns/cache clearing. Production migration/deployment/public smoke remain pending.
 
 M3.5 is `DONE`: Guest requests remain pending until the approved Waiter/Kitchen decision path; direct Kitchen/Bar rejection is limited to NEW; accepted cancellation preserves original financial history and creates one auditable full waiver. Owner local validation passed `453/453` tests with all `13/13` migrations applied, Prisma validation/generation, full lint/typecheck and API/Web production builds passing. See the [M3.5 tracker and validation evidence](implementation-plan.md#m35--guest-cancellation-and-kitchen-decision). Production migration/deployment/public smoke remain pending.
+
+M3.6 is `DONE`: Manager exceptional correction reuses `bill.adjust`, immutable adjustments and existing board/realtime patterns. NEW/PREPARING/READY is cancelled with one full waiver; SERVED remains SERVED with its status/version/servedAt unchanged and receives a separate immutable full financial waiver. Owner local validation passed `467/467` full-suite tests with all `15/15` migrations applied; a separate focused Playwright reproduction passed `1/1`. See the [M3.6 tracker and diagnostic evidence](implementation-plan.md#m36--manager-exceptional-correction-and-end-to-end-workflow). Production migration/deployment/public smoke remain pending.
 
 **Scope/tasks:** KITCHEN/BAR/DIRECT filters, PREPARING/READY/SERVED transitions, service/cancellation requests, Kitchen decision, automatic full waiver, Manager exceptions, realtime updates.
 

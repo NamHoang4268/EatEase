@@ -1299,7 +1299,11 @@ export function PublicMenuExperience({ publicId }: { publicId: string }) {
                 <ul className="bill-lines" aria-label="Miễn giảm">
                   {(sessionView.bill.adjustments ?? []).map((adjustment) => (
                     <li key={adjustment.id}>
-                      <span>Miễn 100% món đã hủy</span>
+                      <span>
+                        {adjustment.kind === 'FULL_MANAGER_WAIVER'
+                          ? 'Manager miễn 100% món'
+                          : 'Miễn 100% món đã hủy'}
+                      </span>
                       <strong>{formatVnd(BigInt(adjustment.amount))}</strong>
                     </li>
                   ))}

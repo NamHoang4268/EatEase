@@ -15,6 +15,7 @@ import type {
   CancellationForwardInput,
   DirectRejectionInput,
   GuestCancellationInput,
+  ManagerCorrectionInput,
 } from './cancellation.contract.js';
 
 const denied = () => new ForbiddenException({ code: 'CANCELLATION_SCOPE_DENIED' });
@@ -42,7 +43,7 @@ type Result = {
     version: number;
     decidedAt: string | null;
   };
-  item?: { id: string; status: 'CANCELLED'; version: number };
+  item?: { id: string; status: 'CANCELLED' | 'SERVED'; version: number };
   bill?: {
     id: string;
     adjustmentAmount: string;
@@ -50,7 +51,12 @@ type Result = {
     balanceAmount: string;
     version: number;
   };
-  adjustment?: { id: string; kind: 'FULL_CANCELLATION_WAIVER'; amount: string };
+  adjustment?: {
+    id: string;
+    kind: 'FULL_CANCELLATION_WAIVER' | 'FULL_MANAGER_WAIVER';
+    amount: string;
+  };
+  supersededCancellationRequest?: { id: string; status: 'WITHDRAWN'; version: number };
 };
 
 @Injectable()
@@ -365,6 +371,213 @@ export class CancellationService {
           tableSessionId: itemTarget.order.tableSessionId,
           reason: input.reason,
           now,
+        });
+        await this.completeStaffIdempotency(
+          tx,
+          principal.restaurantId,
+          key,
+          requestHash,
+          item.id,
+          result,
+          expiresAt,
+        );
+        return result;
+      });
+    return this.retryUnique(execute);
+  }
+
+  async correctItem(principal: StaffPrincipal, input: ManagerCorrectionInput): Promise<Result> {
+    const itemTarget = await this.prisma.orderItem.findFirst({
+      where: {
+        id: input.itemId,
+        restaurantId: principal.restaurantId,
+        locationId: principal.locationId,
+      },
+      select: { billId: true, order: { select: { tableSessionId: true } } },
+    });
+    if (!itemTarget) throw denied();
+    const operation = 'MANAGER_EXCEPTIONAL_CORRECTION';
+    const key = this.staffKey(principal, operation, input.idempotencyKey);
+    const requestHash = this.hash(input);
+    const execute = () =>
+      this.prisma.$transaction(async (tx) => {
+        await this.lockSessionAndBill(
+          tx,
+          itemTarget.order.tableSessionId,
+          itemTarget.billId,
+          principal.restaurantId,
+          principal.locationId,
+        );
+        const expiresAt = await this.revalidateStaff(tx, principal, 'bill.adjust');
+        const item = await this.lockItem(
+          tx,
+          input.itemId,
+          principal.restaurantId,
+          principal.locationId,
+        );
+        const replay = await this.replay(tx, key, requestHash, item.id);
+        if (replay) return replay;
+        if (item.version !== input.expectedVersion)
+          throw conflict('CANCELLATION_ITEM_VERSION_CONFLICT');
+        if (!['NEW', 'PREPARING', 'READY', 'SERVED'].includes(item.status))
+          throw conflict(
+            item.status === 'CANCELLED'
+              ? 'CORRECTION_ALREADY_APPLIED'
+              : 'CANCELLATION_ITEM_STATE_CONFLICT',
+          );
+        if (await tx.billAdjustment.findFirst({ where: { orderItemId: item.id } }))
+          throw conflict('CORRECTION_ALREADY_APPLIED');
+
+        const now = new Date();
+        const pending = await tx.cancellationRequest.findFirst({
+          where: { orderItemId: item.id, status: { in: ['PENDING_WAITER', 'PENDING_KITCHEN'] } },
+          orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+          select: { id: true, version: true },
+        });
+        const superseded = pending
+          ? await tx.cancellationRequest.update({
+              where: { id: pending.id, version: pending.version },
+              data: {
+                status: 'WITHDRAWN',
+                decidedByMembershipId: principal.membershipId,
+                decidedAt: now,
+                decisionReason: input.reason,
+                version: { increment: 1 },
+                updatedAt: now,
+              },
+              select: { id: true, status: true, version: true },
+            })
+          : null;
+        const correction = await tx.cancellationRequest.create({
+          data: {
+            ...targetScope(principal),
+            tableSessionId: itemTarget.order.tableSessionId,
+            billId: itemTarget.billId,
+            orderItemId: item.id,
+            source: 'MANAGER_CORRECTION',
+            status: 'APPROVED',
+            requestedByMembershipId: principal.membershipId,
+            requestReason: input.reason,
+            decidedByMembershipId: principal.membershipId,
+            decidedAt: now,
+            decisionReason: input.reason,
+            createdAt: now,
+            updatedAt: now,
+          },
+          select: { id: true, status: true, version: true },
+        });
+        const line = await tx.billLine.findUnique({
+          where: { orderItemId: item.id },
+          select: { lineAmount: true },
+        });
+        if (!line) throw conflict('CANCELLATION_FINANCIAL_STATE_INVALID');
+        const correctedItem =
+          item.status === 'SERVED'
+            ? { id: item.id, status: 'SERVED' as const, version: item.version }
+            : await tx.orderItem.update({
+                where: { id: item.id, status: item.status, version: item.version },
+                data: { status: 'CANCELLED', version: { increment: 1 } },
+                select: { id: true, status: true, version: true },
+              });
+        const bill = await tx.bill.findUniqueOrThrow({ where: { id: itemTarget.billId } });
+        if (bill.status !== 'OPEN' || bill.paidAmount !== 0n)
+          throw conflict('CANCELLATION_FINANCIAL_STATE_INVALID');
+        const adjustment = await tx.billAdjustment.create({
+          data: {
+            ...targetScope(principal),
+            billId: itemTarget.billId,
+            orderItemId: item.id,
+            cancellationRequestId: correction.id,
+            kind: 'FULL_MANAGER_WAIVER',
+            amount: -line.lineAmount,
+            reason: input.reason,
+            createdByMembershipId: principal.membershipId,
+            createdAt: now,
+          },
+          select: { id: true, kind: true, amount: true },
+        });
+        const adjustmentAmount = bill.adjustmentAmount - line.lineAmount;
+        const totalAmount = bill.subtotalAmount + adjustmentAmount;
+        const balanceAmount = totalAmount - bill.paidAmount;
+        if (totalAmount < 0n || balanceAmount < 0n)
+          throw conflict('CANCELLATION_FINANCIAL_STATE_INVALID');
+        const updatedBill = await tx.bill.update({
+          where: { id: bill.id, version: bill.version },
+          data: {
+            adjustmentAmount,
+            totalAmount,
+            balanceAmount,
+            version: { increment: 1 },
+          },
+          select: {
+            id: true,
+            adjustmentAmount: true,
+            totalAmount: true,
+            balanceAmount: true,
+            version: true,
+          },
+        });
+        const result: Result = {
+          cancellationRequest: {
+            id: correction.id,
+            orderItemId: item.id,
+            status: 'APPROVED',
+            version: correction.version,
+            decidedAt: now.toISOString(),
+          },
+          item: {
+            id: correctedItem.id,
+            status: correctedItem.status as 'CANCELLED' | 'SERVED',
+            version: correctedItem.version,
+          },
+          bill: {
+            ...updatedBill,
+            adjustmentAmount: updatedBill.adjustmentAmount.toString(),
+            totalAmount: updatedBill.totalAmount.toString(),
+            balanceAmount: updatedBill.balanceAmount.toString(),
+          },
+          adjustment: { ...adjustment, amount: adjustment.amount.toString() },
+          ...(superseded
+            ? {
+                supersededCancellationRequest: {
+                  id: superseded.id,
+                  status: 'WITHDRAWN' as const,
+                  version: superseded.version,
+                },
+              }
+            : {}),
+        };
+        await this.staffAudit(
+          tx,
+          principal,
+          correction.id,
+          'MANAGER_ITEM_CORRECTED',
+          input.reason,
+          {
+            orderItemId: item.id,
+            tableSessionId: itemTarget.order.tableSessionId,
+            itemStatusBefore: item.status,
+            itemStatusAfter: correctedItem.status,
+            itemVersionBefore: item.version,
+            itemVersionAfter: correctedItem.version,
+            adjustmentId: adjustment.id,
+            adjustmentAmount: adjustment.amount.toString(),
+            supersededCancellationRequestId: superseded?.id ?? null,
+          },
+          now,
+        );
+        await this.managerCorrectionOutbox(tx, principal, {
+          requestId: correction.id,
+          requestVersion: correction.version,
+          supersededRequest: superseded,
+          itemId: item.id,
+          itemStatus: correctedItem.status as 'CANCELLED' | 'SERVED',
+          itemVersion: correctedItem.version,
+          itemChanged: item.status !== 'SERVED',
+          billId: updatedBill.id,
+          billVersion: updatedBill.version,
+          tableSessionId: itemTarget.order.tableSessionId,
+          occurredAt: now,
         });
         await this.completeStaffIdempotency(
           tx,
@@ -868,6 +1081,73 @@ export class CancellationService {
             version: input.itemVersion,
           },
         },
+        {
+          ...targetScope(principal),
+          aggregateType: 'Bill',
+          aggregateId: input.billId,
+          eventType: 'bill.updated',
+          occurredAt: input.occurredAt,
+          payload: {
+            id: input.billId,
+            tableSessionId: input.tableSessionId,
+            version: input.billVersion,
+          },
+        },
+      ],
+    });
+  }
+
+  private async managerCorrectionOutbox(
+    tx: Prisma.TransactionClient,
+    principal: StaffPrincipal,
+    input: {
+      requestId: string;
+      requestVersion: number;
+      supersededRequest: { id: string; status: string; version: number } | null;
+      itemId: string;
+      itemStatus: 'CANCELLED' | 'SERVED';
+      itemVersion: number;
+      itemChanged: boolean;
+      billId: string;
+      billVersion: number;
+      tableSessionId: string;
+      occurredAt: Date;
+    },
+  ): Promise<void> {
+    await this.cancellationOutbox(tx, {
+      ...targetScope(principal),
+      requestId: input.requestId,
+      tableSessionId: input.tableSessionId,
+      version: input.requestVersion,
+      occurredAt: input.occurredAt,
+    });
+    if (input.supersededRequest)
+      await this.cancellationOutbox(tx, {
+        ...targetScope(principal),
+        requestId: input.supersededRequest.id,
+        tableSessionId: input.tableSessionId,
+        version: input.supersededRequest.version,
+        occurredAt: input.occurredAt,
+      });
+    await tx.outboxEvent.createMany({
+      data: [
+        ...(input.itemChanged
+          ? [
+              {
+                ...targetScope(principal),
+                aggregateType: 'OrderItem',
+                aggregateId: input.itemId,
+                eventType: 'fulfillment.item.updated',
+                occurredAt: input.occurredAt,
+                payload: {
+                  id: input.itemId,
+                  tableSessionId: input.tableSessionId,
+                  status: input.itemStatus,
+                  version: input.itemVersion,
+                },
+              },
+            ]
+          : []),
         {
           ...targetScope(principal),
           aggregateType: 'Bill',

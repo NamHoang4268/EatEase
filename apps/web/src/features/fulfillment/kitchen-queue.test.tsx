@@ -18,6 +18,12 @@ const boardItem = {
     submittedAt: '2026-11-05T00:00:00.000Z',
   },
   table: { code: 'A01' },
+  fullWaiver: null as null | {
+    kind: 'FULL_CANCELLATION_WAIVER' | 'FULL_MANAGER_WAIVER';
+    amount: string;
+    reason: string;
+    createdAt: string;
+  },
   cancellationRequest: null as null | {
     id: string;
     status: 'PENDING_WAITER' | 'PENDING_KITCHEN';
@@ -465,5 +471,68 @@ describe('KitchenQueue', () => {
     fireEvent.change(screen.getByLabelText('Trạng thái món'), { target: { value: 'CANCELLED' } });
     expect(await screen.findByText('KITCHEN · Đã hủy · miễn 100%')).toBeDefined();
     expect(screen.queryByRole('button', { name: /Đánh dấu|Bắt đầu|Từ chối món/ })).toBeNull();
+  });
+
+  it.each([
+    ['READY', 'Hủy ngoại lệ · miễn 100%', 'Hủy món ngoại lệ và miễn toàn bộ phí?'],
+    [
+      'SERVED',
+      'Miễn toàn bộ phí · giữ trạng thái đã phục vụ',
+      'Miễn toàn bộ phí nhưng giữ nguyên trạng thái Đã phục vụ?',
+    ],
+  ] as const)(
+    'requires confirmation and submits the Manager correction for %s',
+    async (status, label, confirmation) => {
+      const confirm = vi.fn().mockReturnValue(true);
+      vi.stubGlobal('confirm', confirm);
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(response(boardPage({ ...boardItem, status })))
+        .mockResolvedValueOnce(response({ item: { status } }))
+        .mockResolvedValue(response());
+      vi.stubGlobal('fetch', fetchMock);
+      render(<KitchenQueue allowed canAdjustBill csrfToken="csrf" onSessionInvalid={vi.fn()} />);
+      await screen.findByText('Bàn A01 · Cơm gà');
+      fireEvent.change(screen.getByLabelText('Lý do điều chỉnh ngoại lệ'), {
+        target: { value: 'Phục vụ nhầm bàn' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: label }));
+      await screen.findByText('Chưa có món ở trạng thái này tại trạm đã chọn.');
+      expect(confirm).toHaveBeenCalledWith(confirmation);
+      expect(fetchMock.mock.calls[1]?.[0]).toBe(
+        '/api/v1/staff/fulfillment/items/item/manager-correction',
+      );
+      expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
+        method: 'POST',
+        body: JSON.stringify({ expectedVersion: 7, reason: 'Phục vụ nhầm bàn' }),
+        headers: { 'Idempotency-Key': expect.any(String), 'X-CSRF-Token': 'csrf' },
+      });
+    },
+  );
+
+  it('shows an existing Manager waiver and removes the correction action', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        response(
+          boardPage({
+            ...boardItem,
+            status: 'SERVED',
+            fullWaiver: {
+              kind: 'FULL_MANAGER_WAIVER',
+              amount: '-42000',
+              reason: 'Phục vụ nhầm bàn',
+              createdAt: '2026-11-08T00:00:00.000Z',
+            },
+          }),
+        ),
+      ),
+    );
+    render(<KitchenQueue allowed canAdjustBill csrfToken="csrf" onSessionInvalid={vi.fn()} />);
+    expect(await screen.findByText('Manager đã miễn toàn bộ phí')).toBeDefined();
+    expect(screen.getByText('Giá trị miễn: 42.000 ₫')).toBeDefined();
+    expect(
+      screen.queryByRole('button', { name: 'Miễn toàn bộ phí · giữ trạng thái đã phục vụ' }),
+    ).toBeNull();
   });
 });

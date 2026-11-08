@@ -57,6 +57,8 @@ Nếu reference tạm thời không truy cập được, tiếp tục theo các 
 
 M3.3 extends the existing staff fulfillment board with status and station filters; M3.4 adds an authorized READY serving action and read-only SERVED visibility. M3.5 adds explicit Guest cancellation request states, staff decision reasons, full-waiver presentation and terminal CANCELLED visibility. A pending request must never look completed; destructive acceptance/direct rejection uses clear copy and requires a reason. Show textual status beside station and only the permitted operational action. Disable actions while a command is pending or CSRF restoration is incomplete. Keep failures actionable, refetch on version conflicts, and render confirmed REST state after mutations/realtime reconnect rather than optimistic transitions. See the [board API and interaction contract](../architecture/api-contracts.md#get-stafffulfillmentitemsstatusnewstationkitchen).
 
+M3.6 keeps Manager correction inside this board: require a reason and explicit confirmation, label NEW/PREPARING/READY as operational cancellation plus full waiver, and label SERVED as a financial-only waiver that preserves served history. Show the authoritative waiver after refetch and remove the action once applied. Never present a SERVED correction as if the item were unserved or cancelled.
+
 ## Color system
 
 Component phải dùng semantic tokens; không hardcode palette value rải rác trong component. Primary yellow luôn dùng foreground tối có đủ contrast.

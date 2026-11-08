@@ -24,6 +24,7 @@ import {
   parseCancellationForward,
   parseDirectRejection,
   parseGuestCancellation,
+  parseManagerCorrection,
 } from './cancellation.contract.js';
 import { CancellationService } from './cancellation.service.js';
 
@@ -131,6 +132,25 @@ export class CancellationController {
       data: await this.cancellation.rejectNewItem(
         staff(request),
         parseDirectRejection(id, body, key),
+      ),
+    };
+  }
+
+  @Post('staff/fulfillment/items/:id/manager-correction')
+  @HttpCode(200)
+  @UseGuards(StaffSessionGuard, StaffCsrfGuard, StaffAuthorizationGuard)
+  @RequirePermissions('bill.adjust')
+  @Header('Cache-Control', 'no-store')
+  async correctItem(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Headers('idempotency-key') key: string | undefined,
+    @Req() request: StaffRequest,
+  ) {
+    return {
+      data: await this.cancellation.correctItem(
+        staff(request),
+        parseManagerCorrection(id, body, key),
       ),
     };
   }

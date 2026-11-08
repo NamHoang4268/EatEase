@@ -161,12 +161,14 @@ enum CancellationRequestStatus {
 enum CancellationRequestSource {
   GUEST_REQUEST
   STAFF_REJECTION
+  MANAGER_CORRECTION
 
   @@map("cancellation_request_source")
 }
 
 enum BillAdjustmentKind {
   FULL_CANCELLATION_WAIVER
+  FULL_MANAGER_WAIVER
 
   @@map("bill_adjustment_kind")
 }

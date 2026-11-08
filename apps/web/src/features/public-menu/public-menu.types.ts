@@ -120,7 +120,7 @@ export type ConsolidatedSessionView = {
     adjustments: Array<{
       id: string;
       orderItemId: string;
-      kind: 'FULL_CANCELLATION_WAIVER';
+      kind: 'FULL_CANCELLATION_WAIVER' | 'FULL_MANAGER_WAIVER';
       amount: string;
       reason: string;
       createdAt: string;

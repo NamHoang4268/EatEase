@@ -648,6 +648,7 @@ export function StaffActivationWorkspace() {
             'cancellation.forward_to_kitchen',
           )}
           canDecideCancellation={auth.staff.permissions.includes('cancellation.decide_operational')}
+          canAdjustBill={auth.staff.permissions.includes('bill.adjust')}
           csrfToken={csrfToken}
           recoverCsrf={recoverCsrf}
           allowed

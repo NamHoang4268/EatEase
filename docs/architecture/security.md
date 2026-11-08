@@ -170,7 +170,7 @@ Lock order for M2.7 is TableSession → current SessionJoinCode → GuestSession
 
 - Correlation/request ID trên HTTP và realtime operations.
 - Log token fingerprint/hash-safe reference, không raw cookie, password hoặc join code.
-- Audit activation approve/reject/claim, staff order, cancellation, waiver, cash payment, settlement, session close và table-ready actions. Physical-presence attestation is recorded for approval.
+- Audit activation approve/reject/claim, staff order, cancellation, waiver, Manager exceptional correction, cash payment, settlement, session close và table-ready actions. Physical-presence attestation is recorded for approval. M3.6 revalidates `bill.adjust`, membership/session and location scope inside the transaction; client input cannot choose actor, amount, waiver kind or scope.
 - Security failures trả thông tin tối thiểu nhưng có internal diagnostic correlation.
 
 ## Security verification expectations

@@ -58,11 +58,24 @@ export class FulfillmentService {
             createdAt: true,
           },
         },
+        billAdjustments: {
+          where: {
+            kind: { in: ['FULL_CANCELLATION_WAIVER', 'FULL_MANAGER_WAIVER'] },
+          },
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+          take: 1,
+          select: {
+            kind: true,
+            amount: true,
+            reason: true,
+            createdAt: true,
+          },
+        },
       },
     });
     const items = rows
       .slice(0, query.limit)
-      .map(({ order, cancellationRequests = [], ...item }) => ({
+      .map(({ order, cancellationRequests = [], billAdjustments = [], ...item }) => ({
         ...item,
         order: {
           id: order.id,
@@ -76,6 +89,13 @@ export class FulfillmentService {
           ? {
               ...cancellationRequests[0],
               createdAt: cancellationRequests[0].createdAt.toISOString(),
+            }
+          : null,
+        fullWaiver: billAdjustments[0]
+          ? {
+              ...billAdjustments[0],
+              amount: billAdjustments[0].amount.toString(),
+              createdAt: billAdjustments[0].createdAt.toISOString(),
             }
           : null,
       }));
