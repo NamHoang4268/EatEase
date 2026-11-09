@@ -41,6 +41,8 @@ Sau approval, original requester phải explicit claim để chuyển chính Gue
 | `CHECKOUT_LOCKED`          | Close                | `CLOSED`          | Bill settled               |
 | `ACTIVE`/`CHECKOUT_LOCKED` | Force close          | `CLOSED`          | Manager + correction/audit |
 
+M4.1 implements only checkout and staff-only resume. Billing ready means nonempty submitted ordering history with immutable BillLines, every item SERVED/CANCELLED/REJECTED, no pending cancellation and OPEN Bill with no recorded payment. Guest checkout is limited to its own ORDER_ENABLED session; staff checkout/resume requires `bill.checkout` and location scope. Checkout atomically changes ACTIVE/OPEN to CHECKOUT_LOCKED/PAYMENT_PENDING; resume reverses both while no payment/settlement has occurred. Both versions increment once; monetary values and fulfillment/table history remain unchanged. Existing Guest credentials and Bill reads remain valid while locked, but new orders and new joins are denied. See [M4.1 API contracts](api-contracts.md#checkout-lock-and-resume-m41). Empty-session cancellation, payment, settlement and close remain later M4 work.
+
 ## Guest access and Session Join Code
 
 `BROWSE_ONLY → ORDER_ENABLED` happens only through explicit requester claim after activation approval or successful Join Code verification. Join rotates only that device's guest + CSRF credentials; Host/member credentials remain independent.

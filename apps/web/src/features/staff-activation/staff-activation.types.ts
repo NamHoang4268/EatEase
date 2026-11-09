@@ -23,6 +23,7 @@ export type StaffActivationRequest = {
 
 export type StaffActiveTableSession = {
   id: string;
+  status?: 'ACTIVE' | 'CHECKOUT_LOCKED';
   version: number;
   activatedAt: string;
   table: { publicId: string; code: string; capacity: number };

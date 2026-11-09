@@ -22,7 +22,7 @@ export type SubmitOrderBody = z.output<typeof submitOrderBodySchema>;
 export type ConsolidatedSessionView = {
   session: {
     id: string;
-    status: 'ACTIVE';
+    status: 'ACTIVE' | 'CHECKOUT_LOCKED';
     activatedAt: string;
     version: number;
     table: { publicId: string; code: string };

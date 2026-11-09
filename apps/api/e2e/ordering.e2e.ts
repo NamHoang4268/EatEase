@@ -7,6 +7,12 @@ import {
   type WebSocketRoute,
 } from '@playwright/test';
 import { createFixture, type Fixture } from './fixture.js';
+import {
+  closeObservedContext,
+  diagnosticNote,
+  expectedRequestFailure,
+  observeContext,
+} from './network-diagnostics.js';
 
 const WEB = 'http://localhost:3100';
 type Observation = { hints: string[]; connections: number; drop: boolean; socket?: WebSocketRoute };
@@ -34,6 +40,7 @@ async function observe(page: Page) {
 async function open(browser: Browser, contexts: BrowserContext[]) {
   const context = await browser.newContext({ baseURL: WEB });
   contexts.push(context);
+  observeContext(context, `ordering-context-${contexts.length}`);
   await context.route('**/*', (route) => {
     const url = new URL(route.request().url());
     return ['http://localhost:3100', 'http://127.0.0.1:3101'].includes(url.origin)
@@ -95,7 +102,7 @@ test.describe('M2 complete local browser flow', () => {
     f = await createFixture();
   });
   test.afterEach(async () => {
-    await Promise.all(contexts.splice(0).map((context) => context.close()));
+    await Promise.all(contexts.splice(0).map((context) => closeObservedContext(context)));
     if (f) await f.close();
   });
 
@@ -128,6 +135,11 @@ test.describe('M2 complete local browser flow', () => {
       const response = await route.fetch(); // Let the real API commit before losing the response.
       if (loseFirstResponse) {
         loseFirstResponse = false;
+        expectedRequestFailure(
+          host.context,
+          route.request(),
+          'injected lost response after committed order',
+        );
         await route.abort('failed');
       } else await route.fulfill({ response });
     });
@@ -160,6 +172,7 @@ test.describe('M2 complete local browser flow', () => {
     await expect(host.page.locator('.bill-preview .bill-totals')).toContainText('84.000');
     const previousConnections = host.realtime.connections;
     host.realtime.drop = false;
+    diagnosticNote(host.context, 'intentional-websocket-disconnect');
     await host.realtime.socket!.close();
     await expect.poll(() => host.realtime.connections).toBeGreaterThan(previousConnections);
     await expect(host.page.locator('.bill-preview .bill-totals')).toContainText('126.000');

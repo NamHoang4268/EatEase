@@ -72,7 +72,12 @@ export type IssuedJoinCode = JoinCodeMetadata & {
 };
 
 export type ConsolidatedSessionView = {
-  session: { id: string; status: 'ACTIVE'; table: { publicId: string; code: string } };
+  session: {
+    id: string;
+    status: 'ACTIVE' | 'CHECKOUT_LOCKED';
+    version: number;
+    table: { publicId: string; code: string };
+  };
   orders: Array<{
     id: string;
     orderNumber: string;

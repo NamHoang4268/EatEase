@@ -40,7 +40,9 @@ const joinSchema = z
   .object({ tablePublicId: z.string().uuid(), joinCode: z.string().regex(/^\d{6}$/) })
   .strict();
 const sessionIdSchema = z.string().uuid();
-const activeQuerySchema = z.object({ status: z.literal('ACTIVE') }).strict();
+const activeQuerySchema = z
+  .object({ status: z.enum(['ACTIVE', 'ACTIVE,CHECKOUT_LOCKED']) })
+  .strict();
 
 function badRequest(code: string, message: string): BadRequestException {
   return new BadRequestException({ code, message, details: {} });
@@ -159,7 +161,13 @@ export class StaffJoinCodeController {
   async list(@Query() query: unknown, @Req() request: StaffRequest) {
     const parsed = activeQuerySchema.safeParse(query);
     if (!parsed.success) throw badRequest('TABLE_SESSION_QUERY_INVALID', 'Invalid query.');
-    return { data: await this.joinCodes.listActiveForStaff(staffPrincipal(request)) };
+    return {
+      data: await this.joinCodes.listActiveForStaff(
+        staffPrincipal(request),
+        new Date(),
+        parsed.data.status === 'ACTIVE,CHECKOUT_LOCKED',
+      ),
+    };
   }
 
   @Post(':id/join-code')

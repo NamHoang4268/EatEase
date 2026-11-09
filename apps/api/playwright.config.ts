@@ -2,9 +2,23 @@ import { defineConfig } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { assertLocalE2eDatabase } from './e2e/local-target.js';
 
 assertLocalE2eDatabase(); // Fail closed before starting servers or writing fixtures.
+const diagnostics = process.env.E2E_NETWORK_DIAGNOSTICS === '1';
+const webDiagnostics = diagnostics
+  ? {
+      EATEASE_E2E_SERVER_DIAGNOSTICS: '1',
+      NODE_OPTIONS: [
+        process.env.NODE_OPTIONS,
+        '--trace-warnings',
+        `--import=${pathToFileURL(join(import.meta.dirname, 'e2e/server-diagnostics.ts')).href}`,
+      ]
+        .filter(Boolean)
+        .join(' '),
+    }
+  : {};
 const env = {
   NODE_ENV: 'development',
   DOTENV_CONFIG_PATH: join(tmpdir(), `eatease-e2e-${randomUUID()}.missing`),
@@ -32,7 +46,7 @@ export default defineConfig({
   retries: 0,
   timeout: 120_000,
   expect: { timeout: 15_000 },
-  reporter: 'list',
+  reporter: diagnostics ? [['list'], ['./e2e/diagnostic-reporter.ts']] : 'list',
   outputDir: 'test-results',
   use: {
     baseURL: 'http://localhost:3100',
@@ -59,7 +73,7 @@ export default defineConfig({
       stdout: 'pipe',
       stderr: 'pipe',
       url: 'http://localhost:3100/health',
-      env: { ...env, PORT: '3100' },
+      env: { ...env, PORT: '3100', ...webDiagnostics },
       reuseExistingServer: false,
       timeout: 120_000,
     },

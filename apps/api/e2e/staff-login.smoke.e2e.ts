@@ -1,9 +1,11 @@
 import { test, expect } from '@playwright/test';
 import { createFixture } from './fixture.js';
+import { closeObservedContext, observeContext } from './network-diagnostics.js';
 
 test('Staff login navigation and authenticated refresh remain stable', async ({ browser }) => {
   const fixture = await createFixture();
   const context = await browser.newContext({ baseURL: 'http://localhost:3100' });
+  observeContext(context, 'staff-login-smoke');
   try {
     await context.route('**/*', (route) =>
       ['http://localhost:3100', 'http://127.0.0.1:3101'].includes(
@@ -42,7 +44,7 @@ test('Staff login navigation and authenticated refresh remain stable', async ({ 
     expect(documents).toBe(2);
     await expect(page).toHaveURL('http://localhost:3100/staff/login');
   } finally {
-    await context.close();
+    await closeObservedContext(context);
     await fixture.close();
   }
 });

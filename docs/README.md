@@ -27,6 +27,7 @@ Thư mục này là source of truth cho product, design, architecture và implem
 - [Implementation plan](planning/implementation-plan.md): dependency order và task tracker.
 - [Phase 1](planning/phase-01.md): chi tiết first business vertical slice.
 - [Decision log](planning/decision-log.md): `APPROVED`, `PROPOSED`, `OPEN`, `DEFERRED`.
+- [Known issues and technical debt](known-issues.md): severity/triage, observed limitations, workarounds và deferred follow-ups.
 
 ## Development
 

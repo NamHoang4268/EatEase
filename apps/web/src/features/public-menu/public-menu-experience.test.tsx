@@ -502,6 +502,7 @@ describe('PublicMenuExperience', () => {
         session: {
           id: 'table-session-1',
           status: 'ACTIVE',
+          version: 0,
           table: { publicId: tableResponse.data.publicId, code: 'A01' },
         },
         orders: [],
@@ -603,6 +604,7 @@ describe('PublicMenuExperience', () => {
         session: {
           id: 'table-session-1',
           status: 'ACTIVE',
+          version: 0,
           table: { publicId: tableResponse.data.publicId, code: 'A01' },
         },
         orders: [

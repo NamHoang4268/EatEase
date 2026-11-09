@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRealtime } from '../realtime/use-realtime';
+import { CheckoutControls } from '../checkout/checkout-controls';
 import { RealtimeNotice } from '../realtime/realtime-notice';
 import {
   addDraftItem,
@@ -342,7 +343,13 @@ export function PublicMenuExperience({ publicId }: { publicId: string }) {
   }, [guestAccess, loadSessionView]);
 
   const submitOrder = async () => {
-    if (submitBusy || cart.length === 0 || guestAccess !== 'ORDER_ENABLED') return;
+    if (
+      submitBusy ||
+      cart.length === 0 ||
+      guestAccess !== 'ORDER_ENABLED' ||
+      sessionView?.session.status === 'CHECKOUT_LOCKED'
+    )
+      return;
     const payload = JSON.stringify({
       items: cart.map((line) => ({
         menuItemId: line.menuItemId,
@@ -1177,7 +1184,11 @@ export function PublicMenuExperience({ publicId }: { publicId: string }) {
                 </p>
                 <button
                   className="primary-button"
-                  disabled={submitBusy || guestAccess !== 'ORDER_ENABLED'}
+                  disabled={
+                    submitBusy ||
+                    guestAccess !== 'ORDER_ENABLED' ||
+                    sessionView?.session.status === 'CHECKOUT_LOCKED'
+                  }
                   type="button"
                   onClick={() => void submitOrder()}
                 >
@@ -1213,6 +1224,19 @@ export function PublicMenuExperience({ publicId }: { publicId: string }) {
           {billError ? <p className="activation-error">{billError}</p> : null}
           {sessionView ? (
             <>
+              <CheckoutControls
+                actor="guest"
+                session={sessionView.session}
+                bill={sessionView.bill}
+                csrfToken={csrfToken}
+                recoverCsrf={recoverCsrfToken}
+                refresh={loadSessionView}
+                onSessionInvalid={() => {
+                  setSessionEstablished(false);
+                  setGuestAccess('BROWSE_ONLY');
+                  setSessionView(null);
+                }}
+              />
               <section aria-labelledby="submitted-items-heading">
                 <h3 id="submitted-items-heading">Món đã gửi</h3>
                 <ul className="bill-lines">

@@ -5,10 +5,12 @@ import { StaffAuthModule } from '../staff-auth/staff-auth.module.js';
 import { OrderingController } from './ordering.controller.js';
 import { OrderPersistence } from './order-persistence.js';
 import { OrderingService } from './ordering.service.js';
+import { CheckoutController } from './checkout.controller.js';
+import { CheckoutService } from './checkout.service.js';
 
 @Module({
   imports: [DatabaseModule, GuestSessionModule, StaffAuthModule],
-  controllers: [OrderingController],
-  providers: [OrderPersistence, OrderingService],
+  controllers: [OrderingController, CheckoutController],
+  providers: [OrderPersistence, OrderingService, CheckoutService],
 })
 export class OrderingModule {}

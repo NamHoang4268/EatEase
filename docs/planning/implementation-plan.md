@@ -2,7 +2,7 @@
 
 Status values: `TODO`, `IN_PROGRESS`, `BLOCKED`, `DONE`.
 
-Planning completion và implementation completion là hai việc khác nhau. M1, M2 và M3 đã hoàn tất trong locally validated development scope; production release verification của M3 vẫn pending, M4–M5 chưa bắt đầu.
+Planning completion và implementation completion là hai việc khác nhau. M1, M2 và M3 đã hoàn tất trong locally validated development scope; production release verification của M3 vẫn pending. M4/M4.1 đang IN_PROGRESS; M4.5 UI/UX và M5 chưa bắt đầu.
 
 ## M0 — Repository and documentation bootstrap
 
@@ -265,7 +265,7 @@ Dependency: M2.
 - **Artifacts:** backward-compatible query status extension (default NEW), existing KitchenQueue/workspace action integration, in-memory item/action/version retry keys, CSRF recovery, double-submit protection, 409 refetch, existing kitchen realtime invalidation/reconnect and manual refresh fallback. No migration or new transition command.
 - **Acceptance:** operational state/station queries remain scoped and deterministically paginated; actions send latest server version, retain retry identity on ambiguous failures, and refetch authoritative state; permission/session errors fail closed; no financial changes or raw staff credentials in JavaScript.
 - **Verification:** owner-confirmed local validation: PostgreSQL integration `63/63`, API unit `161/161`, Web unit `96/96` and Playwright E2E `5/5` PASS (`325/325` total). API/Web lint, typecheck and production builds, `pnpm format:check` and `git diff --check` PASS. No M3.3 migration was required.
-- **E2E note:** the successful suite logged Next dev-server `ECONNRESET` at teardown. Focused investigation confirmed no application defect and required no code changes; the exact request/socket was not identified. This does not invalidate the owner-confirmed passing assertions or establish production behavior.
+- **E2E note:** the successful suite logged Next dev-server `ECONNRESET` at teardown. Focused investigation did not reproduce or confirm an application defect, required no production-code change and did not identify the exact request/socket. Root cause remains unknown; current history and reopen conditions are tracked in [E2E-RUNTIME-01](../known-issues.md#e2e-runtime-01--intermittent-nextjs-econnreset--error-aborted). This does not invalidate the owner-confirmed passing assertions or establish production behavior.
 - **Release/checkpoint:** production migrations/deployment/public smoke remain pending; local validation does not establish production behavior. No serving, rejection, cancellation, waiver or payment workflow is included. Do not begin the next task before separate owner authorization.
 
 ### M3.4 — Waiter serving
@@ -303,19 +303,44 @@ Dependency: M2.
 
 Dependency: M3.
 
-| Status | Task                                                       |
-| ------ | ---------------------------------------------------------- |
-| TODO   | Implement checkout lock/resume                             |
-| TODO   | Implement cashier bill view                                |
-| TODO   | Implement idempotent cash payment + settlement transaction |
-| TODO   | Implement session close                                    |
-| TODO   | Implement cleaning and mark-ready                          |
-| TODO   | Implement receipt/basic revenue records                    |
-| TODO   | Complete financial concurrency and lifecycle E2E tests     |
+**Status:** `IN_PROGRESS`; M4.1 implementation and owner validation are complete, pending explicit owner approval to mark the task `DONE`. Production migrations/deployment/hosted smoke remain separate pending gates.
+
+| Status      | Task                                                       |
+| ----------- | ---------------------------------------------------------- |
+| IN_PROGRESS | Implement checkout lock/resume (M4.1)                      |
+| TODO        | Implement cashier bill view                                |
+| TODO        | Implement idempotent cash payment + settlement transaction |
+| TODO        | Implement session close                                    |
+| TODO        | Implement cleaning and mark-ready                          |
+| TODO        | Implement receipt/basic revenue records                    |
+| TODO        | Complete financial concurrency and lifecycle E2E tests     |
+
+Runtime investigation [E2E-RUNTIME-01](../known-issues.md#e2e-runtime-01--intermittent-nextjs-econnreset--error-aborted) must be triaged during the final M4 E2E closure task. The repository does not currently define an `M4.7` task number; do not infer a new numbered submilestone from this cross-reference.
+
+### M4.1 — Atomic checkout lock and resume
+
+- **Status:** `IN_PROGRESS`; implementation and owner validation complete, pending explicit owner closure approval. Recommended next status: `DONE`.
+- **Scope:** nonempty, billing-ready ACTIVE/OPEN → CHECKOUT_LOCKED/PAYMENT_PENDING; staff-only reverse transition before payment/settlement. Guest-own-session checkout; staff `bill.checkout`, trusted Origin/CSRF and transaction-time identity/location/permission revalidation. No money/fulfillment/table mutations.
+- **Artifacts:** existing OrderingModule with dedicated checkout controller/service/contracts; existing schema (no migration); locked-session Guest/staff Bill reads and staff discovery; minimal shared UI controls, stable retry keys and REST refetch; focused unit/component and real-PostgreSQL concurrency/rollback tests. [Authoritative API contract](../architecture/api-contracts.md#checkout-lock-and-resume-m41).
+- **Acceptance:** both versions/states commit with one audit, two scoped outbox events and one completed idempotency result; concurrent SubmitOrder cannot escape checkout; readiness/pending-cancellation/empty checks occur under parent locks; wrong scope/state/version/auth fail closed; retries do not duplicate effects and late failures roll back. Preserve all immutable financial/fulfillment history and Guest draft carts.
+- **Automated validation:** owner-confirmed checkout-focused PostgreSQL integration `13/13` PASS. Full regression passed `pnpm test` `326/326`, PostgreSQL integration `171/171` and Playwright E2E `6/6` (`503/503` total; the focused `13/13` is a subset of `171/171`, not additional tests). Full lint/typecheck, API/Web production builds and targeted E2E diagnostics PASS.
+- **Manual UI validation:** Staff-approved activation and Guest ordering PASS; Staff progressed the submitted item through READY → SERVED; Guest retained an unsubmitted draft while checkout atomically locked ordering; a second Guest tab observed the lock; Staff resume restored active ordering; the original tab retained its draft and could submit again. The consolidated Bill remained `48,000 VND` throughout checkout/resume.
+- **Acceptance review:** mandatory M4.1 requirements are satisfied for the locally validated development scope: paired session/Bill state and version updates, eligibility guards, immutable financial/fulfillment history, Guest ownership, staff permission/location scope, Origin/CSRF, idempotency/conflict handling, SubmitOrder concurrency, rollback, locked-session reads, draft preservation in the current page lifecycle and staff-only safe resume all have automated or manual evidence. No mandatory M4.1 closure criterion remains blocked.
+- **Deferred findings and limits:** [M4.1-UI-01, M4.1-RT-01, E2E-RUNTIME-01 and UX-CART-01](../known-issues.md) remain tracked with their current classifications. The intermittent E2E runtime root cause is not fixed or resolved. These non-blocking entries do not invalidate the confirmed business-state/financial evidence or establish production behavior.
+- **Release boundary:** production deployment/hosted public smoke remain unverified and are not claimed by this local evidence. M4 payment, settlement, session close, cleaning/ready, receipt/revenue and final lifecycle E2E remain later tasks.
+- **Later dependencies:** Payment/Settlement persistence must extend resume guards for successful payments and settlement existence in that same task. Empty-session cancellation belongs to later M4 table lifecycle. Cash amount/zero-balance settlement/receipt decisions are approved contracts only, not M4.1 functionality. Do not start later M4 tasks before owner authorization.
+
+## M4.5 — UI/UX Implementation & Polish
+
+**Status:** `TODO`. Required milestone after M4 completion and before M5; no M4.5 implementation is authorized by M4.1.
+
+Dependency: locally validated M4 core business loop. Follow the [UI/UX guidelines](../design/ui-guidelines.md) for comprehensive Guest/staff/cashier operational presentation, responsive/accessibility and interaction-state polish without changing approved business/security rules. Detailed tasks and acceptance checks must be scoped at that milestone's owner gate.
+
+Triage deferred observations và accepted enhancement candidates trong [Known Issues & Technical Debt Tracker](../known-issues.md) tại owner gate; Critical/Blocker hoặc Major findings phải được xử lý theo severity policy, không tự động hoãn sang polish.
 
 ## M5 — Production readiness and AWS
 
-Dependency: stable M4.
+Dependency: stable M4 and completed M4.5 UI/UX Implementation & Polish.
 
 | Status | Task                                          |
 | ------ | --------------------------------------------- |
@@ -326,6 +351,8 @@ Dependency: stable M4.
 | TODO   | Logging, metrics, traces and alerts           |
 | TODO   | Security/load/recovery validation             |
 | TODO   | Runbooks, rollback and release evidence       |
+
+Nếu [E2E-RUNTIME-01](../known-issues.md#e2e-runtime-01--intermittent-nextjs-econnreset--error-aborted) không ảnh hưởng M4 closure và vẫn chưa có root cause, carry it forward vào M5 runtime/observability validation; không classify là production defect nếu chưa có production evidence.
 
 ## Update rules
 

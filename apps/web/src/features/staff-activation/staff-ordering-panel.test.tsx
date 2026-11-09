@@ -37,7 +37,7 @@ const menu = {
 };
 const emptyBill = {
   data: {
-    session: { id: session.id, status: 'ACTIVE', table: session.table },
+    session: { id: session.id, status: 'ACTIVE', version: session.version, table: session.table },
     orders: [],
     bill: {
       id: 'bill-1',
@@ -61,6 +61,53 @@ describe('StaffOrderingPanel', () => {
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();
+  });
+
+  it('keeps a locked table selectable, prevents submission and resumes through current Bill versions', async () => {
+    let locked = true;
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/public/menu')) return Promise.resolve(response(menu));
+      if (url.endsWith('/bill'))
+        return Promise.resolve(
+          response({
+            data: {
+              ...emptyBill.data,
+              session: { ...emptyBill.data.session, status: locked ? 'CHECKOUT_LOCKED' : 'ACTIVE' },
+              bill: { ...emptyBill.data.bill, status: locked ? 'PAYMENT_PENDING' : 'OPEN' },
+            },
+          }),
+        );
+      if (url.endsWith('/resume-ordering')) {
+        locked = false;
+        return Promise.resolve(response({ data: {} }));
+      }
+      return Promise.reject(new Error('Unexpected request'));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    render(
+      <StaffOrderingPanel
+        canReadBill
+        canSubmit
+        canCheckout
+        csrfToken="staff-csrf"
+        recoverCsrf={vi.fn()}
+        sessions={[{ ...session, status: 'CHECKOUT_LOCKED' }]}
+        onSessionInvalid={vi.fn()}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText('Phiên bàn'), { target: { value: session.id } });
+    await screen.findByRole('button', { name: 'Mở lại gọi món' });
+    fireEvent.click(screen.getByRole('button', { name: 'Thêm' }));
+    expect(screen.getByRole('button', { name: 'Gửi order' })).toHaveProperty('disabled', true);
+    fireEvent.click(screen.getByRole('button', { name: 'Mở lại gọi món' }));
+    await screen.findByRole('button', { name: 'Yêu cầu thanh toán' });
+    const call = fetchMock.mock.calls.find((call: unknown[]) =>
+      String(call[0]).endsWith('/resume-ordering'),
+    );
+    expect((call?.[1] as RequestInit).body).toBe(
+      JSON.stringify({ expectedSessionVersion: 1, expectedBillVersion: 0 }),
+    );
+    expect(screen.getAllByText('Cơm gà')).toHaveLength(2);
   });
 
   it('uses the selected active table and clears the draft only after a confirmed submission', async () => {
