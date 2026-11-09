@@ -39,6 +39,30 @@ Mỗi entry giữ stable ID, classification, reproduction/evidence, workaround, 
 - **Target:** M4.5 — UI/UX Implementation & Polish; triage sớm hơn nếu điều tra cho thấy operationally significant impact, theo policy phía trên.
 - **Resolution / verification:** Pending. Khi điều tra, ghi expected contract, connection/subscription state, notification và REST-refetch evidence; verify NEW → SERVED visibility và manual fallback. Chỉ đóng sau khi có explanation hoặc fix được xác minh; không coi manual refresh thành công là bằng chứng automatic refresh đã hoạt động.
 
+## UX-STAFF-01 — Staff workspace selection state resets after browser refresh
+
+- **Severity:** Minor.
+- **Classification:** Confirmed UX continuity issue; persisted business data không bị mất.
+- **Status:** Open / Deferred.
+- **Evidence:** owner-reported local M4.2 manual acceptance; recorded 2026-11-09, không phải production verification.
+- **Reproduction:** chọn Staff workspace filters/TableSession rồi refresh browser. Authentication được khôi phục và persisted Bill vẫn đọc được sau khi chọn lại bàn, nhưng selectors/filters trở về default nên ban đầu tạo cảm giác dữ liệu đã biến mất.
+- **Expected:** cân nhắc khôi phục safe UI selection qua URL state hoặc `sessionStorage`, chỉ sau khi revalidate Staff session, authorization và resource còn nằm trong current location scope.
+- **Workaround:** chọn lại workspace filter và TableSession sau refresh.
+- **Target:** M4.5 — UI/UX Implementation & Polish.
+- **Resolution / verification:** Pending. Khi xử lý, verify refresh với valid, expired/revoked và changed-scope Staff sessions; stale/unauthorized selection phải bị loại bỏ, không được dùng persisted UI state như authorization.
+
+## UX-CASHIER-01 — Cashier Bill panel flashes during authoritative refetch
+
+- **Severity:** Minor/Cosmetic.
+- **Classification:** Confirmed transient presentation issue; không phải financial-state defect.
+- **Status:** Open / Deferred.
+- **Evidence:** owner-reported local M4.2 manual acceptance; recorded 2026-11-09, không phải production verification.
+- **Reproduction:** khi relevant realtime invalidation trigger REST refetch, Cashier Bill panel tạm chuyển sang loading content trước khi snapshot mới xuất hiện. Authoritative Bill sau refresh đúng và checkout/resume amounts không đổi.
+- **Expected:** có thể giữ previous snapshot hiển thị với non-blocking refreshing indicator trong khi request mới chạy; stale response protection và REST authority phải được giữ nguyên.
+- **Workaround:** chờ refetch hoàn tất; manual “Cập nhật” vẫn khả dụng.
+- **Target:** M4.5 — UI/UX Implementation & Polish.
+- **Resolution / verification:** Pending. Verify previous content không bị hiểu là final after an error, newer selection không bị old response overwrite, và refreshed financial snapshot vẫn lấy hoàn toàn từ server.
+
 ## Runtime investigations
 
 ### E2E-RUNTIME-01 — Intermittent Next.js `ECONNRESET` / `Error: aborted`

@@ -78,7 +78,7 @@ M3.6 is `DONE`: Manager exceptional correction reuses `bill.adjust`, immutable a
 
 ## M4 — Checkout, cash settlement and table lifecycle
 
-**Status:** `IN_PROGRESS` — M4.1 Atomic Checkout Lock & Resume implementation and owner validation are complete and satisfy its mandatory local acceptance criteria; explicit owner approval is still required before changing M4.1 to `DONE`. Later M4 work remains TODO. Production migration/deployment/public smoke remain pending separately.
+**Status:** `IN_PROGRESS` — M4.1 Atomic Checkout Lock & Resume và M4.2 Cashier Bill Workspace are `DONE` after owner validation; later M4 work remains TODO. Production migration/deployment/public smoke remain pending separately.
 
 **Goal:** close core dine-in business loop.
 
@@ -92,7 +92,9 @@ M3.6 is `DONE`: Manager exceptional correction reuses `bill.adjust`, immutable a
 
 **Deliverables:** complete cash-based dine-in flow.
 
-M4.1 uses the [approved checkout contract](../architecture/api-contracts.md#checkout-lock-and-resume-m41) and [task tracker](implementation-plan.md#m41--atomic-checkout-lock-and-resume). Nonempty terminal-item readiness is required; only staff may resume ordering. Owner local validation passed `503/503` non-overlapping automated tests plus the checkout/resume manual UI workflow; deferred observations remain in the [Known Issues & Technical Debt Tracker](../known-issues.md). This supports marking M4.1 `DONE` after explicit owner approval, but does not verify production. Payment/settlement/empty-session closure and receipts remain later M4 work.
+M4.1 uses the [approved checkout contract](../architecture/api-contracts.md#checkout-lock-and-resume-m41) and [task tracker](implementation-plan.md#m41--atomic-checkout-lock-and-resume). Nonempty terminal-item readiness is required; only staff may resume ordering. Owner local validation passed `503/503` non-overlapping automated tests plus the checkout/resume manual UI workflow; deferred observations remain in the [Known Issues & Technical Debt Tracker](../known-issues.md). Owner đã approve closure, merge và đồng bộ task; production verification không được suy ra từ local evidence. Payment/settlement/empty-session closure và receipts remain later M4 work.
+
+M4.2 read-only [Cashier Bill Workspace](implementation-plan.md#m42--cashier-bill-workspace) is `DONE`. Staff cần cả `table.session.read` và `bill.read`; workspace chỉ đọc `ACTIVE`/`CHECKOUT_LOCKED` sessions, ưu tiên checkout-locked tables, hiển thị exact VND financial snapshot và dùng realtime/reconnect như invalidation cho authoritative REST refetch. Owner validation passed Web `134/134`, focused login E2E `1/1`, full Playwright `6/6`, production Web build, lint/typecheck và quality checks; manual checkout/resume giữ Bill `48,000 VND` và Cashier auto-refetch PASS. Playwright dùng isolated `.next-e2e`; exact prior corrupted artifact không được claim identified, và [E2E-RUNTIME-01](../known-issues.md#e2e-runtime-01--intermittent-nextjs-econnreset--error-aborted) vẫn open. M4.2 không thêm payment, settlement, receipt, session close, cleaning, historical Bill browsing, API endpoint hoặc database migration. Production verification vẫn pending.
 
 ## M4.5 — UI/UX Implementation & Polish
 

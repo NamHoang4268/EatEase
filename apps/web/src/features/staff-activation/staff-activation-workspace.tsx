@@ -8,6 +8,7 @@ import type {
   StaffIdentity,
 } from './staff-activation.types';
 import { StaffOrderingPanel } from './staff-ordering-panel';
+import { CashierBillWorkspace } from '../staff-billing/cashier-bill-workspace';
 import { KitchenQueue } from '../fulfillment/kitchen-queue';
 import { useRealtime } from '../realtime/use-realtime';
 import { RealtimeNotice } from '../realtime/realtime-notice';
@@ -737,6 +738,15 @@ export function StaffActivationWorkspace() {
 
       <RealtimeNotice {...activationRealtime} />
       <RealtimeNotice {...sessionsRealtime} />
+      <CashierBillWorkspace
+        allowed={canReadSessions && canReadBills}
+        csrfToken={csrfToken}
+        recoverCsrf={recoverCsrf}
+        sessions={activeSessions.status === 'ready' ? activeSessions.sessions : []}
+        onSessionInvalid={() =>
+          expireSession('Phiên nhân viên đã hết hạn hoặc bị thu hồi. Vui lòng đăng nhập lại.')
+        }
+      />
       {canReadSessions && (canSubmitOrders || canReadBills) ? (
         <StaffOrderingPanel
           canCheckout={auth.staff.permissions.includes('bill.checkout')}

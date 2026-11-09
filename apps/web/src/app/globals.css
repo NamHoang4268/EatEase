@@ -650,6 +650,112 @@ a:focus-visible {
   border-top: 1px solid var(--border);
 }
 
+.cashier-workspace .section-heading label {
+  display: grid;
+  gap: 8px;
+  min-width: min(360px, 100%);
+}
+
+.cashier-workspace select {
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.cashier-bill {
+  display: grid;
+  gap: 24px;
+}
+
+.cashier-bill-heading {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.cashier-bill-heading h3 {
+  margin: 0;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 1.75rem;
+}
+
+.cashier-metadata {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0;
+}
+
+.cashier-metadata > div {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-subtle);
+}
+
+.cashier-metadata dt {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.cashier-metadata dd {
+  margin: 6px 0 0;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+  font-weight: 750;
+}
+
+.cashier-bill-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr);
+  gap: 32px;
+}
+
+.cashier-bill-grid h4 {
+  margin: 0;
+}
+
+.cashier-bill-grid .bill-lines span {
+  display: grid;
+  gap: 4px;
+}
+
+.cashier-bill-grid .bill-lines small {
+  color: var(--muted);
+}
+
+.cashier-adjustments {
+  margin-bottom: 28px;
+}
+
+.cashier-totals {
+  align-content: start;
+  margin: 0;
+  padding: 20px;
+  border: 1px solid color-mix(in srgb, var(--primary) 65%, var(--border));
+  border-radius: 6px;
+  background: var(--soft-yellow);
+}
+
+.cashier-totals dd {
+  margin: 0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+}
+
+.cashier-totals dt:last-of-type,
+.cashier-totals dd:last-of-type {
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  font-size: 1.15rem;
+}
+
 .staff-ordering .section-heading label {
   display: grid;
   gap: 8px;
@@ -1076,12 +1182,23 @@ a:focus-visible {
     flex-direction: column;
   }
 
+  .cashier-bill-heading,
+  .cashier-workspace .section-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .cashier-metadata {
+    grid-template-columns: 1fr;
+  }
+
   .request-metadata {
     grid-template-columns: 1fr;
   }
 }
 
 @media (max-width: 960px) {
+  .cashier-bill-grid,
   .staff-ordering-grid {
     grid-template-columns: 1fr;
   }
