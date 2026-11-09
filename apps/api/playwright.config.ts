@@ -35,6 +35,7 @@ const env = {
   OUTBOX_BATCH_SIZE: '50',
   API_INTERNAL_URL: 'http://127.0.0.1:3101',
   NEXT_PUBLIC_REALTIME_ENABLED: 'true',
+  NEXT_DIST_DIR: '.next-e2e',
 };
 // Workers and both child servers use the same explicit local-only settings.
 Object.assign(process.env, env);

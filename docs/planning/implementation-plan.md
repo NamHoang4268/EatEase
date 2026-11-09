@@ -2,7 +2,7 @@
 
 Status values: `TODO`, `IN_PROGRESS`, `BLOCKED`, `DONE`.
 
-Planning completion và implementation completion là hai việc khác nhau. M1, M2 và M3 đã hoàn tất trong locally validated development scope; production release verification của M3 vẫn pending. M4/M4.1 đang IN_PROGRESS; M4.5 UI/UX và M5 chưa bắt đầu.
+Planning completion và implementation completion là hai việc khác nhau. M1, M2 và M3 đã hoàn tất trong locally validated development scope; production release verification của M3 vẫn pending. M4 đang `IN_PROGRESS`; M4.1–M4.2 đã `DONE`; M4.5 UI/UX và M5 chưa bắt đầu.
 
 ## M0 — Repository and documentation bootstrap
 
@@ -303,23 +303,23 @@ Dependency: M2.
 
 Dependency: M3.
 
-**Status:** `IN_PROGRESS`; M4.1 implementation and owner validation are complete, pending explicit owner approval to mark the task `DONE`. Production migrations/deployment/hosted smoke remain separate pending gates.
+**Status:** `IN_PROGRESS`; M4.1 và M4.2 đã owner-validated `DONE`. Payment, settlement và later lifecycle work chưa bắt đầu. Production migrations/deployment/hosted smoke remain separate pending gates.
 
-| Status      | Task                                                       |
-| ----------- | ---------------------------------------------------------- |
-| IN_PROGRESS | Implement checkout lock/resume (M4.1)                      |
-| TODO        | Implement cashier bill view                                |
-| TODO        | Implement idempotent cash payment + settlement transaction |
-| TODO        | Implement session close                                    |
-| TODO        | Implement cleaning and mark-ready                          |
-| TODO        | Implement receipt/basic revenue records                    |
-| TODO        | Complete financial concurrency and lifecycle E2E tests     |
+| Status | Task                                                       |
+| ------ | ---------------------------------------------------------- |
+| DONE   | Implement checkout lock/resume (M4.1)                      |
+| DONE   | Implement cashier bill view (M4.2)                         |
+| TODO   | Implement idempotent cash payment + settlement transaction |
+| TODO   | Implement session close                                    |
+| TODO   | Implement cleaning and mark-ready                          |
+| TODO   | Implement receipt/basic revenue records                    |
+| TODO   | Complete financial concurrency and lifecycle E2E tests     |
 
 Runtime investigation [E2E-RUNTIME-01](../known-issues.md#e2e-runtime-01--intermittent-nextjs-econnreset--error-aborted) must be triaged during the final M4 E2E closure task. The repository does not currently define an `M4.7` task number; do not infer a new numbered submilestone from this cross-reference.
 
 ### M4.1 — Atomic checkout lock and resume
 
-- **Status:** `IN_PROGRESS`; implementation and owner validation complete, pending explicit owner closure approval. Recommended next status: `DONE`.
+- **Status:** `DONE`; implementation và owner validation hoàn tất, owner đã approve closure, merge và đồng bộ vào `main`.
 - **Scope:** nonempty, billing-ready ACTIVE/OPEN → CHECKOUT_LOCKED/PAYMENT_PENDING; staff-only reverse transition before payment/settlement. Guest-own-session checkout; staff `bill.checkout`, trusted Origin/CSRF and transaction-time identity/location/permission revalidation. No money/fulfillment/table mutations.
 - **Artifacts:** existing OrderingModule with dedicated checkout controller/service/contracts; existing schema (no migration); locked-session Guest/staff Bill reads and staff discovery; minimal shared UI controls, stable retry keys and REST refetch; focused unit/component and real-PostgreSQL concurrency/rollback tests. [Authoritative API contract](../architecture/api-contracts.md#checkout-lock-and-resume-m41).
 - **Acceptance:** both versions/states commit with one audit, two scoped outbox events and one completed idempotency result; concurrent SubmitOrder cannot escape checkout; readiness/pending-cancellation/empty checks occur under parent locks; wrong scope/state/version/auth fail closed; retries do not duplicate effects and late failures roll back. Preserve all immutable financial/fulfillment history and Guest draft carts.
@@ -329,6 +329,18 @@ Runtime investigation [E2E-RUNTIME-01](../known-issues.md#e2e-runtime-01--interm
 - **Deferred findings and limits:** [M4.1-UI-01, M4.1-RT-01, E2E-RUNTIME-01 and UX-CART-01](../known-issues.md) remain tracked with their current classifications. The intermittent E2E runtime root cause is not fixed or resolved. These non-blocking entries do not invalidate the confirmed business-state/financial evidence or establish production behavior.
 - **Release boundary:** production deployment/hosted public smoke remain unverified and are not claimed by this local evidence. M4 payment, settlement, session close, cleaning/ready, receipt/revenue and final lifecycle E2E remain later tasks.
 - **Later dependencies:** Payment/Settlement persistence must extend resume guards for successful payments and settlement existence in that same task. Empty-session cancellation belongs to later M4 table lifecycle. Cash amount/zero-balance settlement/receipt decisions are approved contracts only, not M4.1 functionality. Do not start later M4 tasks before owner authorization.
+
+### M4.2 — Cashier Bill Workspace
+
+- **Status:** `DONE`; implementation, automated validation và manual Cashier acceptance đã được owner xác nhận.
+- **Scope:** read-only Staff workspace cho user có đồng thời `table.session.read` và `bill.read`. Workspace dùng scoped `ACTIVE,CHECKOUT_LOCKED` session discovery và consolidated Bill REST query hiện có; ưu tiên `CHECKOUT_LOCKED`, cho phép chọn session, manual refresh và refetch khi nhận relevant realtime notification hoặc reconnect. Không tạo Cashier mutation, payment, settlement, receipt finalization, session close, cleaning hoặc historical Bill browser.
+- **Financial presentation:** hiển thị table/session identity, state/version, Bill state/version, immutable item snapshots, adjustments, `subtotalAmount`, `adjustmentAmount`, `totalAmount`, `paidAmount` và `balanceAmount`. Decimal strings được format qua `BigInt`; client không recompute authoritative totals bằng `Number` và không optimistic financial update.
+- **Resilience/security:** Staff authentication và server-side permission/location scope vẫn authoritative. REST `no-store` là source of truth; realtime chỉ invalidation. UI xử lý loading/empty/denied/expired/unavailable/server errors, không để stale async response của selection/refresh cũ overwrite selection mới.
+- **Acceptance:** chỉ đúng permission pair mới thấy workspace; chỉ `ACTIVE`/`CHECKOUT_LOCKED` scoped sessions xuất hiện; locked sessions được ưu tiên; exact VND amounts, lines, adjustments và totals render không mất precision; manual/realtime/reconnect refresh dùng đúng selected resource; expired session trở về shared auth recovery; stale/error states không tạo state mutation. Không yêu cầu API, dependency hoặc database migration mới.
+- **Automated validation:** owner-confirmed Web unit/component `134/134`, focused Staff login Playwright `1/1` và full Playwright E2E `6/6` PASS; full E2E hoàn tất trong `47.5s`. Production Web build, lint, typecheck, `pnpm format:check` và `git diff --check` PASS.
+- **Manual acceptance:** Manager login và Cashier workspace/session selection PASS. Bàn A01 hiển thị snapshot `Gỏi cuốn nấm ×1`, subtotal/total/balance `48,000 VND`, adjustment/paid `0`; manual refresh PASS. Guest checkout đổi TableSession `ACTIVE v2 → CHECKOUT_LOCKED v4`, Bill `OPEN v3 → PAYMENT_PENDING v4`; Staff resume đưa session/Bill về `ACTIVE/OPEN v5`; amounts không đổi. Cashier tự refetch khoảng một giây sau resume. Browser refresh khôi phục Staff workspace; reselect table đọc lại persisted Bill chính xác.
+- **E2E cache isolation:** Playwright `next dev` dùng `.next-e2e` riêng, tách khỏi production/manual `.next`. Focused và full E2E PASS sau isolation. Shared Next build/dev cache là likely failure mechanism của navigation loop trước đó; exact corrupted artifact không được xác định conclusively. Intermittent `ECONNRESET` / `Error: aborted` vẫn open tại [E2E-RUNTIME-01](../known-issues.md#e2e-runtime-01--intermittent-nextjs-econnreset--error-aborted), không được claim fixed.
+- **Deferred UX/release boundary:** selector/filter reset sau F5 và brief Bill refetch flash được ghi tại [UX-STAFF-01 và UX-CASHIER-01](../known-issues.md). Đây là non-blocking UI observations có workaround, không làm sai persisted Bill hay financial state. Production deployment/migration và hosted/public smoke vẫn pending; M4.2 closure không claim production verification.
 
 ## M4.5 — UI/UX Implementation & Polish
 
