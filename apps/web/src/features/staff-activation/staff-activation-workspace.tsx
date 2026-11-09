@@ -157,7 +157,7 @@ export function StaffActivationWorkspace() {
   const loadActiveSessions = useCallback(async () => {
     setActiveSessions({ status: 'loading' });
     try {
-      const response = await fetch('/api/v1/staff/table-sessions?status=ACTIVE', {
+      const response = await fetch('/api/v1/staff/table-sessions?status=ACTIVE,CHECKOUT_LOCKED', {
         credentials: 'include',
       });
       if (!response.ok) {
@@ -684,7 +684,11 @@ export function StaffActivationWorkspace() {
                 <li key={session.id}>
                   <div className="request-summary">
                     <div>
-                      <p className="eyebrow">TableSession active</p>
+                      <p className="eyebrow">
+                        {session.status === 'CHECKOUT_LOCKED'
+                          ? 'TableSession · Chờ thanh toán'
+                          : 'TableSession active'}
+                      </p>
                       <h2>Bàn {session.table.code}</h2>
                     </div>
                     <span className="request-age">v{session.version}</span>
@@ -699,7 +703,7 @@ export function StaffActivationWorkspace() {
                           : 'Chưa có Join Code còn hiệu lực.'}
                       </p>
                     )}
-                    {canManageJoinCodes ? (
+                    {canManageJoinCodes && session.status !== 'CHECKOUT_LOCKED' ? (
                       <div className="staff-header-actions">
                         <button
                           className="primary-button"
@@ -735,6 +739,7 @@ export function StaffActivationWorkspace() {
       <RealtimeNotice {...sessionsRealtime} />
       {canReadSessions && (canSubmitOrders || canReadBills) ? (
         <StaffOrderingPanel
+          canCheckout={auth.staff.permissions.includes('bill.checkout')}
           canReadBill={canReadBills}
           canSubmit={canSubmitOrders}
           csrfToken={csrfToken}

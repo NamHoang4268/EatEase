@@ -234,16 +234,25 @@ export class JoinCodeService {
     });
   }
 
-  async listActiveForStaff(principal: StaffIssueInput['principal'], now = new Date()) {
+  async listActiveForStaff(
+    principal: StaffIssueInput['principal'],
+    now = new Date(),
+    includeCheckoutLocked = false,
+  ) {
     const sessions = await this.prisma.tableSession.findMany({
       where: {
         restaurantId: principal.restaurantId,
         locationId: principal.locationId,
-        status: TableSessionStatus.ACTIVE,
+        status: {
+          in: includeCheckoutLocked
+            ? [TableSessionStatus.ACTIVE, TableSessionStatus.CHECKOUT_LOCKED]
+            : [TableSessionStatus.ACTIVE],
+        },
       },
       orderBy: { activatedAt: 'asc' },
       select: {
         id: true,
+        status: true,
         version: true,
         activatedAt: true,
         table: { select: { publicId: true, code: true, capacity: true } },

@@ -17,11 +17,13 @@ import type {
 import type { ApiErrorPayload, StaffActiveTableSession } from './staff-activation.types';
 import { useRealtime } from '../realtime/use-realtime';
 import { RealtimeNotice } from '../realtime/realtime-notice';
+import { CheckoutControls } from '../checkout/checkout-controls';
 
 type Props = {
   sessions: StaffActiveTableSession[];
   canSubmit: boolean;
   canReadBill: boolean;
+  canCheckout?: boolean;
   csrfToken: string | null;
   recoverCsrf: () => Promise<string>;
   onSessionInvalid: () => void;
@@ -39,6 +41,7 @@ export function StaffOrderingPanel({
   sessions,
   canSubmit,
   canReadBill,
+  canCheckout = false,
   csrfToken,
   recoverCsrf,
   onSessionInvalid,
@@ -133,7 +136,14 @@ export function StaffOrderingPanel({
   const addItem = (item: PublicMenuItem) => setCart((current) => addDraftItem(current, item));
 
   const submit = async () => {
-    if (!selected || cart.length === 0 || submitting || !canSubmit) return;
+    if (
+      !selected ||
+      cart.length === 0 ||
+      submitting ||
+      !canSubmit ||
+      bill?.session.status === 'CHECKOUT_LOCKED'
+    )
+      return;
     const payload = JSON.stringify({
       items: cart.map((line) => ({
         menuItemId: line.menuItemId,
@@ -296,7 +306,12 @@ export function StaffOrderingPanel({
               <strong>{formatVnd(subtotal)}</strong>
               <button
                 className="primary-button"
-                disabled={!canSubmit || cart.length === 0 || submitting}
+                disabled={
+                  !canSubmit ||
+                  cart.length === 0 ||
+                  submitting ||
+                  bill?.session.status === 'CHECKOUT_LOCKED'
+                }
                 type="button"
                 onClick={() => void submit()}
               >
@@ -307,6 +322,18 @@ export function StaffOrderingPanel({
           {canReadBill ? (
             <div>
               <h3>Hóa đơn tổng hợp</h3>
+              {bill && canCheckout ? (
+                <CheckoutControls
+                  key={selected.id}
+                  actor="staff"
+                  session={bill.session}
+                  bill={bill.bill}
+                  csrfToken={csrfToken}
+                  recoverCsrf={recoverCsrf}
+                  refresh={() => loadContext(selected)}
+                  onSessionInvalid={onSessionInvalid}
+                />
+              ) : null}
               {bill?.bill.lines.length ? (
                 <ul className="bill-lines">
                   {bill.bill.lines.map((line) => (

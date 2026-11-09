@@ -37,7 +37,7 @@ describe('staff Join Code controls', () => {
         return Promise.resolve(response({ data: { csrfToken: 'staff-csrf' } }));
       if (url === '/api/v1/staff/activation-requests?status=PENDING')
         return Promise.resolve(response({ data: [] }));
-      if (url === '/api/v1/staff/table-sessions?status=ACTIVE')
+      if (url === '/api/v1/staff/table-sessions?status=ACTIVE,CHECKOUT_LOCKED')
         return Promise.resolve(response({ data: [activeSession] }));
       if (url === '/api/v1/staff/table-sessions/session-1/join-code' && init?.method === 'POST')
         return Promise.resolve(response({ data: { code: '112233' } }));

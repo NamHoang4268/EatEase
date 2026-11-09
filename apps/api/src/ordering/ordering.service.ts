@@ -79,7 +79,12 @@ export class OrderingService {
     locationId: string,
   ): Promise<ConsolidatedSessionView> {
     const session = await this.prisma.tableSession.findFirst({
-      where: { id: tableSessionId, restaurantId, locationId, status: 'ACTIVE' },
+      where: {
+        id: tableSessionId,
+        restaurantId,
+        locationId,
+        status: { in: ['ACTIVE', 'CHECKOUT_LOCKED'] },
+      },
       select: {
         id: true,
         status: true,
@@ -169,7 +174,7 @@ export class OrderingService {
     return {
       session: {
         id: session.id,
-        status: 'ACTIVE',
+        status: session.status as 'ACTIVE' | 'CHECKOUT_LOCKED',
         activatedAt: session.activatedAt.toISOString(),
         version: session.version,
         table: session.table,

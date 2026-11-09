@@ -78,6 +78,8 @@ M3.6 is `DONE`: Manager exceptional correction reuses `bill.adjust`, immutable a
 
 ## M4 — Checkout, cash settlement and table lifecycle
 
+**Status:** `IN_PROGRESS` — M4.1 Atomic Checkout Lock & Resume implementation and owner validation are complete and satisfy its mandatory local acceptance criteria; explicit owner approval is still required before changing M4.1 to `DONE`. Later M4 work remains TODO. Production migration/deployment/public smoke remain pending separately.
+
 **Goal:** close core dine-in business loop.
 
 **Dependencies:** M2 bill; M3 item completion/cancellation policy.
@@ -90,11 +92,23 @@ M3.6 is `DONE`: Manager exceptional correction reuses `bill.adjust`, immutable a
 
 **Deliverables:** complete cash-based dine-in flow.
 
+M4.1 uses the [approved checkout contract](../architecture/api-contracts.md#checkout-lock-and-resume-m41) and [task tracker](implementation-plan.md#m41--atomic-checkout-lock-and-resume). Nonempty terminal-item readiness is required; only staff may resume ordering. Owner local validation passed `503/503` non-overlapping automated tests plus the checkout/resume manual UI workflow; deferred observations remain in the [Known Issues & Technical Debt Tracker](../known-issues.md). This supports marking M4.1 `DONE` after explicit owner approval, but does not verify production. Payment/settlement/empty-session closure and receipts remain later M4 work.
+
+## M4.5 — UI/UX Implementation & Polish
+
+**Status:** `TODO`; required after M4 and before M5.
+
+**Goal:** complete UI/UX implementation and polish of the validated core workflows using the [approved guidelines](../design/ui-guidelines.md).
+
+**Dependencies:** completed M4. Detailed scope/acceptance requires the M4.5 owner gate; M4.1 adds only minimal functional controls. Do not change business policies or add unapproved features as part of visual polish.
+
+**Follow-ups:** review the [Known Issues & Technical Debt Tracker](../known-issues.md), including deferred M4.1 manual UI observations and accepted enhancement candidates. Severity-based triage takes precedence over deferral; unconfirmed observations are not established defects.
+
 ## M5 — Production readiness and AWS
 
 **Goal:** deployable, observable và operationally supportable system.
 
-**Dependencies:** M4 stable workflow và measured non-functional requirements.
+**Dependencies:** M4 stable workflow, completed M4.5 UI/UX Implementation & Polish và measured non-functional requirements.
 
 **Scope/tasks:** production containers, CI/CD, Terraform/AWS ECS-RDS-S3 direction, secrets, backups, monitoring/logging/alerts, security review, load/recovery testing, runbooks.
 
@@ -103,3 +117,5 @@ M3.6 is `DONE`: Manager exceptional correction reuses `bill.adjust`, immutable a
 **Testing:** pipeline, infrastructure validation, backup restore, failure drills, performance baseline, security checks.
 
 **Deliverables:** deployment artifacts, operational dashboards/runbooks và release evidence.
+
+Unresolved runtime investigations carried from local E2E, including [E2E-RUNTIME-01](../known-issues.md#e2e-runtime-01--intermittent-nextjs-econnreset--error-aborted) when still open after M4 closure, require evidence-based triage under M5 observability/release validation. Local intermittent logs alone do not establish a production defect.

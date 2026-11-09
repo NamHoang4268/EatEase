@@ -93,6 +93,8 @@ Index này là MVP-only. Không đổi `is_active` hoặc status terminology đ�
 
 `table_session(id, restaurant_id, location_id, table_id, activation_request_id, status, activated_by_membership_id, activated_at, checkout_locked_at, closed_by_membership_id, closed_at, close_reason, version)`
 
+M4.1 reuses existing TableSession/Bill status, timestamp, version and consistency constraints; no schema migration or Payment/Settlement placeholder is required. Checkout/resume locks TableSession then Bill then actor/authorization rows, atomically increments both versions and changes only their lifecycle fields, with audit/outbox/idempotency. Resume clears `checkout_locked_at` as required by the existing ACTIVE lifecycle constraint. The later Payment/Settlement delivery must add successful-payment/Settlement existence checks to resume alongside current status and `paid_amount = 0` checks. See [M4.1 contract](api-contracts.md#checkout-lock-and-resume-m41).
+
 - Partial unique `(table_id) WHERE status IN ('ACTIVE','CHECKOUT_LOCKED')`.
 - Unique `activation_request_id`; composite scoped foreign keys ensure request, table, activating membership và TableSession thuộc cùng restaurant/location.
 - M2.6 approval creates status `ACTIVE`, links exactly one TableSession to the approved request, and initializes `version = 0`.
