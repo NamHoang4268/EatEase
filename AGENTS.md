@@ -53,6 +53,7 @@ Không tạo tài liệu trùng lặp. Mỗi quyết định lớn phải có m�
 - Chỉ dừng xin clarification khi cần đổi approved business rule, cần major architecture change, approved decisions xung đột, còn unresolved security/financial decision quan trọng hoặc có critical blocker.
 - Internal steps có thể được gộp thành một outcome-oriented delivery khi task authorization bao phủ chúng; không tự mở rộng sang milestone hoặc unrelated scope khác.
 - Fast-track không hạ quality bar, không biến assumption thành approved decision và không thay đổi Git authorization hoặc milestone approval gates.
+- Không spawn, delegate, message hoặc manage agent session khác qua Agent Manager nếu owner chưa explicit authorize.
 
 ## Token-efficient execution and validation
 
@@ -64,9 +65,8 @@ Không tạo tài liệu trùng lặp. Mỗi quyết định lớn phải có m�
 - Chờ owner gửi validation results trước khi tuyên bố task fully verified hoặc hoàn tất final handoff.
 - Nếu validation fail, chỉ điều tra output liên quan, thực hiện targeted fix và đề xuất rerun tối thiểu cần thiết.
 - Sau khi required validation pass, cung cấp final report cùng suggested branch name, Conventional Commit message và optional PR title.
-- Codex không thực hiện Git write operations; owner chịu trách nhiệm branch, stage, commit, push, PR và merge.
 - Sau **mọi chỉnh sửa cuối cùng**, kể cả cập nhật documentation status/verification evidence, chạy `pnpm format:check` và `git diff --check` trước handoff. Nếu format fail, chạy `pnpm exec prettier --write <affected-files>` rồi chạy lại cả hai checks. Mọi edit tiếp theo đều yêu cầu chạy lại hai checks này.
-- Sau **mọi chỉnh sửa cuối cùng**, kể cả cập nhật documentation status/verification evidence, chạy `pnpm format:check` và `git diff --check` trước handoff. Nếu format fail, chạy `pnpm exec prettier --write <affected-files>` rồi chạy lại cả hai checks. Mọi edit tiếp theo đều yêu cầu chạy lại hai checks này.
+- Khi handoff công việc chưa hoàn tất, tóm tắt phần đã thay đổi, scope còn lại, file liên quan, kết quả validation và blocker; không giả định agent tiếp theo có conversation history của session hiện tại.
 
 ## Decision statuses
 
@@ -144,5 +144,6 @@ Dùng các status: `TODO`, `IN_PROGRESS`, `BLOCKED`, `DONE`.
 
 - Không commit, push, tạo remote, provision cloud hoặc cài dependency nếu chưa được cấp quyền.
 - Không sửa unrelated user changes.
+- Khi dùng chung working tree với agent khác, không overwrite hoặc revert thay đổi đang làm của agent đó; dừng và báo cáo nếu file ownership overlap hoặc edit conflict.
 - Không dùng destructive Git/filesystem commands nếu chưa được yêu cầu rõ ràng.
 - Luôn kiểm tra repository boundary và `git status` trước/sau thay đổi lớn.
