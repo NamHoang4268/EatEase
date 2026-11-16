@@ -78,7 +78,7 @@ M3.6 is `DONE`: Manager exceptional correction reuses `bill.adjust`, immutable a
 
 ## M4 — Checkout, cash settlement and table lifecycle
 
-**Status:** `IN_PROGRESS` — M4.1 Atomic Checkout Lock & Resume và M4.2 Cashier Bill Workspace are `DONE` after owner validation; later M4 work remains TODO. Production migration/deployment/public smoke remain pending separately.
+**Status:** `IN_PROGRESS` — M4.1 Atomic Checkout Lock & Resume, M4.2 Cashier Bill Workspace và M4.3 Cash Payment & Settlement are `DONE` after owner validation; later M4 work remains TODO. Production migration/deployment/public smoke remain pending separately.
 
 **Goal:** close core dine-in business loop.
 
@@ -95,6 +95,8 @@ M3.6 is `DONE`: Manager exceptional correction reuses `bill.adjust`, immutable a
 M4.1 uses the [approved checkout contract](../architecture/api-contracts.md#checkout-lock-and-resume-m41) and [task tracker](implementation-plan.md#m41--atomic-checkout-lock-and-resume). Nonempty terminal-item readiness is required; only staff may resume ordering. Owner local validation passed `503/503` non-overlapping automated tests plus the checkout/resume manual UI workflow; deferred observations remain in the [Known Issues & Technical Debt Tracker](../known-issues.md). Owner đã approve closure, merge và đồng bộ task; production verification không được suy ra từ local evidence. Payment/settlement/empty-session closure và receipts remain later M4 work.
 
 M4.2 read-only [Cashier Bill Workspace](implementation-plan.md#m42--cashier-bill-workspace) is `DONE`. Staff cần cả `table.session.read` và `bill.read`; workspace chỉ đọc `ACTIVE`/`CHECKOUT_LOCKED` sessions, ưu tiên checkout-locked tables, hiển thị exact VND financial snapshot và dùng realtime/reconnect như invalidation cho authoritative REST refetch. Owner validation passed Web `134/134`, focused login E2E `1/1`, full Playwright `6/6`, production Web build, lint/typecheck và quality checks; manual checkout/resume giữ Bill `48,000 VND` và Cashier auto-refetch PASS. Playwright dùng isolated `.next-e2e`; exact prior corrupted artifact không được claim identified, và [E2E-RUNTIME-01](../known-issues.md#e2e-runtime-01--intermittent-nextjs-econnreset--error-aborted) vẫn open. M4.2 không thêm payment, settlement, receipt, session close, cleaning, historical Bill browsing, API endpoint hoặc database migration. Production verification vẫn pending.
+
+M4.3 [Cash Payment & Settlement](implementation-plan.md#m43--cash-payment--settlement) is `DONE` for the locally validated development scope. M4.3-A provides the cash-only persistence foundation; M4.3-B atomic command/resume guards passed focused PostgreSQL `38/38`, API unit `246/246` and API build; M4.3-C passed Web `144/144`, Playwright `6/6`, lint/typecheck/build and quality checks. Local manual acceptance confirmed exact `79,000 VND` cash settlement, Bill `SETTLED`, paid `79,000 VND`, balance `0`, persistent settled state, hidden repeat action and unchanged `CHECKOUT_LOCKED` session. Final status-label fixes have automated coverage but were not manually retested; Guest settlement realtime with all feature flags enabled remains runtime-unverified and is not claimed PASS. Session/table lifecycle stays unchanged; the Neon migration, production deployment, hosted payment smoke, session close and receipt persistence remain pending separately. See [Known Issues](../known-issues.md) for deferred verification/UX follow-ups and the still-open E2E runtime investigation.
 
 ## M4.5 — UI/UX Implementation & Polish
 

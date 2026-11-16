@@ -173,6 +173,18 @@ enum BillAdjustmentKind {
   @@map("bill_adjustment_kind")
 }
 
+enum PaymentMethod {
+  CASH
+
+  @@map("payment_method")
+}
+
+enum PaymentStatus {
+  SUCCEEDED
+
+  @@map("payment_status")
+}
+
 model Restaurant {
   id                 String              @id @default(uuid()) @db.Uuid
   name               String              @db.VarChar(160)
@@ -190,6 +202,8 @@ model Restaurant {
   sessionJoinCodes   SessionJoinCode[]
   cancellationRequests CancellationRequest[]
   billAdjustments      BillAdjustment[]
+  payments             Payment[]
+  settlements          Settlement[]
 
   realtimeTickets RealtimeTicket[]
 
@@ -217,6 +231,8 @@ model Location {
   realtimeTickets    RealtimeTicket[]
   cancellationRequests CancellationRequest[]
   billAdjustments      BillAdjustment[]
+  payments             Payment[]
+  settlements          Settlement[]
 
   @@unique([id, restaurantId], map: "location_id_restaurant_id_key")
   @@unique([restaurantId, code], map: "location_restaurant_id_code_key")
@@ -256,6 +272,8 @@ model StaffMembership {
   requestedCancellations    CancellationRequest[] @relation("CancellationRequestedByMembership")
   decidedCancellations      CancellationRequest[] @relation("CancellationDecidedByMembership")
   billAdjustments           BillAdjustment[]
+  recordedPayments          Payment[]             @relation("PaymentRecordedByMembership")
+  createdSettlements        Settlement[]          @relation("SettlementCreatedByMembership")
 
   @@unique([staffUserId, locationId], map: "staff_membership_user_location_key")
   @@unique([id, staffUserId], map: "staff_membership_id_user_key")
@@ -561,6 +579,8 @@ model Bill {
   lines            BillLine[]
   cancellationRequests CancellationRequest[]
   adjustments          BillAdjustment[]
+  payments             Payment[]
+  settlement           Settlement?
 
   @@unique([tableSessionId, restaurantId, locationId], map: "bill_table_session_scope_key")
   @@unique([id, restaurantId, locationId], map: "bill_id_scope_key")
@@ -702,6 +722,42 @@ model BillAdjustment {
   @@index([billId, createdAt], map: "bill_adjustment_bill_created_idx")
   @@index([orderItemId, createdAt], map: "bill_adjustment_item_created_idx")
   @@map("bill_adjustment")
+}
+
+model Payment {
+  id                     String          @id @default(uuid()) @db.Uuid
+  restaurantId           String          @map("restaurant_id") @db.Uuid
+  locationId             String          @map("location_id") @db.Uuid
+  billId                 String          @map("bill_id") @db.Uuid
+  method                 PaymentMethod   @default(CASH)
+  status                 PaymentStatus   @default(SUCCEEDED)
+  amount                 BigInt
+  recordedByMembershipId String          @map("recorded_by_membership_id") @db.Uuid
+  recordedAt             DateTime        @default(now()) @map("recorded_at") @db.Timestamptz(3)
+  restaurant             Restaurant      @relation(fields: [restaurantId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "payment_restaurant_fkey")
+  location               Location        @relation(fields: [locationId, restaurantId], references: [id, restaurantId], onDelete: Restrict, onUpdate: Cascade, map: "payment_location_scope_fkey")
+  bill                   Bill            @relation(fields: [billId, restaurantId, locationId], references: [id, restaurantId, locationId], onDelete: Restrict, onUpdate: Restrict, map: "payment_bill_scope_fkey")
+  recordedByMembership   StaffMembership @relation("PaymentRecordedByMembership", fields: [recordedByMembershipId, restaurantId, locationId], references: [id, restaurantId, locationId], onDelete: Restrict, onUpdate: Restrict, map: "payment_recorder_scope_fkey")
+
+  @@index([billId, recordedAt], map: "payment_bill_recorded_idx")
+  @@map("payment")
+}
+
+model Settlement {
+  id                    String          @id @default(uuid()) @db.Uuid
+  restaurantId          String          @map("restaurant_id") @db.Uuid
+  locationId            String          @map("location_id") @db.Uuid
+  billId                String          @unique(map: "settlement_bill_id_key") @map("bill_id") @db.Uuid
+  settledAmount         BigInt          @map("settled_amount")
+  settledAt             DateTime        @default(now()) @map("settled_at") @db.Timestamptz(3)
+  createdByMembershipId String          @map("created_by_membership_id") @db.Uuid
+  restaurant            Restaurant      @relation(fields: [restaurantId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "settlement_restaurant_fkey")
+  location              Location        @relation(fields: [locationId, restaurantId], references: [id, restaurantId], onDelete: Restrict, onUpdate: Cascade, map: "settlement_location_scope_fkey")
+  bill                  Bill            @relation(fields: [billId, restaurantId, locationId], references: [id, restaurantId, locationId], onDelete: Restrict, onUpdate: Restrict, map: "settlement_bill_scope_fkey")
+  createdByMembership   StaffMembership @relation("SettlementCreatedByMembership", fields: [createdByMembershipId, restaurantId, locationId], references: [id, restaurantId, locationId], onDelete: Restrict, onUpdate: Restrict, map: "settlement_creator_scope_fkey")
+
+  @@unique([billId, restaurantId, locationId], map: "settlement_bill_scope_key")
+  @@map("settlement")
 }
 
 model OutboxEvent {

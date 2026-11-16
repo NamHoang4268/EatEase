@@ -506,7 +506,7 @@ export function PublicMenuExperience({ publicId }: { publicId: string }) {
   };
 
   const joinTable = async () => {
-    if (joinBusy || !/^\d{6}$/.test(joinCodeInput)) return;
+    if (joinBusy || recoveryBusy || !sessionEstablished || !/^\d{6}$/.test(joinCodeInput)) return;
     setJoinBusy(true);
     setJoinError(null);
     const key = joinAttemptKeyRef.current ?? crypto.randomUUID();
@@ -960,7 +960,9 @@ export function PublicMenuExperience({ publicId }: { publicId: string }) {
             />
             <button
               className="primary-button"
-              disabled={joinBusy || !/^\d{6}$/.test(joinCodeInput)}
+              disabled={
+                joinBusy || recoveryBusy || !sessionEstablished || !/^\d{6}$/.test(joinCodeInput)
+              }
               type="button"
               onClick={() => void joinTable()}
             >

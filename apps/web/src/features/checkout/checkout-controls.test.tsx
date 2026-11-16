@@ -156,4 +156,26 @@ describe('M4.1 checkout controls', () => {
     expect(fetch.mock.calls[0]![0]).toBe('/api/v1/staff/table-sessions/session-1/resume-ordering');
     expect(p.refresh).not.toHaveBeenCalled();
   });
+
+  it('presents a settled Bill separately from the still-locked TableSession', async () => {
+    const fetch = vi.fn().mockResolvedValue(response());
+    vi.stubGlobal('fetch', fetch);
+    const p = props();
+    const view = render(<CheckoutControls {...p} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Yêu cầu thanh toán' }));
+    await screen.findByText('Đã khóa gọi món để chờ thanh toán.');
+
+    view.rerender(
+      <CheckoutControls
+        {...p}
+        session={{ ...session, status: 'CHECKOUT_LOCKED', version: 3 }}
+        bill={{ ...bill, status: 'SETTLED', version: 6 }}
+      />,
+    );
+
+    expect(screen.getByText(/Hóa đơn đã thanh toán/)).toBeDefined();
+    expect(screen.queryByText(/Đang chờ thanh toán/)).toBeNull();
+    expect(screen.queryByText('Đã khóa gọi món để chờ thanh toán.')).toBeNull();
+    expect(screen.queryByRole('button')).toBeNull();
+  });
 });

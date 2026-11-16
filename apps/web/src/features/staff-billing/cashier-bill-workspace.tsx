@@ -9,6 +9,7 @@ import type { StaffActiveTableSession } from '../staff-activation/staff-activati
 
 type Props = {
   allowed: boolean;
+  canRecordCash: boolean;
   sessions: StaffActiveTableSession[];
   csrfToken: string | null;
   recoverCsrf: () => Promise<string>;
@@ -21,18 +22,58 @@ type BillState =
   | { status: 'ready'; view: ConsolidatedSessionView }
   | { status: 'error'; kind: 'denied' | 'unavailable' | 'server'; message: string };
 
+type CashPaymentAttempt = {
+  sessionId: string;
+  key: string;
+  body: string;
+  uncertain: boolean;
+};
+
+type CashPaymentResponse = {
+  data: {
+    session: { id: string; status: 'CHECKOUT_LOCKED'; version: number };
+    bill: {
+      id: string;
+      status: 'SETTLED';
+      version: number;
+      totalAmount: string;
+      paidAmount: string;
+      balanceAmount: string;
+    };
+    payment: {
+      id: string;
+      method: 'CASH';
+      status: 'SUCCEEDED';
+      amount: string;
+      recordedAt: string;
+    } | null;
+    settlement: { id: string; settledAmount: string; settledAt: string };
+  };
+};
+
+async function readErrorCode(response: Response): Promise<string | undefined> {
+  try {
+    const payload = (await response.json()) as { error?: { code?: string } };
+    return payload.error?.code;
+  } catch {
+    return undefined;
+  }
+}
+
 function sessionStatusLabel(status: StaffActiveTableSession['status']): string {
-  return status === 'CHECKOUT_LOCKED' ? 'Chờ thanh toán' : 'Đang gọi món';
+  return status === 'CHECKOUT_LOCKED' ? 'Đã khóa gọi món' : 'Đang gọi món';
 }
 
 function billStatusLabel(status: string): string {
   if (status === 'PAYMENT_PENDING') return 'Chờ thanh toán';
   if (status === 'OPEN') return 'Đang mở';
+  if (status === 'SETTLED') return 'Đã tất toán (SETTLED)';
   return status;
 }
 
 export function CashierBillWorkspace({
   allowed,
+  canRecordCash,
   sessions,
   csrfToken,
   recoverCsrf,
@@ -42,6 +83,12 @@ export function CashierBillWorkspace({
   const [billState, setBillState] = useState<BillState>({ status: 'idle' });
   const selectedIdRef = useRef(selectedId);
   const requestSequence = useRef(0);
+  const cashPaymentInFlight = useRef(false);
+  const cashPaymentAttempts = useRef(new Map<string, CashPaymentAttempt>());
+  const [confirmingCashPayment, setConfirmingCashPayment] = useState(false);
+  const [cashPaymentBusy, setCashPaymentBusy] = useState(false);
+  const [cashPaymentUncertain, setCashPaymentUncertain] = useState(false);
+  const [cashPaymentNotice, setCashPaymentNotice] = useState<string | null>(null);
 
   const eligibleSessions = useMemo(
     () =>
@@ -134,6 +181,112 @@ export function CashierBillWorkspace({
     },
   });
 
+  const settleWithCash = async (view: ConsolidatedSessionView) => {
+    if (cashPaymentInFlight.current) return;
+    const sessionId = view.session.id;
+    const currentAttempt = cashPaymentAttempts.current.get(sessionId);
+    const attempt =
+      currentAttempt?.sessionId === sessionId
+        ? currentAttempt
+        : {
+            sessionId,
+            key: crypto.randomUUID(),
+            body: JSON.stringify({
+              expectedSessionVersion: view.session.version,
+              expectedBillVersion: view.bill.version,
+            }),
+            uncertain: false,
+          };
+    cashPaymentAttempts.current.set(sessionId, attempt);
+    cashPaymentInFlight.current = true;
+    setCashPaymentBusy(true);
+    setCashPaymentNotice(null);
+
+    const send = (token: string) =>
+      fetch(`/api/v1/staff/table-sessions/${encodeURIComponent(sessionId)}/cash-payment`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': attempt.key,
+          'X-CSRF-Token': token,
+        },
+        body: attempt.body,
+      });
+
+    try {
+      let response = await send(csrfToken ?? (await recoverCsrf()));
+      let errorCode = response.ok ? undefined : await readErrorCode(response);
+      if (response.status === 403 && errorCode === 'STAFF_CSRF_INVALID') {
+        response = await send(await recoverCsrf());
+        errorCode = response.ok ? undefined : await readErrorCode(response);
+      }
+      if (response.status === 401) {
+        cashPaymentAttempts.current.delete(sessionId);
+        onSessionInvalid();
+        return;
+      }
+      if (!response.ok) {
+        const isCurrentSelection = selectedIdRef.current === sessionId;
+        if (response.status === 409) {
+          cashPaymentAttempts.current.delete(sessionId);
+          if (isCurrentSelection) {
+            setCashPaymentUncertain(false);
+            setConfirmingCashPayment(false);
+            await loadBill(sessionId);
+            if (selectedIdRef.current === sessionId)
+              setCashPaymentNotice(
+                'Phiên bàn hoặc hóa đơn đã thay đổi. Hãy kiểm tra dữ liệu mới trước khi xác nhận lại.',
+              );
+          }
+        } else if (response.status >= 500) {
+          cashPaymentAttempts.current.set(sessionId, { ...attempt, uncertain: true });
+          if (isCurrentSelection) {
+            setCashPaymentUncertain(true);
+            setCashPaymentNotice(
+              'Chưa xác định được kết quả thanh toán. Hãy thử lại cùng mã yêu cầu; không tạo thao tác mới.',
+            );
+          }
+        } else {
+          cashPaymentAttempts.current.delete(sessionId);
+          if (isCurrentSelection) {
+            setCashPaymentUncertain(false);
+            setCashPaymentNotice(
+              response.status === 403
+                ? 'Bạn không còn quyền ghi nhận thanh toán tiền mặt tại địa điểm này.'
+                : `Không thể ghi nhận thanh toán${errorCode ? ` (${errorCode})` : ''}. Hãy kiểm tra lại dữ liệu.`,
+            );
+          }
+        }
+        return;
+      }
+
+      const payload = (await response.json()) as CashPaymentResponse;
+      cashPaymentAttempts.current.delete(sessionId);
+      if (selectedIdRef.current === sessionId) {
+        setCashPaymentUncertain(false);
+        setConfirmingCashPayment(false);
+        setCashPaymentNotice(
+          payload.data.payment
+            ? `Đã ghi nhận tiền mặt ${formatVnd(BigInt(payload.data.payment.amount))} và tất toán hóa đơn. Phiên bàn vẫn đang khóa.`
+            : 'Đã tất toán hóa đơn có số dư 0 ₫, không tạo bản ghi thu tiền mặt. Phiên bàn vẫn đang khóa.',
+        );
+        await loadBill(sessionId);
+      }
+    } catch {
+      cashPaymentAttempts.current.set(sessionId, { ...attempt, uncertain: true });
+      if (selectedIdRef.current === sessionId) {
+        setCashPaymentUncertain(true);
+        setCashPaymentNotice(
+          'Kết nối bị gián đoạn và kết quả chưa chắc chắn. Thử lại sẽ dùng đúng mã yêu cầu và phiên bản ban đầu.',
+        );
+      }
+    } finally {
+      cashPaymentInFlight.current = false;
+      setCashPaymentBusy(false);
+    }
+  };
+
   if (!allowed) return null;
 
   const view = billState.status === 'ready' ? billState.view : null;
@@ -153,8 +306,12 @@ export function CashierBillWorkspace({
               value={selectedId}
               onChange={(event) => {
                 requestSequence.current += 1;
+                const uncertainAttempt = cashPaymentAttempts.current.get(event.target.value);
                 setSelectedId(event.target.value);
                 setBillState({ status: 'idle' });
+                setConfirmingCashPayment(Boolean(uncertainAttempt?.uncertain));
+                setCashPaymentUncertain(Boolean(uncertainAttempt?.uncertain));
+                setCashPaymentNotice(null);
               }}
             >
               <option value="">Chọn phiên bàn</option>
@@ -169,6 +326,11 @@ export function CashierBillWorkspace({
       </div>
 
       <RealtimeNotice {...realtime} />
+      {cashPaymentNotice ? (
+        <p className="queue-notice" role="status">
+          {cashPaymentNotice}
+        </p>
+      ) : null}
 
       {eligibleSessions.length === 0 ? (
         <div className="operational-state">
@@ -178,7 +340,7 @@ export function CashierBillWorkspace({
       ) : !selected ? (
         <div className="operational-state">
           <h3>Chọn một phiên bàn</h3>
-          <p>Các bàn chờ thanh toán được ưu tiên ở đầu danh sách.</p>
+          <p>Các phiên đã khóa gọi món được ưu tiên ở đầu danh sách.</p>
         </div>
       ) : billState.status === 'loading' ? (
         <div className="operational-state" aria-busy="true">
@@ -217,6 +379,82 @@ export function CashierBillWorkspace({
               Cập nhật
             </button>
           </div>
+
+          {canRecordCash &&
+          view.session.status === 'CHECKOUT_LOCKED' &&
+          view.bill.status === 'PAYMENT_PENDING' ? (
+            <div className="cash-payment-action">
+              {!confirmingCashPayment ? (
+                <button
+                  className="primary-button"
+                  type="button"
+                  onClick={() => setConfirmingCashPayment(true)}
+                >
+                  Ghi nhận thanh toán tiền mặt
+                </button>
+              ) : (
+                <div
+                  className="cash-payment-confirmation"
+                  role="group"
+                  aria-label="Xác nhận thanh toán"
+                >
+                  <div>
+                    <p className="eyebrow">Xác nhận một lần</p>
+                    <h4>Bàn {view.session.table.code}</h4>
+                    {BigInt(view.bill.balanceAmount) > 0n ? (
+                      <p>
+                        Xác nhận đã nhận đủ{' '}
+                        <strong>{formatVnd(BigInt(view.bill.balanceAmount))}</strong> tiền mặt.
+                      </p>
+                    ) : (
+                      <p>
+                        Hóa đơn có số dư <strong>0 ₫</strong>. Thao tác chỉ tạo Settlement, không
+                        ghi nhận tiền mặt giả.
+                      </p>
+                    )}
+                    <p>
+                      Hóa đơn sẽ được tất toán. Phiên bàn vẫn CHECKOUT_LOCKED và bàn chưa được giải
+                      phóng hoặc đánh dấu sẵn sàng.
+                    </p>
+                  </div>
+                  <div className="staff-header-actions">
+                    <button
+                      className="primary-button"
+                      type="button"
+                      disabled={cashPaymentBusy}
+                      onClick={() => void settleWithCash(view)}
+                    >
+                      {cashPaymentBusy
+                        ? 'Đang ghi nhận…'
+                        : cashPaymentUncertain
+                          ? 'Thử lại cùng yêu cầu'
+                          : BigInt(view.bill.balanceAmount) > 0n
+                            ? 'Xác nhận đã nhận đủ tiền'
+                            : 'Xác nhận tất toán số dư 0 ₫'}
+                    </button>
+                    <button
+                      className="secondary-button"
+                      type="button"
+                      disabled={cashPaymentBusy}
+                      onClick={() => {
+                        if (cashPaymentUncertain) return;
+                        cashPaymentAttempts.current.delete(view.session.id);
+                        setConfirmingCashPayment(false);
+                      }}
+                    >
+                      Hủy
+                    </button>
+                  </div>
+                  {cashPaymentUncertain ? (
+                    <p className="permission-note">
+                      Kết quả trước đó chưa chắc chắn nên không thể hủy thao tác. Hãy thử lại cùng
+                      yêu cầu hoặc dùng Cập nhật để kiểm tra trạng thái chính thức.
+                    </p>
+                  ) : null}
+                </div>
+              )}
+            </div>
+          ) : null}
 
           <dl className="cashier-metadata">
             <div>

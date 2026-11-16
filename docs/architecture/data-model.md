@@ -93,7 +93,7 @@ Index này là MVP-only. Không đổi `is_active` hoặc status terminology đ�
 
 `table_session(id, restaurant_id, location_id, table_id, activation_request_id, status, activated_by_membership_id, activated_at, checkout_locked_at, closed_by_membership_id, closed_at, close_reason, version)`
 
-M4.1 reuses existing TableSession/Bill status, timestamp, version and consistency constraints; no schema migration or Payment/Settlement placeholder is required. Checkout/resume locks TableSession then Bill then actor/authorization rows, atomically increments both versions and changes only their lifecycle fields, with audit/outbox/idempotency. Resume clears `checkout_locked_at` as required by the existing ACTIVE lifecycle constraint. The later Payment/Settlement delivery must add successful-payment/Settlement existence checks to resume alongside current status and `paid_amount = 0` checks. See [M4.1 contract](api-contracts.md#checkout-lock-and-resume-m41).
+M4.1 reuses existing TableSession/Bill status, timestamp, version and consistency constraints; no schema migration or Payment/Settlement placeholder is required. Checkout/resume locks TableSession then Bill then actor/authorization rows, atomically increments both versions and changes only their lifecycle fields, with audit/outbox/idempotency. Resume clears `checkout_locked_at` as required by the existing ACTIVE lifecycle constraint. M4.3-B adds successful-Payment/Settlement existence checks alongside current status and `paid_amount = 0`, including zero-balance Settlement. See [M4.1 contract](api-contracts.md#checkout-lock-and-resume-m41).
 
 - Partial unique `(table_id) WHERE status IN ('ACTIVE','CHECKOUT_LOCKED')`.
 - Unique `activation_request_id`; composite scoped foreign keys ensure request, table, activating membership và TableSession thuộc cùng restaurant/location.
@@ -229,12 +229,17 @@ Important constraints:
 
 ### Payment and settlement
 
-`payment(id, bill_id, method, status, amount, recorded_by_membership_id, external_reference, failure_reason, version)`
+`payment(id, restaurant_id, location_id, bill_id, method, status, amount, recorded_by_membership_id, recorded_at)`
 
-`settlement(id, bill_id, settled_amount, settled_at, created_by_membership_id)`
+`settlement(id, restaurant_id, location_id, bill_id, settled_amount, settled_at, created_by_membership_id)`
 
-- Unique settlement `bill_id` trong MVP.
-- Cash payment, bill settled và settlement record commit atomically.
+- M4.3-A persists only `method = CASH` and `status = SUCCEEDED`; online-provider lifecycle states remain conceptual/deferred and do not add unused columns or enum values now.
+- Payment amount is positive BIGINT VND. Settlement amount is nonnegative, allowing a fully waived zero-balance Bill without a fake zero-value Payment. Payment and Settlement records are immutable.
+- Composite foreign keys bind each record to one Bill and recording StaffMembership in the same restaurant/location. Unique Settlement `bill_id` enforces at most one Settlement per Bill.
+- The M4.3-B transaction locks TableSession → Bill → current staff authorization, requires CHECKOUT_LOCKED/PAYMENT_PENDING with expected versions and derives the exact amount from server-side `balance_amount`. It rejects prior successful Payment/Settlement, recorded paid amount, a non-OCCUPIED table or invalid total/balance arithmetic. A positive balance creates one Payment; zero creates none. It then creates Settlement and changes only Bill to SETTLED with `paid_amount = total_amount`, `balance_amount = 0` and version +1. Audit, `bill.updated`, idempotency and these financial writes commit atomically. M4.3-B requires no schema/migration change beyond M4.3-A.
+- Prior-state checks and exact cross-row aggregate equality require transaction locks/application logic and cannot be expressed safely as ordinary PostgreSQL CHECK constraints. Database constraints still enforce amount domains, tenant/location relationships, immutable records and unique Settlement. M4.3-B local PostgreSQL integration verified state/version, exact amount, concurrency, rollback and no partial/arbitrary payment on `2026-11-15`.
+- Settlement leaves TableSession CHECKOUT_LOCKED and RestaurantTable OCCUPIED. Closing/cleaning are later M4 commands. Receipts are read-only projections; no receipt persistence or numbering is introduced.
+- Forward-only migration `20261109120000_m4_3_payment_settlement_foundation` creates two enums and two initially empty tables, their scope FKs, amount checks, immutable-record triggers, one Payment lookup index and the unique Settlement key. It rewrites/backfills no existing row; DDL still requires normal production migration review and production execution remains pending.
 
 ## Reliability tables
 

@@ -491,6 +491,7 @@ export function StaffActivationWorkspace() {
   const canReadSessions = auth.staff.permissions.includes('table.session.read');
   const canSubmitOrders = auth.staff.permissions.includes('order.create_for_table');
   const canReadBills = auth.staff.permissions.includes('bill.read');
+  const canRecordCash = auth.staff.permissions.includes('payment.cash_record');
   const canReadActivations = auth.staff.permissions.includes('table.activation.read');
   const canReadFulfillment = auth.staff.permissions.includes('fulfillment.read');
 
@@ -687,7 +688,7 @@ export function StaffActivationWorkspace() {
                     <div>
                       <p className="eyebrow">
                         {session.status === 'CHECKOUT_LOCKED'
-                          ? 'TableSession · Chờ thanh toán'
+                          ? 'TableSession · Đã khóa gọi món'
                           : 'TableSession active'}
                       </p>
                       <h2>Bàn {session.table.code}</h2>
@@ -740,6 +741,7 @@ export function StaffActivationWorkspace() {
       <RealtimeNotice {...sessionsRealtime} />
       <CashierBillWorkspace
         allowed={canReadSessions && canReadBills}
+        canRecordCash={canRecordCash}
         csrfToken={csrfToken}
         recoverCsrf={recoverCsrf}
         sessions={activeSessions.status === 'ready' ? activeSessions.sessions : []}

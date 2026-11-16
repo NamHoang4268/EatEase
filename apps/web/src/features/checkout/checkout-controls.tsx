@@ -26,9 +26,12 @@ export function CheckoutControls({
   const inFlight = useRef(false);
   const attempt = useRef<{ target: string; key: string; body: string } | null>(null);
   const locked = session.status === 'CHECKOUT_LOCKED';
+  const settled = bill.status === 'SETTLED';
   const canAct = locked
     ? actor === 'staff' && bill.status === 'PAYMENT_PENDING'
     : bill.status === 'OPEN';
+  const visibleMessage =
+    settled && message === 'Đã khóa gọi món để chờ thanh toán.' ? null : message;
 
   const run = async () => {
     if (inFlight.current || !canAct) return;
@@ -112,9 +115,11 @@ export function CheckoutControls({
   return (
     <div className="checkout-controls">
       <p>
-        {locked
-          ? 'Đang chờ thanh toán. Gọi món đã khóa; nhân viên có thể mở lại khi chưa thanh toán.'
-          : 'Đang mở gọi món.'}
+        {settled
+          ? 'Hóa đơn đã thanh toán. Gọi món vẫn khóa trong khi chờ nhân viên hoàn tất phiên bàn.'
+          : locked
+            ? 'Đang chờ thanh toán. Gọi món đã khóa; nhân viên có thể mở lại khi chưa thanh toán.'
+            : 'Đang mở gọi món.'}
       </p>
       {canAct ? (
         <button
@@ -126,7 +131,7 @@ export function CheckoutControls({
           {busy ? 'Đang xử lý…' : locked ? 'Mở lại gọi món' : 'Yêu cầu thanh toán'}
         </button>
       ) : null}
-      {message ? <p role="status">{message}</p> : null}
+      {visibleMessage ? <p role="status">{visibleMessage}</p> : null}
     </div>
   );
 }
