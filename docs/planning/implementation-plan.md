@@ -305,15 +305,15 @@ Dependency: M3.
 
 **Status:** `IN_PROGRESS`; M4.1–M4.3 đã owner-validated `DONE` cho locally validated scope; later lifecycle work chưa bắt đầu. Production migrations/deployment/hosted smoke remain separate pending gates.
 
-| Status      | Task                                                       |
-| ----------- | ---------------------------------------------------------- |
-| DONE        | Implement checkout lock/resume (M4.1)                      |
-| DONE        | Implement cashier bill view (M4.2)                         |
-| DONE        | Implement idempotent cash payment + settlement transaction |
-| TODO        | Implement session close                                    |
-| TODO        | Implement cleaning and mark-ready                          |
-| TODO        | Implement receipt/basic revenue records                    |
-| TODO        | Complete financial concurrency and lifecycle E2E tests     |
+| Status | Task                                                       |
+| ------ | ---------------------------------------------------------- |
+| DONE   | Implement checkout lock/resume (M4.1)                      |
+| DONE   | Implement cashier bill view (M4.2)                         |
+| DONE   | Implement idempotent cash payment + settlement transaction |
+| TODO   | Implement session close                                    |
+| TODO   | Implement cleaning and mark-ready                          |
+| TODO   | Implement receipt/basic revenue records                    |
+| TODO   | Complete financial concurrency and lifecycle E2E tests     |
 
 Runtime investigation [E2E-RUNTIME-01](../known-issues.md#e2e-runtime-01--intermittent-nextjs-econnreset--error-aborted) must be triaged during the final M4 E2E closure task. The repository does not currently define an `M4.7` task number; do not infer a new numbered submilestone from this cross-reference.
 
