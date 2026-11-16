@@ -47,6 +47,8 @@ function setup() {
         ]),
     },
     cancellationRequest: { count: vi.fn().mockResolvedValue(0) },
+    payment: { findFirst: vi.fn().mockResolvedValue(null) },
+    settlement: { findUnique: vi.fn().mockResolvedValue(null) },
     idempotencyRecord: { findUnique: vi.fn().mockResolvedValue(null), create: vi.fn() },
     auditLog: { create: vi.fn() },
     outboxEvent: { createMany: vi.fn() },
@@ -131,4 +133,19 @@ describe('M4.1 checkout transaction behavior', () => {
     tx.idempotencyRecord.create.mockRejectedValueOnce(new Error('late failure'));
     await expect(service.checkoutStaff(principal, input)).rejects.toThrow('late failure');
   });
+
+  it.each(['payment', 'settlement'] as const)(
+    'blocks resume when a %s exists even with paidAmount zero',
+    async (kind) => {
+      const { service, tx, session, bill, principal, input } = setup();
+      session.status = 'CHECKOUT_LOCKED';
+      bill.status = 'PAYMENT_PENDING';
+      if (kind === 'payment') tx.payment.findFirst.mockResolvedValue({ id: randomUUID() });
+      else tx.settlement.findUnique.mockResolvedValue({ id: randomUUID() });
+      await expect(service.resume(principal, input)).rejects.toMatchObject({
+        response: { code: 'CHECKOUT_PAYMENT_RECORDED' },
+      });
+      expect(tx.tableSession.update).not.toHaveBeenCalled();
+    },
+  );
 });

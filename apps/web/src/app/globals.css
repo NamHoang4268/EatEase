@@ -756,6 +756,27 @@ a:focus-visible {
   font-size: 1.15rem;
 }
 
+.cash-payment-action {
+  display: grid;
+  justify-items: start;
+  gap: 12px;
+  padding: 20px;
+  border: 1px solid color-mix(in srgb, var(--primary) 65%, var(--border));
+  border-radius: 6px;
+  background: var(--soft-yellow);
+}
+
+.cash-payment-confirmation {
+  display: grid;
+  gap: 16px;
+  width: min(720px, 100%);
+}
+
+.cash-payment-confirmation h4,
+.cash-payment-confirmation p {
+  margin: 0;
+}
+
 .staff-ordering .section-heading label {
   display: grid;
   gap: 8px;

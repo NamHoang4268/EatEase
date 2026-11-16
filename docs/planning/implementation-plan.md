@@ -2,7 +2,7 @@
 
 Status values: `TODO`, `IN_PROGRESS`, `BLOCKED`, `DONE`.
 
-Planning completion và implementation completion là hai việc khác nhau. M1, M2 và M3 đã hoàn tất trong locally validated development scope; production release verification của M3 vẫn pending. M4 đang `IN_PROGRESS`; M4.1–M4.2 đã `DONE`; M4.5 UI/UX và M5 chưa bắt đầu.
+Planning completion và implementation completion là hai việc khác nhau. M1, M2 và M3 đã hoàn tất trong locally validated development scope; production release verification của M3 vẫn pending. M4 đang `IN_PROGRESS`; M4.1–M4.3 đã `DONE`; M4.5 UI/UX và M5 chưa bắt đầu.
 
 ## M0 — Repository and documentation bootstrap
 
@@ -303,17 +303,17 @@ Dependency: M2.
 
 Dependency: M3.
 
-**Status:** `IN_PROGRESS`; M4.1 và M4.2 đã owner-validated `DONE`. Payment, settlement và later lifecycle work chưa bắt đầu. Production migrations/deployment/hosted smoke remain separate pending gates.
+**Status:** `IN_PROGRESS`; M4.1–M4.3 đã owner-validated `DONE` cho locally validated scope; later lifecycle work chưa bắt đầu. Production migrations/deployment/hosted smoke remain separate pending gates.
 
-| Status | Task                                                       |
-| ------ | ---------------------------------------------------------- |
-| DONE   | Implement checkout lock/resume (M4.1)                      |
-| DONE   | Implement cashier bill view (M4.2)                         |
-| TODO   | Implement idempotent cash payment + settlement transaction |
-| TODO   | Implement session close                                    |
-| TODO   | Implement cleaning and mark-ready                          |
-| TODO   | Implement receipt/basic revenue records                    |
-| TODO   | Complete financial concurrency and lifecycle E2E tests     |
+| Status      | Task                                                       |
+| ----------- | ---------------------------------------------------------- |
+| DONE        | Implement checkout lock/resume (M4.1)                      |
+| DONE        | Implement cashier bill view (M4.2)                         |
+| DONE        | Implement idempotent cash payment + settlement transaction |
+| TODO        | Implement session close                                    |
+| TODO        | Implement cleaning and mark-ready                          |
+| TODO        | Implement receipt/basic revenue records                    |
+| TODO        | Complete financial concurrency and lifecycle E2E tests     |
 
 Runtime investigation [E2E-RUNTIME-01](../known-issues.md#e2e-runtime-01--intermittent-nextjs-econnreset--error-aborted) must be triaged during the final M4 E2E closure task. The repository does not currently define an `M4.7` task number; do not infer a new numbered submilestone from this cross-reference.
 
@@ -328,7 +328,7 @@ Runtime investigation [E2E-RUNTIME-01](../known-issues.md#e2e-runtime-01--interm
 - **Acceptance review:** mandatory M4.1 requirements are satisfied for the locally validated development scope: paired session/Bill state and version updates, eligibility guards, immutable financial/fulfillment history, Guest ownership, staff permission/location scope, Origin/CSRF, idempotency/conflict handling, SubmitOrder concurrency, rollback, locked-session reads, draft preservation in the current page lifecycle and staff-only safe resume all have automated or manual evidence. No mandatory M4.1 closure criterion remains blocked.
 - **Deferred findings and limits:** [M4.1-UI-01, M4.1-RT-01, E2E-RUNTIME-01 and UX-CART-01](../known-issues.md) remain tracked with their current classifications. The intermittent E2E runtime root cause is not fixed or resolved. These non-blocking entries do not invalidate the confirmed business-state/financial evidence or establish production behavior.
 - **Release boundary:** production deployment/hosted public smoke remain unverified and are not claimed by this local evidence. M4 payment, settlement, session close, cleaning/ready, receipt/revenue and final lifecycle E2E remain later tasks.
-- **Later dependencies:** Payment/Settlement persistence must extend resume guards for successful payments and settlement existence in that same task. Empty-session cancellation belongs to later M4 table lifecycle. Cash amount/zero-balance settlement/receipt decisions are approved contracts only, not M4.1 functionality. Do not start later M4 tasks before owner authorization.
+- **Later dependencies:** M4.3-B extends resume guards for successful payments and Settlement existence, including zero-balance Settlement. Empty-session cancellation belongs to later M4 table lifecycle. Cash amount/zero-balance settlement/receipt decisions are not M4.1 functionality. Do not start later M4 tasks before owner authorization.
 
 ### M4.2 — Cashier Bill Workspace
 
@@ -341,6 +341,23 @@ Runtime investigation [E2E-RUNTIME-01](../known-issues.md#e2e-runtime-01--interm
 - **Manual acceptance:** Manager login và Cashier workspace/session selection PASS. Bàn A01 hiển thị snapshot `Gỏi cuốn nấm ×1`, subtotal/total/balance `48,000 VND`, adjustment/paid `0`; manual refresh PASS. Guest checkout đổi TableSession `ACTIVE v2 → CHECKOUT_LOCKED v4`, Bill `OPEN v3 → PAYMENT_PENDING v4`; Staff resume đưa session/Bill về `ACTIVE/OPEN v5`; amounts không đổi. Cashier tự refetch khoảng một giây sau resume. Browser refresh khôi phục Staff workspace; reselect table đọc lại persisted Bill chính xác.
 - **E2E cache isolation:** Playwright `next dev` dùng `.next-e2e` riêng, tách khỏi production/manual `.next`. Focused và full E2E PASS sau isolation. Shared Next build/dev cache là likely failure mechanism của navigation loop trước đó; exact corrupted artifact không được xác định conclusively. Intermittent `ECONNRESET` / `Error: aborted` vẫn open tại [E2E-RUNTIME-01](../known-issues.md#e2e-runtime-01--intermittent-nextjs-econnreset--error-aborted), không được claim fixed.
 - **Deferred UX/release boundary:** selector/filter reset sau F5 và brief Bill refetch flash được ghi tại [UX-STAFF-01 và UX-CASHIER-01](../known-issues.md). Đây là non-blocking UI observations có workaround, không làm sai persisted Bill hay financial state. Production deployment/migration và hosted/public smoke vẫn pending; M4.2 closure không claim production verification.
+
+### M4.3 — Cash Payment & Settlement
+
+- **Status:** `DONE` for the locally validated development scope. M4.3-A database foundation, M4.3-B atomic backend command and M4.3-C Cashier UI have completed implementation and owner validation. Overall M4 remains `IN_PROGRESS`.
+- **Approved scope:** authorized Staff with `payment.cash_record` settles only CHECKOUT_LOCKED/PAYMENT_PENDING using the exact server balance. Positive balance creates immutable CASH/SUCCEEDED Payment; zero balance creates no fake Payment. Exactly one Settlement per Bill; Bill becomes SETTLED, while TableSession stays CHECKOUT_LOCKED and table stays OCCUPIED. No partial/arbitrary amount, online gateway, refund, receipt persistence or session close.
+- **M4.3-A artifacts:** authoritative [API contract](../architecture/api-contracts.md#cash-payment-and-settlement-m43), Payment/Settlement data model, Prisma schema, forward-only migration and focused PostgreSQL integrity tests. Database constraints cover amount domains, scoped relationships, immutable financial records and unique Settlement; transaction-only state/version/exact-amount/concurrency invariants are explicitly reserved for M4.3-B.
+- **M4.3-A acceptance:** Prisma schema validates/generates; migration applies to the verified isolated local database; positive Payment, zero-balance Settlement, unique Settlement, scope FKs, amount checks, immutability and unchanged session/table lifecycle are covered by focused PostgreSQL tests. Do not mark M4.3 DONE until endpoint, UI and owner final validation pass.
+- **M4.3-B artifacts:** dedicated PaymentModule/controller/service/contracts; `POST /staff/table-sessions/:sessionId/cash-payment`; parent row locks shared with checkout/resume/SubmitOrder; exact BIGINT amount, one atomic audit/outbox/idempotency result and no session/table writes. Checkout/resume now fail closed when successful Payment or Settlement exists. No new migration or Web implementation.
+- **M4.3-B status:** `DONE` for implementation and local owner validation on `2026-11-15`; this does not close M4.3 or authorize M4.3-C.
+- **M4.3-B coverage:** focused contract/service tests plus real-PostgreSQL cases cover positive/zero balance, BIGINT precision, stale versions, identical/conflicting retries, concurrent settlement, settlement-versus-resume and SubmitOrder races, authorization/Origin/CSRF/location, revoked staff and transaction-time revalidation, late audit/outbox/idempotency rollback, resume guards and unchanged immutable financial/session history.
+- **M4.3-B implementation-time verification — 2026-11-15:** cash-payment contract/service and checkout contract/service unit tests `46/46` PASS; API typecheck and changed-file ESLint PASS. These checks remain distinct from owner final validation.
+- **M4.3-B owner validation — 2026-11-15:** against the identity-verified local PostgreSQL database `eatease_m2_test` at `127.0.0.1:5432`, `pnpm db:migrate:status` reported `16` migrations and an up-to-date schema; M4.3-B introduced no new migration. Focused PostgreSQL integration passed `38/38` across `3/3` files (`21/21` cash settlement, `13/13` checkout and `4/4` M4.3-A foundation). Full API unit regression passed `246/246` across `35/35` files; API production build, Prettier and `git diff --check` passed. The expected test-path `OUTBOX_DELIVERY_FAILED` warning appeared in the OutboxPublisher suite without failing the run; it is not classified as a confirmed production defect and its root cause is not claimed verified.
+- **M4.3-C artifacts:** the existing Cashier Bill Workspace exposes an explicit `payment.cash_record`-gated action only for CHECKOUT_LOCKED/PAYMENT_PENDING. Confirmation shows the authoritative decimal-string balance with BigInt-safe VND formatting, distinguishes positive cash from zero-balance Settlement, sends only the two expected versions through the existing Staff cookie/CSRF flow and refetches authoritative REST state after confirmed success or conflict. A per-session operation attempt preserves its original Idempotency-Key/body across network/5xx/CSRF-recovery uncertainty and selection/refetch cycles; double submission, optimistic financial state and stale cross-selection responses are prevented.
+- **M4.3-C validation — 2026-11-16:** focused Cashier/checkout regression tests passed, followed by owner-confirmed Web tests `144/144` across `14/14` files, Web lint/typecheck, production build, Playwright `6/6`, Prettier and `git diff --check`. The production build used local validation values for `API_INTERNAL_URL` and a generated `API_PROXY_SHARED_SECRET`; Playwright used isolated local PostgreSQL `eatease_m2_test`, not Neon. M4.3-C adds no endpoint, dependency, schema or migration.
+- **Manual acceptance:** owner verified activation → ordering → Kitchen → checkout → cash settlement against local PostgreSQL. Cashier displayed the authoritative `79,000 VND` balance; settlement changed Bill to `SETTLED`, paid to `79,000 VND` and balance to `0`, while TableSession remained `CHECKOUT_LOCKED`. Refresh preserved the settled snapshot and the cash action disappeared. The final presentation fix distinguishes locked ordering from payment state: Staff/Cashier label `CHECKOUT_LOCKED` as “Đã khóa gọi món”, Customer copy distinguishes `PAYMENT_PENDING` from `SETTLED`, and stale checkout-success feedback is suppressed after settlement. Automated regression passed; owner did not repeat the manual UI scenario after this copy-only fix.
+- **Closure assessment:** M4.3 acceptance is satisfied for local development: exact server balance, positive/zero-balance settlement, one Settlement, replay/concurrency/authorization/rollback guarantees, immutable financial history, no automatic session/table release and no post-settlement cash action are covered by the recorded backend, Web, E2E and manual evidence. Guest settlement realtime delivery with all feature flags enabled remains unverified runtime behavior, not a confirmed code defect; authoritative manual REST refresh remains available. These non-blocking gaps and the Kitchen filter UX follow-up are tracked in [Known Issues](../known-issues.md).
+- **Release boundary:** production migration/deployment/public smoke remain pending. M4.3 does not authorize session close, cleaning/ready, receipt/revenue persistence or later M4 tasks.
 
 ## M4.5 — UI/UX Implementation & Polish
 

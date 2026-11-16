@@ -122,3 +122,7 @@ M3.6 uses a separate approved `MANAGER_CORRECTION` record. If a Guest request is
 | `CREATED`/`PROCESSING` | Safe cancel              | `CANCELLED`  |
 
 Online states được thiết kế trước nhưng provider integration là deferred. Cash MVP có thể tạo payment trực tiếp ở `SUCCEEDED` trong settlement transaction.
+
+M4.3 persists only `CASH`/`SUCCEEDED`. The atomic command requires CHECKOUT_LOCKED/PAYMENT_PENDING and uses the exact server balance. Positive balance creates Payment + Settlement; zero balance creates Settlement without a fake Payment. Bill becomes SETTLED while TableSession remains CHECKOUT_LOCKED and the table remains OCCUPIED. Session close and table release are separate later transitions.
+
+M4.3-B implements this backend command with expected session/Bill versions, transaction-time authorization, atomic audit/outbox/idempotency and no lifecycle mutation on TableSession/table. Resume is denied after successful Payment or any Settlement, including a zero-balance Settlement. Local owner validation completed on `2026-11-15`; Cashier action UI is M4.3-C, while production migration/deployment and hosted payment smoke remain pending.
