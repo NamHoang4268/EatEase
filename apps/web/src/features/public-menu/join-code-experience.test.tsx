@@ -126,16 +126,16 @@ describe('M2.7 Host and Join experience', () => {
   it('recovers expired credentials without reload, retains the draft and requires explicit valid joining', async () => {
     vi.stubGlobal('crypto', { randomUUID: () => 'recovery-key' });
     let bootstraps = 0;
+    let completeRecovery: ((value: ReturnType<typeof bootstrap>) => void) | undefined;
+    const recoveryResponse = new Promise<ReturnType<typeof bootstrap>>((resolve) => {
+      completeRecovery = resolve;
+    });
     const fetchMock = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
       if (url.includes('/public/tables/')) return Promise.resolve(response({ data: table }));
       if (url.includes('/public/menu')) return Promise.resolve(response({ data: menu }));
       if (url === '/api/v1/guest-sessions' && init?.method === 'POST') {
         bootstraps++;
-        return Promise.resolve(
-          bootstraps === 1
-            ? bootstrap('ORDER_ENABLED')
-            : bootstrap('BROWSE_ONLY', 'fresh-browse-csrf'),
-        );
+        return bootstraps === 1 ? Promise.resolve(bootstrap('ORDER_ENABLED')) : recoveryResponse;
       }
       if (url === '/api/v1/activation-requests/current')
         return Promise.resolve(response({ data: { status: 'NOT_REQUESTED' } }));
@@ -162,6 +162,14 @@ describe('M2.7 Host and Join experience', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Gửi món' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Khôi phục phiên xem thực đơn' }));
     await waitFor(() => expect(bootstraps).toBe(2));
+    fireEvent.change(screen.getByLabelText('Join Code'), { target: { value: '482193' } });
+    const joinButton = screen.getByRole('button', { name: 'Tham gia bàn' }) as HTMLButtonElement;
+    expect(joinButton.disabled).toBe(true);
+    fireEvent.click(joinButton);
+    expect(
+      fetchMock.mock.calls.filter(([url]) => url === '/api/v1/table-sessions/join'),
+    ).toHaveLength(0);
+    completeRecovery?.(bootstrap('BROWSE_ONLY', 'fresh-browse-csrf'));
     await waitFor(() =>
       expect(screen.queryByRole('button', { name: 'Khôi phục phiên xem thực đơn' })).toBeNull(),
     );
@@ -169,7 +177,8 @@ describe('M2.7 Host and Join experience', () => {
       true,
     );
     expect(screen.getByLabelText('Số lượng hiện tại: 1')).toBeDefined();
-    await submitJoin();
+    await waitFor(() => expect(joinButton.disabled).toBe(false));
+    fireEvent.click(joinButton);
     await screen.findByText('Đã cấp quyền tại bàn');
     expect(screen.getByLabelText('Số lượng hiện tại: 1')).toBeDefined();
     expect(fetchMock.mock.calls.filter(([url]) => url === '/api/v1/orders')).toHaveLength(1);
