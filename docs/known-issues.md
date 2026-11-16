@@ -63,6 +63,39 @@ Mỗi entry giữ stable ID, classification, reproduction/evidence, workaround, 
 - **Target:** M4.5 — UI/UX Implementation & Polish.
 - **Resolution / verification:** Pending. Verify previous content không bị hiểu là final after an error, newer selection không bị old response overwrite, và refreshed financial snapshot vẫn lấy hoàn toàn từ server.
 
+## M4.3-VAL-01 — Final settlement status copy lacks a post-fix manual retest
+
+- **Severity:** Minor verification gap; không phải confirmed defect.
+- **Classification:** Deferred manual UI verification.
+- **Status:** Open / Deferred.
+- **Evidence:** trước final presentation fix, owner local acceptance confirmed successful cash settlement, persisted `SETTLED` Bill, paid `79,000 VND`, balance `0`, locked session and hidden repeat action. Sau fix, focused regression plus full Web `144/144`, Playwright `6/6`, lint/typecheck/build and quality checks PASS; local servers đã tắt nên owner không lặp lại manual UI scenario.
+- **Expected:** Cashier/Staff hiển thị `CHECKOUT_LOCKED` là ordering locked; Customer hiển thị Bill `SETTLED` là đã thanh toán và không còn stale checkout-success feedback.
+- **Workaround:** authoritative status/amounts vẫn đọc được qua REST; automated coverage bảo vệ presentation branches.
+- **Target:** verify cùng M4.5 UI/UX acceptance hoặc manual smoke kế tiếp, tùy bước nào đến trước.
+- **Resolution / verification:** Pending one manual checkout → settlement → Guest/Cashier refresh check after the final label fix. Không đánh dấu manual behavior PASS từ automated evidence.
+
+## M4.3-RT-01 — Guest settlement realtime refresh remains runtime-unverified
+
+- **Severity:** Investigation; functional severity chưa xác định.
+- **Classification:** Runtime verification gap; chưa xác nhận defect.
+- **Status:** Needs Verification / Deferred.
+- **Evidence:** code inspection confirms cash settlement persists scoped `bill.updated` with the owning `tableSessionId`, Bill audience routing accepts it, and the Guest subscription invokes authoritative `loadSessionView` on invalidation/reconnect. Owner observed balance `0` after manual “Cập nhật”, but did not verify automatic settlement refresh with `REALTIME_ENABLED`, `OUTBOX_PUBLISHER_ENABLED` and `NEXT_PUBLIC_REALTIME_ENABLED` all enabled.
+- **Expected:** with the approved flags and publisher active, the owning Guest receives an invalidation and refetches the `SETTLED` Bill; no financial state is carried in the notification.
+- **Workaround:** Guest uses “Cập nhật” to read current REST state. No polling or alternate realtime architecture is required.
+- **Target:** next local/hosted realtime smoke or M4.5 triage; escalate earlier only if evidence shows operational impact.
+- **Resolution / verification:** Pending runtime evidence covering publisher claim/delivery, scoped Guest notification and resulting REST refetch. Do not infer delivery merely from outbox persistence or static routing tests.
+
+## UX-KITCHEN-01 — Kitchen board status filter hides items after transition
+
+- **Severity:** Minor UX.
+- **Classification:** Accepted current behavior / polish candidate; không phải state-transition defect.
+- **Status:** Open / Deferred.
+- **Evidence:** the board uses one selected status filter. After an authoritative mutation/refetch moves an item out of that status, it no longer appears in the current filtered result, which can look like the item disappeared even though the transition persisted correctly.
+- **Expected:** M4.5 owner gate should decide whether to retain the current operational queue behavior, show a transition confirmation, switch filters, or otherwise clarify where the item moved without weakening REST authority.
+- **Workaround:** select the resulting status filter (for example PREPARING, READY, SERVED or CANCELLED) to locate the item.
+- **Target:** M4.5 — UI/UX Implementation & Polish.
+- **Resolution / verification:** Pending UX decision and focused board interaction tests; no backend/state-machine change is implied.
+
 ## Runtime investigations
 
 ### E2E-RUNTIME-01 — Intermittent Next.js `ECONNRESET` / `Error: aborted`

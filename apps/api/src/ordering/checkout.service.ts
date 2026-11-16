@@ -96,9 +96,15 @@ export class CheckoutService {
           bill.status !== (resume ? 'PAYMENT_PENDING' : 'OPEN')
         )
           throw conflict('CHECKOUT_STATE_CONFLICT');
-        // M4 payment/settlement persistence must extend this guard in the same release that introduces it.
-        // No payment records exist in M4.1; any recorded paid amount already fails closed.
-        if (bill.paidAmount !== 0n) throw conflict('CHECKOUT_PAYMENT_RECORDED');
+        if (
+          bill.paidAmount !== 0n ||
+          (await tx.payment.findFirst({
+            where: { billId: bill.id, status: 'SUCCEEDED' },
+            select: { id: true },
+          })) ||
+          (await tx.settlement.findUnique({ where: { billId: bill.id }, select: { id: true } }))
+        )
+          throw conflict('CHECKOUT_PAYMENT_RECORDED');
         if (!resume) {
           const orders = await tx.order.count({ where: { tableSessionId: session.id, ...scope } });
           const items = await tx.orderItem.findMany({

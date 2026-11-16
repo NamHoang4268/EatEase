@@ -171,6 +171,7 @@ Lock order for M2.7 is TableSession → current SessionJoinCode → GuestSession
 - Correlation/request ID trên HTTP và realtime operations.
 - Log token fingerprint/hash-safe reference, không raw cookie, password hoặc join code.
 - Audit activation approve/reject/claim, staff order, cancellation, waiver, Manager exceptional correction, cash payment, settlement, session close và table-ready actions. Physical-presence attestation is recorded for approval. M3.6 revalidates `bill.adjust`, membership/session and location scope inside the transaction; client input cannot choose actor, amount, waiver kind or scope.
+- M4.3-B cash settlement requires trusted Origin/staff CSRF and `payment.cash_record`; it revalidates current session/user/membership/location and effective permission under transaction locks before any idempotency replay or write. The client supplies only expected versions and an idempotency key; amounts, actor and scope come from the server. Audit `CASH_PAYMENT_SETTLED` and the scoped `bill.updated` notification commit with Payment/Settlement/Bill/idempotency, without credentials in records or events. Mutation permission does not implicitly grant Bill/session read access.
 - Security failures trả thông tin tối thiểu nhưng có internal diagnostic correlation.
 
 ## Security verification expectations

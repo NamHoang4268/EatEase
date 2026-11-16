@@ -69,7 +69,7 @@ export default defineConfig({
       timeout: 120_000,
     },
     {
-      command: 'pnpm --filter @eatease/web exec next dev --port 3100',
+      command: 'pnpm --filter @eatease/web exec next dev --webpack --port 3100',
       name: 'Web',
       stdout: 'pipe',
       stderr: 'pipe',

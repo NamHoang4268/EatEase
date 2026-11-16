@@ -10,6 +10,7 @@ import { OrderingModule } from './ordering/ordering.module.js';
 import { StaffAuthModule } from './staff-auth/staff-auth.module.js';
 import { RealtimeModule } from './realtime/realtime.module.js';
 import { CancellationModule } from './cancellation/cancellation.module.js';
+import { PaymentModule } from './payment/payment.module.js';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { CancellationModule } from './cancellation/cancellation.module.js';
     HealthModule,
     JoinCodeModule,
     OrderingModule,
+    PaymentModule,
     PublicCatalogModule,
     StaffAuthModule,
     RealtimeModule,
